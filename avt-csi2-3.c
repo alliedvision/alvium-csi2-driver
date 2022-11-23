@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
- * Copyright (C) 2021 Avnet EMG GmbH (tbd)
- */
+ * Copyright (C) 2022 Avnet EMG GmbH 
+ * Copyright (C) 2022 Allied Vision Technologies
+  */
 
 /*
  * Allied Vision CSI2 Camera
@@ -26,10 +27,9 @@
 #define xI2C_READ_COMPATIBLE_MODE
 #define xMUTEX_DEBUG_MODE
 
-//#define AVT3_DEFAULT_MODE	AVT3_MODE_1080P_1920_1080
 #define AVT3_DEFAULT_FPS AVT3_10_FPS
 #define AVT3_DEFAULT_MODE AVT3_MODE_NTSC_720_480
-//#define AVT3_DEFAULT_FPS	AVT3_15_FPS
+
 #define AVT3_DEFAULT_EXPOSURETIME 25000000
 #define AVT3_DEFAULT_GAIN 1000
 #define AVT3_MAX_FORMAT_ENTRIES 40
@@ -2547,8 +2547,8 @@ static int avt3_try_fmt_internal(struct v4l2_subdev *sd,
 
 	if (sensor->max_rect.width < fmt->width || 
 		sensor->max_rect.height < fmt->height) {
-		adev_info(&sensor->i2c_client->dev, "requested framesize is too large: fmt->width %d, fmt->height %d, fr %d",
-				  fmt->width, fmt->height, fr);
+		adev_info(&sensor->i2c_client->dev, "requested framesize is too large: fmt->width %d, fmt->height %d, max supported framesize is: %d x %d, fr %d",
+				  fmt->width, fmt->height, sensor->max_rect.width, sensor->max_rect.height, fr);
 		return -EINVAL;
 	}
 // ToDo: check for stepsize
@@ -5277,18 +5277,19 @@ long avt3_core_ops_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 
 		// client->adapter->bus_clk_rate
 	case VIDIOC_R_I2C:
-		dev_info(&client->dev, "%s[%d]: cmd VIDIOC_R_I2C", __func__, __LINE__);
+		//dev_info(&client->dev, "%s[%d]: cmd VIDIOC_R_I2C", __func__, __LINE__);
 		i2c_reg = (struct v4l2_i2c *)arg;
 		i2c_reg_buf = kzalloc(i2c_reg->num_bytes, GFP_KERNEL);
 		if (!i2c_reg_buf)
 			return -ENOMEM;
 
-		dev_info(&client->dev, "%s[%d]: cmd VIDIOC_R_I2C i2c_reg->reg 0x%04x, i2c_reg->size %d, i2c_reg->num_bytes %d",
-				 __func__, __LINE__,
-				 i2c_reg->register_address, i2c_reg->register_size, i2c_reg->num_bytes);
+//		dev_info(&client->dev, "%s[%d]: cmd VIDIOC_R_I2C i2c_reg->reg 0x%04x, i2c_reg->size %d, i2c_reg->num_bytes %d",
+//				 __func__, __LINE__,
+//				 i2c_reg->register_address, i2c_reg->register_size, i2c_reg->num_bytes);
 
-		ret = i2c_read(client, i2c_reg->register_address, i2c_reg->register_size,
-					   i2c_reg->num_bytes, i2c_reg_buf);
+		ret = regmap_bulk_read(sensor->regmap8, i2c_reg->register_address, i2c_reg_buf, i2c_reg->num_bytes);
+//		ret = i2c_read(client, i2c_reg->register_address, i2c_reg->register_size,
+//					   i2c_reg->num_bytes, i2c_reg_buf);
 
 		if (ret < 0)
 			dev_info(&client->dev, "%s[%d]: i2c read failed (%d), bytes read = %d\n",
@@ -5306,7 +5307,7 @@ long avt3_core_ops_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 		break;
 
 	case VIDIOC_W_I2C:
-		dev_info(&client->dev, "%s[%d]: cmd VIDIOC_W_I2C", __func__, __LINE__);
+//		dev_info(&client->dev, "%s[%d]: cmd VIDIOC_W_I2C", __func__, __LINE__);
 		i2c_reg = (struct v4l2_i2c *)arg;
 
 		i2c_reg_buf = kzalloc(i2c_reg->num_bytes, GFP_KERNEL);
@@ -5315,9 +5316,9 @@ long avt3_core_ops_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 
 		ret = copy_from_user(i2c_reg_buf, (char *)i2c_reg->ptr_buffer, i2c_reg->num_bytes);
 
-		dev_info(&client->dev, "%s[%d]: cmd VIDIOC_W_I2C i2c_reg->reg 0x%04x, i2c_reg->register_size %d, i2c_reg->num_bytes %d",
-				 __func__, __LINE__,
-				 i2c_reg->register_address, i2c_reg->register_size, i2c_reg->num_bytes);
+//		dev_info(&client->dev, "%s[%d]: cmd VIDIOC_W_I2C i2c_reg->reg 0x%04x, i2c_reg->register_size %d, i2c_reg->num_bytes %d",
+//				 __func__, __LINE__,
+//				 i2c_reg->register_address, i2c_reg->register_size, i2c_reg->num_bytes);
 
 		/* TODO: check count, size and endianess!! */
 		ret = regmap_bulk_write(sensor->regmap8, i2c_reg->register_address, i2c_reg_buf, i2c_reg->num_bytes);
