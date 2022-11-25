@@ -352,7 +352,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id				= V4L2_CID_EXPOSURE_AUTO,
 		.attr			= AV_ATTR_EXPOSURE_AUTO,
-		.reg_offset		= EXPOSURE_AUTO_8RW,
+		.reg_offset		= BCRM_EXPOSURE_AUTO_8RW,
 		.reg_size		= AV_CAM_REG_SIZE,
 		.data_size		= AV_CAM_DATA_SIZE_8,
 		.type			= V4L2_CTRL_TYPE_MENU,
