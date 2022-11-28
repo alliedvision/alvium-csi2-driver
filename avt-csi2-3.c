@@ -2195,7 +2195,6 @@ static int avt3_init_avail_formats(struct v4l2_subdev *sd)
 						 V4L2_COLORSPACE_RAW, V4L2_PIX_FMT_SGRBG10, bayer_gr, "MEDIA_BUS_FMT_SGRBG10_1X10");
 			sensor->available_fmts_cnt++;
 			pfmt++;
-
 		}
 
 		if (sensor->bayer_inquiry_reg.bayer_pattern.bayer_RG_avail)
@@ -5967,14 +5966,10 @@ static const struct v4l2_subdev_ops avt3_subdev_ops = {
 	.pad = &avt3_pad_ops,
 };
 
-
-
-
 static int avt3_meo_link_setup(struct media_entity *entity,
 							   const struct media_pad *local,
 							   const struct media_pad *remote, u32 flags)
 {
-	
 	pr_info("%s[%d]", __func__, __LINE__);
 
 	return 0;
