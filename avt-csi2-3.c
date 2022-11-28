@@ -2132,31 +2132,41 @@ static int avt3_init_avail_formats(struct v4l2_subdev *sd)
 
 		if (sensor->bayer_inquiry_reg.bayer_pattern.bayer_GR_avail)
 		{
-			adev_info(&client->dev, "add MEDIA_BUS_FMT_SBGGR8_1X8/V4L2_PIX_FMT_SBGGR8/MIPI_CSI2_DT_RAW8 to list of available formats bayer %d - %d:%d", 
-				bayer_gr,
+			adev_info(&client->dev, "add MEDIA_BUS_FMT_SGRBG8_1X8/V4L2_PIX_FMT_SGRBG8/MIPI_CSI2_DT_RAW8 to list of available formats bayer %d - %d:%d", 
+				bayer_bg,
 					  sensor->avail_mipi_reg.avail_mipi.raw8_avail, sensor->ignore_avail_mipi_reg.avail_mipi.raw8_avail);
-			set_mode_mapping(pfmt, MEDIA_BUS_FMT_SBGGR8_1X8, MIPI_CSI2_DT_RAW8,
-						 V4L2_COLORSPACE_RAW, V4L2_PIX_FMT_SBGGR8, bayer_gr, "MEDIA_BUS_FMT_SBGGR8_1X8");
+			set_mode_mapping(pfmt, MEDIA_BUS_FMT_SGRBG8_1X8, MIPI_CSI2_DT_RAW8,
+						 V4L2_COLORSPACE_RAW, V4L2_PIX_FMT_SGRBG8, bayer_gr, "MEDIA_BUS_FMT_SGRBG8_1X8");
 			sensor->available_fmts_cnt++;
 			pfmt++;
 		}
 		if (sensor->bayer_inquiry_reg.bayer_pattern.bayer_RG_avail)
+		{
+			adev_info(&client->dev, "add MEDIA_BUS_FMT_SRGGB8_1X8/V4L2_PIX_FMT_SRGGB8/MIPI_CSI2_DT_RAW8 to list of available formats bayer %d - %d:%d", 
+				bayer_gr,
+					  sensor->avail_mipi_reg.avail_mipi.raw8_avail, sensor->ignore_avail_mipi_reg.avail_mipi.raw8_avail);
+			set_mode_mapping(pfmt, MEDIA_BUS_FMT_SRGGB8_1X8, MIPI_CSI2_DT_RAW8,
+						 V4L2_COLORSPACE_RAW, V4L2_PIX_FMT_SRGGB8, bayer_rg, "MEDIA_BUS_FMT_SRGGB8_1X8");
+			sensor->available_fmts_cnt++;
+			pfmt++;
+		}
+		if (sensor->bayer_inquiry_reg.bayer_pattern.bayer_BG_avail)
+		{
+			adev_info(&client->dev, "add MEDIA_BUS_FMT_SBGGR8_1X8/V4L2_PIX_FMT_SBGGR8/MIPI_CSI2_DT_RAW8 to list of available formats bayer %d - %d:%d", 
+				bayer_gr,
+					  sensor->avail_mipi_reg.avail_mipi.raw8_avail, sensor->ignore_avail_mipi_reg.avail_mipi.raw8_avail);
+			set_mode_mapping(pfmt, MEDIA_BUS_FMT_SBGGR8_1X8, MIPI_CSI2_DT_RAW8,
+						 V4L2_COLORSPACE_RAW, V4L2_PIX_FMT_SBGGR8, bayer_bg, "MEDIA_BUS_FMT_SBGGR8_1X8");
+			sensor->available_fmts_cnt++;
+			pfmt++;
+		}
+		if (sensor->bayer_inquiry_reg.bayer_pattern.bayer_GB_avail)
 		{
 			adev_info(&client->dev, "add MEDIA_BUS_FMT_SGBRG8_1X8/V4L2_PIX_FMT_SBGGR8/MIPI_CSI2_DT_RAW8 to list of available formats bayer %d - %d:%d", 
 				bayer_rg,
 					  sensor->avail_mipi_reg.avail_mipi.raw8_avail, sensor->ignore_avail_mipi_reg.avail_mipi.raw8_avail);
 			set_mode_mapping(pfmt, MEDIA_BUS_FMT_SGBRG8_1X8, MIPI_CSI2_DT_RAW8,
 						 V4L2_COLORSPACE_RAW, V4L2_PIX_FMT_SGBRG8, bayer_rg, "MEDIA_BUS_FMT_SGBRG8_1X8");
-			sensor->available_fmts_cnt++;
-			pfmt++;
-		}
-		if (sensor->bayer_inquiry_reg.bayer_pattern.bayer_BG_avail)
-		{
-			adev_info(&client->dev, "add MEDIA_BUS_FMT_SGRBG8_1X8/V4L2_PIX_FMT_SGRBG8/MIPI_CSI2_DT_RAW8 to list of available formats bayer %d - %d:%d", 
-				bayer_bg,
-					  sensor->avail_mipi_reg.avail_mipi.raw8_avail, sensor->ignore_avail_mipi_reg.avail_mipi.raw8_avail);
-			set_mode_mapping(pfmt, MEDIA_BUS_FMT_SGRBG8_1X8, MIPI_CSI2_DT_RAW8,
-						 V4L2_COLORSPACE_RAW, V4L2_PIX_FMT_SGRBG8, bayer_bg, "MEDIA_BUS_FMT_SGRBG8_1X8");
 			sensor->available_fmts_cnt++;
 			pfmt++;
 		}
@@ -2178,44 +2188,46 @@ static int avt3_init_avail_formats(struct v4l2_subdev *sd)
 
 		if (sensor->bayer_inquiry_reg.bayer_pattern.bayer_GR_avail)
 		{
-			adev_info(&client->dev, "add MEDIA_BUS_FMT_SBGGR10_1X10/MEDIA_BUS_FMT_SBGGR10_1X10/MIPI_CSI2_DT_RAW10 to list of available formats bayer %d - %d:%d", 
-				bayer_gr,
+			adev_info(&client->dev, "add MEDIA_BUS_FMT_SGRBG10_1X10/V4L2_PIX_FMT_SRGGB10/MIPI_CSI2_DT_RAW10 to list of available formats bayer %d - %d:%d", 
+				bayer_bg,
 					  sensor->avail_mipi_reg.avail_mipi.raw10_avail, sensor->ignore_avail_mipi_reg.avail_mipi.raw10_avail);
-			set_mode_mapping(pfmt, MEDIA_BUS_FMT_SBGGR10_1X10, MIPI_CSI2_DT_RAW10,
-						 V4L2_COLORSPACE_RAW, V4L2_PIX_FMT_SGRBG8, bayer_gr, "MEDIA_BUS_FMT_SBGGR10_1X10");
+			set_mode_mapping(pfmt, MEDIA_BUS_FMT_SGRBG10_1X10, MIPI_CSI2_DT_RAW10,
+						 V4L2_COLORSPACE_RAW, V4L2_PIX_FMT_SGRBG10, bayer_gr, "MEDIA_BUS_FMT_SGRBG10_1X10");
 			sensor->available_fmts_cnt++;
 			pfmt++;
+
 		}
 
 		if (sensor->bayer_inquiry_reg.bayer_pattern.bayer_RG_avail)
 		{
-			adev_info(&client->dev, "add MEDIA_BUS_FMT_SGBRG10_1X10/V4L2_PIX_FMT_SGBRG10/MIPI_CSI2_DT_RAW10 to list of available formats bayer %d - %d:%d", 
-				bayer_rg,
+			adev_info(&client->dev, "add MEDIA_BUS_FMT_SRGGB10_1X10/V4L2_PIX_FMT_SRGGB10/MIPI_CSI2_DT_RAW10 to list of available formats bayer %d - %d:%d", 
+				bayer_gb,
 					  sensor->avail_mipi_reg.avail_mipi.raw10_avail, sensor->ignore_avail_mipi_reg.avail_mipi.raw10_avail);
-			set_mode_mapping(pfmt, MEDIA_BUS_FMT_SGBRG10_1X10, MIPI_CSI2_DT_RAW10,
-						 V4L2_COLORSPACE_RAW, V4L2_PIX_FMT_SGBRG10, bayer_rg, "MEDIA_BUS_FMT_SGBRG10_1X10");
+			set_mode_mapping(pfmt, MEDIA_BUS_FMT_SRGGB10_1X10, MIPI_CSI2_DT_RAW10,
+						 V4L2_COLORSPACE_RAW, V4L2_PIX_FMT_SRGGB10, bayer_rg, "MEDIA_BUS_FMT_SRGGB10_1X10");
 			sensor->available_fmts_cnt++;
 			pfmt++;
 		}
 
 		if (sensor->bayer_inquiry_reg.bayer_pattern.bayer_BG_avail)
 		{
-			adev_info(&client->dev, "add MEDIA_BUS_FMT_SGRBG10_1X10/V4L2_PIX_FMT_SRGGB10/MIPI_CSI2_DT_RAW10 to list of available formats bayer %d - %d:%d", 
-				bayer_bg,
+			adev_info(&client->dev, "add MEDIA_BUS_FMT_SBGGR10_1X10/V4L2_PIX_FMT_SGRBG10/MIPI_CSI2_DT_RAW10 to list of available formats bayer %d - %d:%d", 
+				bayer_gr,
 					  sensor->avail_mipi_reg.avail_mipi.raw10_avail, sensor->ignore_avail_mipi_reg.avail_mipi.raw10_avail);
-			set_mode_mapping(pfmt, MEDIA_BUS_FMT_SGRBG10_1X10, MIPI_CSI2_DT_RAW10,
-						 V4L2_COLORSPACE_RAW, V4L2_PIX_FMT_SGRBG10, bayer_bg, "MEDIA_BUS_FMT_SGRBG10_1X10");
+			set_mode_mapping(pfmt, MEDIA_BUS_FMT_SBGGR10_1X10, MIPI_CSI2_DT_RAW10,
+						 V4L2_COLORSPACE_RAW, V4L2_PIX_FMT_SGRBG10, bayer_bg, "MEDIA_BUS_FMT_SBGGR10_1X10");
 			sensor->available_fmts_cnt++;
 			pfmt++;
 		}
 
 		if (sensor->bayer_inquiry_reg.bayer_pattern.bayer_GB_avail)
 		{
-			adev_info(&client->dev, "add MEDIA_BUS_FMT_SRGGB10_1X10/V4L2_PIX_FMT_SRGGB10/MIPI_CSI2_DT_RAW10 to list of available formats bayer %d - %d:%d", 
-				bayer_gb,
+
+			adev_info(&client->dev, "add MEDIA_BUS_FMT_SGBRG10_1X10/V4L2_PIX_FMT_SGBRG10/MIPI_CSI2_DT_RAW10 to list of available formats bayer %d - %d:%d", 
+				bayer_rg,
 					  sensor->avail_mipi_reg.avail_mipi.raw10_avail, sensor->ignore_avail_mipi_reg.avail_mipi.raw10_avail);
-			set_mode_mapping(pfmt, MEDIA_BUS_FMT_SRGGB10_1X10, MIPI_CSI2_DT_RAW10,
-						 V4L2_COLORSPACE_RAW, V4L2_PIX_FMT_SRGGB10, bayer_gb, "MEDIA_BUS_FMT_SRGGB10_1X10");
+			set_mode_mapping(pfmt, MEDIA_BUS_FMT_SGBRG10_1X10, MIPI_CSI2_DT_RAW10,
+						 V4L2_COLORSPACE_RAW, V4L2_PIX_FMT_SGBRG10, bayer_gb, "MEDIA_BUS_FMT_SGBRG10_1X10");
 			sensor->available_fmts_cnt++;
 			pfmt++;
 		}
@@ -2236,44 +2248,44 @@ static int avt3_init_avail_formats(struct v4l2_subdev *sd)
 
 		if (sensor->bayer_inquiry_reg.bayer_pattern.bayer_GR_avail)
 		{
-			adev_info(&client->dev, "add MEDIA_BUS_FMT_SBGGR12_1X12/V4L2_PIX_FMT_SRGGB10/MIPI_CSI2_DT_RAW12 to list of available formats bayer %d - %d:%d", 
-				bayer_gr,
+			adev_info(&client->dev, "add MEDIA_BUS_FMT_SGRBG12_1X12/V4L2_PIX_FMT_SGRBG12/MIPI_CSI2_DT_RAW12 to list of available formats bayer %d - %d:%d", 
+				bayer_bg,
 					  sensor->avail_mipi_reg.avail_mipi.raw12_avail, sensor->ignore_avail_mipi_reg.avail_mipi.raw12_avail);
-			set_mode_mapping(pfmt, MEDIA_BUS_FMT_SBGGR12_1X12, MIPI_CSI2_DT_RAW12,
-						 V4L2_COLORSPACE_RAW, V4L2_PIX_FMT_SBGGR12, bayer_gr, "MEDIA_BUS_FMT_SBGGR12_1X12");
+			set_mode_mapping(pfmt, MEDIA_BUS_FMT_SGRBG12_1X12, MIPI_CSI2_DT_RAW12,
+						 V4L2_COLORSPACE_RAW, V4L2_PIX_FMT_SRGGB12, bayer_gr, "MEDIA_BUS_FMT_SGRBG12_1X12");
 			sensor->available_fmts_cnt++;
 			pfmt++;
 		}
 
 		if (sensor->bayer_inquiry_reg.bayer_pattern.bayer_RG_avail)
 		{
-			adev_info(&client->dev, "add MEDIA_BUS_FMT_SGBRG12_1X12/V4L2_PIX_FMT_SGRBG12/MIPI_CSI2_DT_RAW12 to list of available formats bayer %d - %d:%d", 
-				bayer_rg,
+			adev_info(&client->dev, "add MEDIA_BUS_FMT_SRGGB12_1X12/V4L2_PIX_FMT_SGRBG12/MIPI_CSI2_DT_RAW12 to list of available formats bayer %d - %d:%d", 
+				bayer_gb,
 					  sensor->avail_mipi_reg.avail_mipi.raw12_avail, sensor->ignore_avail_mipi_reg.avail_mipi.raw12_avail);
-			set_mode_mapping(pfmt, MEDIA_BUS_FMT_SGBRG12_1X12, MIPI_CSI2_DT_RAW12,
-						 V4L2_COLORSPACE_RAW, V4L2_PIX_FMT_SBGGR12, bayer_rg, "MEDIA_BUS_FMT_SGBRG12_1X12");
+			set_mode_mapping(pfmt, MEDIA_BUS_FMT_SRGGB12_1X12, MIPI_CSI2_DT_RAW12,
+						 V4L2_COLORSPACE_RAW, V4L2_PIX_FMT_SRGGB12, bayer_rg, "MEDIA_BUS_FMT_SRGGB12_1X12");
 			sensor->available_fmts_cnt++;
 			pfmt++;
 		}
 
 		if (sensor->bayer_inquiry_reg.bayer_pattern.bayer_BG_avail)
 		{
-			adev_info(&client->dev, "add MEDIA_BUS_FMT_SGRBG12_1X12/V4L2_PIX_FMT_SGRBG12/MIPI_CSI2_DT_RAW12 to list of available formats bayer %d - %d:%d", 
-				bayer_bg,
+			adev_info(&client->dev, "add MEDIA_BUS_FMT_SBGGR12_1X12/V4L2_PIX_FMT_SRGGB10/MIPI_CSI2_DT_RAW12 to list of available formats bayer %d - %d:%d", 
+				bayer_gr,
 					  sensor->avail_mipi_reg.avail_mipi.raw12_avail, sensor->ignore_avail_mipi_reg.avail_mipi.raw12_avail);
-			set_mode_mapping(pfmt, MEDIA_BUS_FMT_SGRBG12_1X12, MIPI_CSI2_DT_RAW12,
-						 V4L2_COLORSPACE_RAW, V4L2_PIX_FMT_SRGGB12, bayer_bg, "MEDIA_BUS_FMT_SGRBG12_1X12");
+			set_mode_mapping(pfmt, MEDIA_BUS_FMT_SBGGR12_1X12, MIPI_CSI2_DT_RAW12,
+						 V4L2_COLORSPACE_RAW, V4L2_PIX_FMT_SBGGR12, bayer_bg, "MEDIA_BUS_FMT_SBGGR12_1X12");
 			sensor->available_fmts_cnt++;
 			pfmt++;
 		}
 
 		if (sensor->bayer_inquiry_reg.bayer_pattern.bayer_GB_avail)
 		{
-			adev_info(&client->dev, "add MEDIA_BUS_FMT_SRGGB12_1X12/V4L2_PIX_FMT_SGRBG12/MIPI_CSI2_DT_RAW12 to list of available formats bayer %d - %d:%d", 
-				bayer_gb,
+			adev_info(&client->dev, "add MEDIA_BUS_FMT_SGBRG12_1X12/V4L2_PIX_FMT_SGRBG12/MIPI_CSI2_DT_RAW12 to list of available formats bayer %d - %d:%d", 
+				bayer_rg,
 					  sensor->avail_mipi_reg.avail_mipi.raw12_avail, sensor->ignore_avail_mipi_reg.avail_mipi.raw12_avail);
-			set_mode_mapping(pfmt, MEDIA_BUS_FMT_SRGGB12_1X12, MIPI_CSI2_DT_RAW12,
-						 V4L2_COLORSPACE_RAW, V4L2_PIX_FMT_SRGGB12, bayer_gb, "MEDIA_BUS_FMT_SRGGB12_1X12");
+			set_mode_mapping(pfmt, MEDIA_BUS_FMT_SGBRG12_1X12, MIPI_CSI2_DT_RAW12,
+						 V4L2_COLORSPACE_RAW, V4L2_PIX_FMT_SBGGR12, bayer_gb, "MEDIA_BUS_FMT_SGBRG12_1X12");
 			sensor->available_fmts_cnt++;
 			pfmt++;
 		}
@@ -3049,7 +3061,7 @@ static int avt3_ctrl_send(struct i2c_client *client,
 		}
 
 		/* set pixelformat followed by set matching bayer format */
-		if (vc->id == V4L2_AV_CSI2_PIXELFORMAT_W && bayer_temp != 0)
+		if (vc->id == V4L2_AV_CSI2_PIXELFORMAT_W && bayer_temp != bayer_ignore)
 		{
 			ret = set_bayer_format(client, bayer_temp);
 			if (ret < 0)
@@ -5955,10 +5967,14 @@ static const struct v4l2_subdev_ops avt3_subdev_ops = {
 	.pad = &avt3_pad_ops,
 };
 
+
+
+
 static int avt3_meo_link_setup(struct media_entity *entity,
 							   const struct media_pad *local,
 							   const struct media_pad *remote, u32 flags)
 {
+	
 	pr_info("%s[%d]", __func__, __LINE__);
 
 	return 0;

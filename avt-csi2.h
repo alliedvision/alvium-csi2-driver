@@ -520,12 +520,12 @@ struct avt_ctrl {
 #define V4L2_AV_CSI2_BAYER_PATTERN_W	(V4L2_AV_CSI2_BASE+0x0027)
 
 enum bayer_format {
-	bayer_ignore = 0,
-	monochrome = 1,
-	bayer_gr = 2,
-	bayer_rg = 4,
-	bayer_gb = 8,
-	bayer_bg = 16,
+	bayer_ignore = -1,
+	monochrome = 0,
+	bayer_gr = 1,
+	bayer_rg = 2,
+	bayer_gb = 3,
+	bayer_bg = 4,
 };
 
 struct avt_csi_mipi_mode_mapping {
