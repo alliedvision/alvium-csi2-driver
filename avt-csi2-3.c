@@ -221,7 +221,7 @@ static const struct avt3_mode_info avt3_mode_data[AVT3_NUM_MODES] = {
 /* that table is for testing only */
 
 static const int avt3_framerates[] = {
-	[AVT3_05_FPS] = 5,
+    [AVT3_05_FPS] = 5,
 	[AVT3_08_FPS] = 8,
 	[AVT3_10_FPS] = 10,
 	[AVT3_15_FPS] = 15,
@@ -2556,20 +2556,10 @@ static int avt3_try_fmt_internal(struct v4l2_subdev *sd,
 			  sensor->available_fmts_cnt,
 			  sensor->mbus_framefmt.code);
 
-	if (sensor->max_rect.width < fmt->width || 
-		sensor->max_rect.height < fmt->height) {
-		adev_info(&sensor->i2c_client->dev, "requested framesize is too large: fmt->width %d, fmt->height %d, max supported framesize is: %d x %d, fr %d",
-				  fmt->width, fmt->height, sensor->max_rect.width, sensor->max_rect.height, fr);
-		return -EINVAL;
-	}
-// ToDo: check for stepsize
-//	if (sensor->max_rect.width < fmt->width || 
-//		sensor->max_rect.height < fmt->height) {
-//		adev_info(&sensor->i2c_client->dev, "requested framesize is too large: fmt->width %d, fmt->height %d, fr %d",
-//				  fmt->width, fmt->height, fr);
-//		return -EINVAL;
-//	}
-//
+    v4l_bound_align_image(&fmt->width,sensor->min_rect.width,sensor->max_rect.width,1,
+                          &fmt->height,sensor->min_rect.height,sensor->max_rect.height,1,1);
+
+
 	mode = avt3_find_mode(sensor, fr, fmt->width, fmt->height, true);
 	if (!mode)
 	{
@@ -4419,6 +4409,7 @@ static int avt3_pad_ops_enum_frame_interval(
 	struct avt3_dev *sensor = to_avt3_dev(sd);
 	//	struct i2c_client *client = sensor->i2c_client;
 	int i; //, j, count;
+    int f,idx;
 		   //	int ret = 0;
 
 	if (fie->pad != 0)
@@ -4461,6 +4452,13 @@ static int avt3_pad_ops_enum_frame_interval(
 		return -EINVAL;
 	}
 
+    if (fie->width != clamp(fie->width,sensor->min_rect.width,sensor->max_rect.width)
+        || fie->height != clamp(fie->height,sensor->min_rect.height,sensor->max_rect.height))
+    {
+        avt_err(&sensor->sd, "Frameintervals for unsupported width (%u) or height (%u) requested", fie->width,fie->height);
+        return -EINVAL;
+    }
+
 #if 0
 	if (fie->width == 0 || fie->height == 0 || fie->code == 0)
 	{
@@ -4469,20 +4467,20 @@ static int avt3_pad_ops_enum_frame_interval(
 	}
 #endif
 	// TODO: set valid values for current mode
-	if (fie->index < AVT3_NUM_FRAMERATES)
-	{
-		// fie->interval.numerator = 1;
-		// fie->code = MEDIA_BUS_FMT_UYVY8_2X8;
-		// fie->width = 720;
-		// fie->height = 480;
-		fie->interval.numerator = 1000;
-		fie->interval.denominator = 1000 * avt3_framerates[fie->index];
-
-		//		v4l2_dbg(2, debug, sd, "%s[%d]# fie->index %d, width %d, height %d fie->num %d fie->denom %d, fie->code 0x%08X",
-		//				__func__, __LINE__, fie->index, fie->width, fie->height,
-		//				fie->interval.numerator, fie->interval.denominator, fie->code);
-		return 0;
-	}
+    idx = 0;
+    for (f = 0;f < AVT3_NUM_FRAMERATES;f++)
+    {
+        if (avt3_framerates[idx] != 0)
+        {
+            if (idx == fie->index)
+            {
+                fie->interval.numerator = 1000;
+                fie->interval.denominator = 1000 * avt3_framerates[fie->index];
+                return 0;
+            }
+            idx++;
+        }
+    }
 
 	return -EINVAL;
 }
@@ -4507,6 +4505,9 @@ static int avt3_video_ops_s_frame_interval(struct v4l2_subdev *sd,
 	struct avt3_dev *sensor = to_avt3_dev(sd);
 	int fps_idx;
 	int ret = 0;
+    const u64 factor = 1000000L;
+    u64 framerate_req,framerate_min,framerate_max;
+
 
 	avt_dbg(sd, "fie->num %d fie->denom %d",
 			fi->interval.numerator, fi->interval.denominator);
@@ -4518,35 +4519,47 @@ static int avt3_video_ops_s_frame_interval(struct v4l2_subdev *sd,
 		goto out;
 	}
 
-	fps_idx = 0;
 
-	do
-	{
-		if ((fi->interval.numerator == 1) && (fi->interval.denominator == avt3_framerates[fps_idx]))
-		{
-			sensor->frame_interval = fi->interval;
-			sensor->current_fr = fps_idx;
-			ret = 0;
-			goto out;
-		}
-		if ((fi->interval.numerator == 1000) && (fi->interval.denominator == avt3_framerates[fps_idx] * 1000))
-		{
-			sensor->frame_interval.numerator = fi->interval.numerator / 1000;
-			sensor->frame_interval.denominator = fi->interval.denominator / 1000;
-			sensor->current_fr = fps_idx;
-			ret = 0;
-			goto out;
-		}
+    ret = regmap_bulk_read(sensor->regmap64,
+                           sensor->cci_reg.reg.bcrm_addr + BCRM_ACQUISITION_FRAME_RATE_MIN_64R,
+                           &framerate_min, 1);
 
-		fps_idx++;
-	} while (fps_idx < AVT3_NUM_FRAMERATES);
+    if (ret < 0)
+    {
+        avt_err(sd, "regmap_read failed (%d)\n", ret);
+        // goto err_out;
+    }
 
-	avt_dbg(sd, "failed to set fie->num %d fie->denom %d",
-			fi->interval.numerator, fi->interval.denominator);
-	//	ret = -EINVAL;
+    ret = regmap_bulk_read(sensor->regmap64,
+                           sensor->cci_reg.reg.bcrm_addr + BCRM_ACQUISITION_FRAME_RATE_MAX_64R,
+                           &framerate_max, 1);
 
-	sensor->current_fr = fps_idx;
-	sensor->frame_interval = fi->interval;
+    if (ret < 0)
+    {
+        avt_err(sd, "regmap_read failed (%d)\n", ret);
+        // goto err_out;
+    }
+
+    if (fi->interval.numerator == 0)
+        fi->interval.numerator = 1;
+
+    framerate_req = (fi->interval.denominator * factor) / fi->interval.numerator;
+    framerate_req = clamp(framerate_req,framerate_min,framerate_max);
+
+    fi->interval.denominator = (framerate_req * fi->interval.numerator) / factor;
+
+    // If the denominator and minimal framerate is not zero, try to increase the numerator by 1000
+    while (fi->interval.denominator == 0 && framerate_min > 0 && fi->interval.numerator < factor)
+    {
+        fi->interval.numerator *= 1000;
+        fi->interval.denominator = (framerate_req * fi->interval.numerator) / factor;
+    }
+
+    sensor->current_fr = AVT3_NUM_FRAMERATES;
+    sensor->frame_interval = fi->interval;
+
+    avt_dbg(sd, "set fie->num %d fie->denom %d",
+            fi->interval.numerator, fi->interval.denominator);
 
 out:
 	MUTEX_UNLOCK(&sensor->lock);
