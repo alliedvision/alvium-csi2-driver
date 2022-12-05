@@ -122,6 +122,8 @@ enum avt3_mode_id
 //#define AVT_RESET_DELAY1			(2000000)
 //#define AVT_RESET_DELAY2			(2500000)
 
+#define AVT_CTRL_STREAM_DISABLED (1 << 1)
+#define AVT_CTRL_STREAM_ENABLED (1 << 2)
 
 
 struct avt_ctrl_mapping {
@@ -138,6 +140,11 @@ struct avt_ctrl_mapping {
 		s8	*name;
 		u8	feature_avail;
 	} attr;
+    bool custom;
+    s64 min_value;
+    s64 max_value;
+    const char * const * qmenu;
+    u32 avt_flags;
 };
 
 #define AV_ATTR_REVERSE_X			{"Reverse X",		0}
@@ -164,10 +171,37 @@ struct avt_ctrl_mapping {
 #define AV_ATTR_LINK_FREQ			{"MIPI CSI-2 Link Frequency", 15}
 
 
-#define AV_ATTR_TRIGGER_MODE                    {"Trigger Mode",                    0}
-#define AV_ATTR_TRIGGER_ACTIVATION              {"Trigger Activation",              0}
-#define AV_ATTR_TRIGGER_SOURCE                  {"Trigger Source",                  0}
-#define AV_ATTR_TRIGGER_SOFTWARE                {"Trigger Software",                0}
+#define AV_ATTR_TRIGGER_MODE                    {"Trigger Mode",                    17}
+#define AV_ATTR_TRIGGER_ACTIVATION              {"Trigger Activation",              17}
+#define AV_ATTR_TRIGGER_SOURCE                  {"Trigger Source",                  17}
+#define AV_ATTR_TRIGGER_SOFTWARE                {"Trigger Software",                17}
+
+/* Trigger mode to ON/OFF */
+#define V4L2_CID_TRIGGER_MODE                   (V4L2_CID_CAMERA_CLASS_BASE+47)
+
+/* trigger activation: edge_rising, edge_falling, edge_any, level_high, level_low */
+#define V4L2_CID_TRIGGER_ACTIVATION             (V4L2_CID_CAMERA_CLASS_BASE+48)
+
+/* trigger source: software, gpio0, gpio1 */
+#define V4L2_CID_TRIGGER_SOURCE                 (V4L2_CID_CAMERA_CLASS_BASE+49)
+
+/* Execute a software trigger */
+#define V4L2_CID_TRIGGER_SOFTWARE               (V4L2_CID_CAMERA_CLASS_BASE+50)
+
+static const char * const v4l2_triggeractivation_menu[] = {
+        "Rising Edge",
+        "Falling Edge",
+        "Any Edge",
+        "Level High",
+        "Level Low"
+};
+static const char * const v4l2_triggersource_menu[] = {
+        "Line 0",
+        "Line 1",
+        "Line 2",
+        "Line 3",
+        "Software"
+};
 
 const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
@@ -358,6 +392,56 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.type			= V4L2_CTRL_TYPE_MENU,
 		.flags			= 0,
 	},
+    {
+            .id				= V4L2_CID_TRIGGER_MODE,
+            .attr			= AV_ATTR_TRIGGER_MODE,
+            .reg_offset		= BCRM_FRAME_START_TRIGGER_MODE_8RW,
+            .reg_size		= AV_CAM_REG_SIZE,
+            .data_size		= AV_CAM_DATA_SIZE_8,
+            .type			= V4L2_CTRL_TYPE_BOOLEAN,
+            .flags			= 0,
+            .custom         = true,
+            .avt_flags      = AVT_CTRL_STREAM_DISABLED,
+    },
+    {
+            .id				= V4L2_CID_TRIGGER_ACTIVATION,
+            .attr			= AV_ATTR_TRIGGER_ACTIVATION,
+            .reg_offset		= BCRM_FRAME_START_TRIGGER_ACTIVATION_8RW,
+            .reg_size		= AV_CAM_REG_SIZE,
+            .data_size		= AV_CAM_DATA_SIZE_8,
+            .type			= V4L2_CTRL_TYPE_MENU,
+            .flags			= 0,
+            .custom         = true,
+            .min_value      = 0,
+            .max_value      = 4,
+            .qmenu          = v4l2_triggeractivation_menu,
+            .avt_flags      = AVT_CTRL_STREAM_DISABLED,
+    },
+    {
+            .id				= V4L2_CID_TRIGGER_SOURCE,
+            .attr			= AV_ATTR_TRIGGER_SOURCE,
+            .reg_offset		= BCRM_FRAME_START_TRIGGER_SOURCE_8RW,
+            .reg_size		= AV_CAM_REG_SIZE,
+            .data_size		= AV_CAM_DATA_SIZE_8,
+            .type			= V4L2_CTRL_TYPE_MENU,
+            .flags			= 0,
+            .custom         = true,
+            .min_value      = 0,
+            .max_value      = 4,
+            .qmenu          = v4l2_triggersource_menu,
+            .avt_flags      = AVT_CTRL_STREAM_DISABLED,
+    },
+    {
+            .id				= V4L2_CID_TRIGGER_SOFTWARE,
+            .attr			= AV_ATTR_TRIGGER_SOFTWARE,
+            .reg_offset		= BCRM_FRAME_START_TRIGGER_SOFTWARE_8W,
+            .reg_size		= AV_CAM_REG_SIZE,
+            .data_size		= AV_CAM_DATA_SIZE_8,
+            .type			= V4L2_CTRL_TYPE_BUTTON,
+            .flags			= V4L2_CTRL_FLAG_INACTIVE,
+            .custom         = true,
+            .avt_flags      = AVT_CTRL_STREAM_ENABLED,
+    },
 };
 
 
