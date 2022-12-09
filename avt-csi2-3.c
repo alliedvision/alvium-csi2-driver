@@ -2556,7 +2556,7 @@ static int avt3_try_fmt_internal(struct v4l2_subdev *sd,
 			  sensor->available_fmts_cnt,
 			  sensor->mbus_framefmt.code);
 
-    v4l_bound_align_image(&fmt->width,sensor->min_rect.width,sensor->max_rect.width,1,
+	v4l_bound_align_image(&fmt->width,sensor->min_rect.width,sensor->max_rect.width,1,
                           &fmt->height,sensor->min_rect.height,sensor->max_rect.height,1,1);
 
 
@@ -3737,53 +3737,53 @@ static int avt3_g_volatile_ctrl(struct v4l2_ctrl *ctrl)
 
 static struct v4l2_ctrl* avt3_ctrl_find(struct avt3_dev *camera,u32 id)
 {
-    int i;
+	int i;
 
-    for (i = 0; i < AVT_MAX_CTRLS; i++)
-    {
-        const struct v4l2_ctrl * ctrl = camera->avt3_ctrls[i];
+	for (i = 0; i < AVT_MAX_CTRLS; i++)
+	{
+		const struct v4l2_ctrl * ctrl = camera->avt3_ctrls[i];
 
-        if (ctrl && ctrl->id == id)
-        {
-            return ctrl;
-        }
-    }
+		if (ctrl && ctrl->id == id)
+		{
+			return ctrl;
+		}
+	}
 
-    return NULL;
+	return NULL;
 }
 
 static struct regmap* avt3_get_regmap_by_size(struct avt3_dev *camera,u8 data_size)
 {
-    switch (data_size)
-    {
-        case AV_CAM_DATA_SIZE_8:
-           return camera->regmap8;
-        case AV_CAM_DATA_SIZE_16:
-            return camera->regmap16;
-        case AV_CAM_DATA_SIZE_32:
-            return camera->regmap32;
-        case AV_CAM_DATA_SIZE_64:
-            return camera->regmap64;
-        default:
-            return NULL;
-    }
+	switch (data_size)
+	{
+		case AV_CAM_DATA_SIZE_8:
+   		return camera->regmap8;
+		case AV_CAM_DATA_SIZE_16:
+			return camera->regmap16;
+		case AV_CAM_DATA_SIZE_32:
+			return camera->regmap32;
+		case AV_CAM_DATA_SIZE_64:
+			return camera->regmap64;
+		default:
+			return NULL;
+	}
 }
 
 static void avt3_update_sw_ctrl_state(struct avt3_dev *camera)
 {
-    struct v4l2_ctrl * sw_trigger_ctrl = avt3_ctrl_find(camera,V4L2_CID_TRIGGER_SOFTWARE);
+	struct v4l2_ctrl * sw_trigger_ctrl = avt3_ctrl_find(camera,V4L2_CID_TRIGGER_SOFTWARE);
 
-    if (sw_trigger_ctrl)
-    {
-        bool sw_trigger_enabled = (camera->avt_trigger_status.trigger_source == 4)
+	if (sw_trigger_ctrl)
+	{
+		bool sw_trigger_enabled = (camera->avt_trigger_status.trigger_source == 4)
                 && camera->avt_trigger_status.trigger_mode_enabled;
 
-        v4l2_ctrl_activate(sw_trigger_ctrl,sw_trigger_enabled);
-    }
-    else
-    {
-        avt_warn(&camera->sd,"Software trigger control not found!");
-    }
+		v4l2_ctrl_activate(sw_trigger_ctrl,sw_trigger_enabled);
+	}
+	else
+	{
+		avt_warn(&camera->sd,"Software trigger control not found!");
+	}
 }
 
 static int avt3_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
@@ -3854,7 +3854,7 @@ static int avt3_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 		break;
 
 	case V4L2_CID_GAMMA:
-		if (!sensor->feature_inquiry_reg.feature_inq.contrast_avail)
+		if (!sensor->feature_inquiry_reg.feature_inq.gamma_avail)
 		{
 			avt_info(&sensor->sd, "V4L2_CID_GAMMA not supported by current camera model and firmware!");
 			return -ENOTSUPP;
@@ -3976,69 +3976,69 @@ static int avt3_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 		break;
 
 	default:
-    {
-        if (ctrl->priv != NULL)
-        {
-            const struct avt_ctrl_mapping * const ctrl_mapping = ctrl->priv;
-            const struct regmap * ctrl_regmap = avt3_get_regmap_by_size(sensor,ctrl_mapping->data_size);
+	{
+		if (ctrl->priv != NULL)
+		{
+			const struct avt_ctrl_mapping * const ctrl_mapping = ctrl->priv;
+			const struct regmap * ctrl_regmap = avt3_get_regmap_by_size(sensor,ctrl_mapping->data_size);
 
-            dev_info(&client->dev, "%s[%d]: Write custom ctrl %s (%x)\n", __func__, __LINE__, ctrl_mapping->attr.name, ctrl->id);
+			dev_info(&client->dev, "%s[%d]: Write custom ctrl %s (%x)\n", __func__, __LINE__, ctrl_mapping->attr.name, ctrl->id);
 
 
 
-            if (ctrl_mapping->data_size == AV_CAM_DATA_SIZE_64)
-            {
-                if (ctrl_mapping->type == V4L2_CTRL_TYPE_BUTTON)
-                {
-                    bcrm_regmap_write64(sensor, ctrl_regmap,
-                                      sensor->cci_reg.reg.bcrm_addr + ctrl_mapping->reg_offset, 1);
-                }
-                else
-                {
+			if (ctrl_mapping->data_size == AV_CAM_DATA_SIZE_64)
+			{
+				if (ctrl_mapping->type == V4L2_CTRL_TYPE_BUTTON)
+				{
+					bcrm_regmap_write64(sensor, ctrl_regmap,
+  									sensor->cci_reg.reg.bcrm_addr + ctrl_mapping->reg_offset, 1);
+				}
+				else
+				{
 
-                    bcrm_regmap_write64(sensor, ctrl_regmap,
-                                      sensor->cci_reg.reg.bcrm_addr + ctrl_mapping->reg_offset, *ctrl->p_new.p_s64);
-                }
-            }
-            else
-            {
-                if (ctrl_mapping->type == V4L2_CTRL_TYPE_BUTTON)
-                {
-                    bcrm_regmap_write(sensor, ctrl_regmap,
-                                      sensor->cci_reg.reg.bcrm_addr + ctrl_mapping->reg_offset, 1);
-                }
-                else
-                {
+					bcrm_regmap_write64(sensor, ctrl_regmap,
+  									sensor->cci_reg.reg.bcrm_addr + ctrl_mapping->reg_offset, *ctrl->p_new.p_s64);
+				}
+			}
+			else
+			{
+				if (ctrl_mapping->type == V4L2_CTRL_TYPE_BUTTON)
+				{
+					bcrm_regmap_write(sensor, ctrl_regmap,
+  									sensor->cci_reg.reg.bcrm_addr + ctrl_mapping->reg_offset, 1);
+				}
+				else
+				{
 
-                    bcrm_regmap_write(sensor, ctrl_regmap,
-                                      sensor->cci_reg.reg.bcrm_addr + ctrl_mapping->reg_offset, ctrl->val);
-                }
-            }
+					bcrm_regmap_write(sensor, ctrl_regmap,
+  									sensor->cci_reg.reg.bcrm_addr + ctrl_mapping->reg_offset, ctrl->val);
+				}
+			}
 
-            switch (ctrl->id)
-            {
-                case V4L2_CID_TRIGGER_MODE:
-                    sensor->avt_trigger_status.trigger_mode_enabled = ctrl->val;
-                    avt3_update_sw_ctrl_state(sensor);
-                    break;
-                case V4L2_CID_TRIGGER_SOURCE:
-                    sensor->avt_trigger_status.trigger_source = ctrl->val;
-                    avt3_update_sw_ctrl_state(sensor);
-                    break;
-                case V4L2_CID_TRIGGER_ACTIVATION:
-                    sensor->avt_trigger_status.trigger_activation = ctrl->val;
-                    break;
-                default:
-                    break;
-            }
-        }
-        else
-        {
-            dev_err(&sensor->i2c_client->dev, "%s[%d]: case default or not supported id %d, val %d\n",
-                    __func__, __LINE__, ctrl->id, ctrl->val);
-            return -EINVAL;
-        }
-    }
+			switch (ctrl->id)
+			{
+				case V4L2_CID_TRIGGER_MODE:
+					sensor->avt_trigger_status.trigger_mode_enabled = ctrl->val;
+					avt3_update_sw_ctrl_state(sensor);
+					break;
+				case V4L2_CID_TRIGGER_SOURCE:
+					sensor->avt_trigger_status.trigger_source = ctrl->val;
+					avt3_update_sw_ctrl_state(sensor);
+					break;
+				case V4L2_CID_TRIGGER_ACTIVATION:
+					sensor->avt_trigger_status.trigger_activation = ctrl->val;
+					break;
+				default:
+					break;
+			}
+		}
+		else
+		{
+			dev_err(&sensor->i2c_client->dev, "%s[%d]: case default or not supported id %d, val %d\n",
+					__func__, __LINE__, ctrl->id, ctrl->val);
+			return -EINVAL;
+		}
+	}
 
 	}
 
@@ -4302,17 +4302,17 @@ static int avt3_init_controls(struct avt3_dev *sensor)
 				continue;
 			}
 			break;
-        case V4L2_CID_TRIGGER_MODE:
-        case V4L2_CID_TRIGGER_ACTIVATION:
-        case V4L2_CID_TRIGGER_SOURCE:
-        case V4L2_CID_TRIGGER_SOFTWARE:
-            if (!sensor->feature_inquiry_reg.feature_inq.frame_trigger)
-            {
-                avt_info(&sensor->sd, "skip trigger ctrl %d %d",
-                         avt_ctrl_mappings[j].id,sensor->feature_inquiry_reg.feature_inq.frame_trigger);
-                continue;
-            }
-            break;
+		case V4L2_CID_TRIGGER_MODE:
+		case V4L2_CID_TRIGGER_ACTIVATION:
+		case V4L2_CID_TRIGGER_SOURCE:
+		case V4L2_CID_TRIGGER_SOFTWARE:
+			if (!sensor->feature_inquiry_reg.feature_inq.frame_trigger)
+			{
+				avt_info(&sensor->sd, "skip trigger ctrl %d %d",
+ 						avt_ctrl_mappings[j].id,sensor->feature_inquiry_reg.feature_inq.frame_trigger);
+				continue;
+			}
+			break;
 		/* let's asume that this features are available on all cameras */
 		case V4L2_CID_EXPOSURE:
 		case V4L2_CID_EXPOSURE_ABSOLUTE:
@@ -4377,91 +4377,91 @@ static int avt3_init_controls(struct avt3_dev *sensor)
 				sensor->avt3_ctrl_cfg[i].step,
 				sensor->avt3_ctrl_cfg[i].def);
 
-        if (avt_ctrl_mappings[j].custom)
-        {
-            struct v4l2_ctrl_config config;
-            const struct avt_ctrl_mapping * const ctrl_mapping = &avt_ctrl_mappings[j];
-            CLEAR(config);
+		if (avt_ctrl_mappings[j].custom)
+		{
+			struct v4l2_ctrl_config config;
+			const struct avt_ctrl_mapping * const ctrl_mapping = &avt_ctrl_mappings[j];
+			CLEAR(config);
 
-            avt_info(&sensor->sd, "Init custom ctrl %s (%x)\n", ctrl_mapping->attr.name,ctrl_mapping->id);
+			avt_info(&sensor->sd, "Init custom ctrl %s (%x)\n", ctrl_mapping->attr.name,ctrl_mapping->id);
 
-            config.ops = &avt3_ctrl_ops;
-            config.id = ctrl_mapping->id;
-            config.name = ctrl_mapping->attr.name;
-            config.type = ctrl_mapping->type;
-            config.flags = ctrl_mapping->flags;
+			config.ops = &avt3_ctrl_ops;
+			config.id = ctrl_mapping->id;
+			config.name = ctrl_mapping->attr.name;
+			config.type = ctrl_mapping->type;
+			config.flags = ctrl_mapping->flags;
 
-            if (ctrl_mapping->avt_flags & AVT_CTRL_STREAM_ENABLED)
-            {
-                config.flags |= V4L2_CTRL_FLAG_GRABBED;
-            }
-
-
-            switch (ctrl_mapping->type)
-            {
-                case V4L2_CTRL_TYPE_MENU:
-                    config.min = ctrl_mapping->min_value;
-                    config.menu_skip_mask = 0;
-                    config.max = ctrl_mapping->max_value;
-                    config.qmenu = ctrl_mapping->qmenu;
-                    config.def = qectrl.default_value;
-                    break;
-                case V4L2_CTRL_TYPE_BOOLEAN:
-                    config.min = 0;
-                    config.max = 1;
-                    config.step = 1;
-                    break;
-                default:
-                    break;
-            }
+			if (ctrl_mapping->avt_flags & AVT_CTRL_STREAM_ENABLED)
+			{
+				config.flags |= V4L2_CTRL_FLAG_GRABBED;
+			}
 
 
-            sensor->avt3_ctrl_cfg[i] = config;
+			switch (ctrl_mapping->type)
+			{
+				case V4L2_CTRL_TYPE_MENU:
+					config.min = ctrl_mapping->min_value;
+					config.menu_skip_mask = 0;
+					config.max = ctrl_mapping->max_value;
+					config.qmenu = ctrl_mapping->qmenu;
+					config.def = qectrl.default_value;
+					break;
+				case V4L2_CTRL_TYPE_BOOLEAN:
+					config.min = 0;
+					config.max = 1;
+					config.step = 1;
+					break;
+				default:
+					break;
+			}
 
-            ctrl = v4l2_ctrl_new_custom(&sensor->v4l2_ctrl_hdl,&config,ctrl_mapping);
 
-            if (ctrl != NULL)
-            {
-                switch (ctrl->id)
-                {
-                    case V4L2_CID_TRIGGER_MODE:
-                        sensor->avt_trigger_status.trigger_mode_enabled = ctrl->val;
-                        avt3_update_sw_ctrl_state(sensor);
-                        break;
-                    case V4L2_CID_TRIGGER_SOURCE:
-                        sensor->avt_trigger_status.trigger_source = ctrl->val;
-                        avt3_update_sw_ctrl_state(sensor);
-                        break;
-                    case V4L2_CID_TRIGGER_ACTIVATION:
-                        sensor->avt_trigger_status.trigger_activation = ctrl->val;
-                        break;
-                    case V4L2_CID_TRIGGER_SOFTWARE:
-                        avt3_update_sw_ctrl_state(sensor);
-                    default:
-                        break;
-                }
-            }
-        }
-        else
-        {
-            ctrl = v4l2_ctrl_new_std(&sensor->v4l2_ctrl_hdl,
+			sensor->avt3_ctrl_cfg[i] = config;
+
+			ctrl = v4l2_ctrl_new_custom(&sensor->v4l2_ctrl_hdl,&config,ctrl_mapping);
+
+			if (ctrl != NULL)
+			{
+				switch (ctrl->id)
+				{
+					case V4L2_CID_TRIGGER_MODE:
+						sensor->avt_trigger_status.trigger_mode_enabled = ctrl->val;
+						avt3_update_sw_ctrl_state(sensor);
+						break;
+					case V4L2_CID_TRIGGER_SOURCE:
+						sensor->avt_trigger_status.trigger_source = ctrl->val;
+						avt3_update_sw_ctrl_state(sensor);
+						break;
+					case V4L2_CID_TRIGGER_ACTIVATION:
+						sensor->avt_trigger_status.trigger_activation = ctrl->val;
+						break;
+					case V4L2_CID_TRIGGER_SOFTWARE:
+						avt3_update_sw_ctrl_state(sensor);
+					default:
+						break;
+				}
+			}
+		}
+		else
+		{
+			ctrl = v4l2_ctrl_new_std(&sensor->v4l2_ctrl_hdl,
                                      &avt3_ctrl_ops,
-                                     sensor->avt3_ctrl_cfg[i].id,
-                                     sensor->avt3_ctrl_cfg[i].min,
-                                     sensor->avt3_ctrl_cfg[i].max,
-                                     sensor->avt3_ctrl_cfg[i].step,
-                                     sensor->avt3_ctrl_cfg[i].def);
-        }
+ 									sensor->avt3_ctrl_cfg[i].id,
+ 									sensor->avt3_ctrl_cfg[i].min,
+ 									sensor->avt3_ctrl_cfg[i].max,
+ 									sensor->avt3_ctrl_cfg[i].step,
+ 									sensor->avt3_ctrl_cfg[i].def);
+		}
 		//		v4l2_ctrl_new_std(&priv->hdl, &ov6550_ctrl_ops,
-		//                        V4L2_CID_VFLIP, 0, 1, 1, 0);
-		//        v4l2_ctrl_new_std(&priv->hdl, &ov6550_ctrl_ops,
-		//                        V4L2_CID_HFLIP, 0, 1, 1, 0);
-		//        priv->autogain = v4l2_ctrl_new_std(&priv->hdl, &ov6550_ctrl_ops,
-		//                        V4L2_CID_AUTOGAIN, 0, 1, 1, 1);
-		//        priv->gain = v4l2_ctrl_new_std(&priv->hdl, &ov6550_ctrl_ops,
-		//                        V4L2_CID_GAIN, 0, 0x3f, 1, DEF_GAIN);
-		//        priv->autowb = v4l2_ctrl_new_std(&priv->hdl, &ov6550_ctrl_ops,
-		//                        V4L2_CID_AUTO_WHITE_BALANCE, 0, 1, 1, 1);
+		//						V4L2_CID_VFLIP, 0, 1, 1, 0);
+		//		v4l2_ctrl_new_std(&priv->hdl, &ov6550_ctrl_ops,
+		//						V4L2_CID_HFLIP, 0, 1, 1, 0);
+		//		priv->autogain = v4l2_ctrl_new_std(&priv->hdl, &ov6550_ctrl_ops,
+		//						V4L2_CID_AUTOGAIN, 0, 1, 1, 1);
+		//		priv->gain = v4l2_ctrl_new_std(&priv->hdl, &ov6550_ctrl_ops,
+		//						V4L2_CID_GAIN, 0, 0x3f, 1, DEF_GAIN);
+		//		priv->autowb = v4l2_ctrl_new_std(&priv->hdl, &ov6550_ctrl_ops,
+		//						V4L2_CID_AUTO_WHITE_BALANCE, 0, 1, 1, 1);
 
 		//	}
 		if (ctrl == NULL)
@@ -4471,7 +4471,7 @@ static int avt3_init_controls(struct avt3_dev *sensor)
 					sensor->v4l2_ctrl_hdl.error, sensor->v4l2_ctrl_hdl.error);
 
             //Clear error
-            sensor->v4l2_ctrl_hdl.error = 0;
+			sensor->v4l2_ctrl_hdl.error = 0;
 			continue;
 		}
 
@@ -4602,7 +4602,7 @@ static int avt3_pad_ops_enum_frame_interval(
 	struct avt3_dev *sensor = to_avt3_dev(sd);
 	//	struct i2c_client *client = sensor->i2c_client;
 	int i; //, j, count;
-    int f,idx;
+	int f,idx;
 		   //	int ret = 0;
 
 	if (fie->pad != 0)
@@ -4618,7 +4618,7 @@ static int avt3_pad_ops_enum_frame_interval(
 				 fie->index, AVT3_NUM_FRAMERATES, fie->pad, fie->code, fie->width, fie->height);
 		return -EINVAL;
 	}
-	if (sensor->mbus_framefmt.code != fie->code)
+		if (sensor->mbus_framefmt.code != fie->code)
 	{
 		avt_info(sd, "sensor->mbus_framefmt.code 0x%04X, fie->code 0x%04X",
 				 sensor->mbus_framefmt.code, fie->code);
@@ -4645,12 +4645,12 @@ static int avt3_pad_ops_enum_frame_interval(
 		return -EINVAL;
 	}
 
-    if (fie->width != clamp(fie->width,sensor->min_rect.width,sensor->max_rect.width)
+	if (fie->width != clamp(fie->width,sensor->min_rect.width,sensor->max_rect.width)
         || fie->height != clamp(fie->height,sensor->min_rect.height,sensor->max_rect.height))
-    {
-        avt_err(&sensor->sd, "Frameintervals for unsupported width (%u) or height (%u) requested", fie->width,fie->height);
-        return -EINVAL;
-    }
+	{
+		avt_err(&sensor->sd, "Frameintervals for unsupported width (%u) or height (%u) requested", fie->width,fie->height);
+		return -EINVAL;
+	}
 
 #if 0
 	if (fie->width == 0 || fie->height == 0 || fie->code == 0)
@@ -4660,20 +4660,20 @@ static int avt3_pad_ops_enum_frame_interval(
 	}
 #endif
 	// TODO: set valid values for current mode
-    idx = 0;
-    for (f = 0;f < AVT3_NUM_FRAMERATES;f++)
-    {
-        if (avt3_framerates[idx] != 0)
-        {
-            if (idx == fie->index)
-            {
-                fie->interval.numerator = 1000;
-                fie->interval.denominator = 1000 * avt3_framerates[fie->index];
-                return 0;
-            }
-            idx++;
-        }
-    }
+	idx = 0;
+	for (f = 0;f < AVT3_NUM_FRAMERATES;f++)
+	{
+		if (avt3_framerates[f] != 0)
+		{
+			if (idx == fie->index)
+			{
+				fie->interval.numerator = 1000;
+				fie->interval.denominator = 1000 * avt3_framerates[f];
+				return 0;
+			}
+			idx++;
+		}
+	}
 
 	return -EINVAL;
 }
@@ -4698,8 +4698,8 @@ static int avt3_video_ops_s_frame_interval(struct v4l2_subdev *sd,
 	struct avt3_dev *sensor = to_avt3_dev(sd);
 	int fps_idx;
 	int ret = 0;
-    const u64 factor = 1000000L;
-    u64 framerate_req,framerate_min,framerate_max;
+	const u64 factor = 1000000L;
+	u64 framerate_req,framerate_min,framerate_max;
 
 
 	avt_dbg(sd, "fie->num %d fie->denom %d",
@@ -4713,46 +4713,46 @@ static int avt3_video_ops_s_frame_interval(struct v4l2_subdev *sd,
 	}
 
 
-    ret = regmap_bulk_read(sensor->regmap64,
-                           sensor->cci_reg.reg.bcrm_addr + BCRM_ACQUISITION_FRAME_RATE_MIN_64R,
+	ret = regmap_bulk_read(sensor->regmap64,
+   						sensor->cci_reg.reg.bcrm_addr + BCRM_ACQUISITION_FRAME_RATE_MIN_64R,
                            &framerate_min, 1);
 
-    if (ret < 0)
-    {
-        avt_err(sd, "regmap_read failed (%d)\n", ret);
+	if (ret < 0)
+	{
+		avt_err(sd, "regmap_read failed (%d)\n", ret);
         // goto err_out;
-    }
+	}
 
-    ret = regmap_bulk_read(sensor->regmap64,
-                           sensor->cci_reg.reg.bcrm_addr + BCRM_ACQUISITION_FRAME_RATE_MAX_64R,
+	ret = regmap_bulk_read(sensor->regmap64,
+   						sensor->cci_reg.reg.bcrm_addr + BCRM_ACQUISITION_FRAME_RATE_MAX_64R,
                            &framerate_max, 1);
 
-    if (ret < 0)
-    {
-        avt_err(sd, "regmap_read failed (%d)\n", ret);
+	if (ret < 0)
+	{
+		avt_err(sd, "regmap_read failed (%d)\n", ret);
         // goto err_out;
-    }
+	}
 
-    if (fi->interval.numerator == 0)
-        fi->interval.numerator = 1;
+	if (fi->interval.numerator == 0)
+		fi->interval.numerator = 1;
 
-    framerate_req = (fi->interval.denominator * factor) / fi->interval.numerator;
-    framerate_req = clamp(framerate_req,framerate_min,framerate_max);
+	framerate_req = (fi->interval.denominator * factor) / fi->interval.numerator;
+	framerate_req = clamp(framerate_req,framerate_min,framerate_max);
 
-    fi->interval.denominator = (framerate_req * fi->interval.numerator) / factor;
+	fi->interval.denominator = (framerate_req * fi->interval.numerator) / factor;
 
     // If the denominator and minimal framerate is not zero, try to increase the numerator by 1000
-    while (fi->interval.denominator == 0 && framerate_min > 0 && fi->interval.numerator < factor)
-    {
-        fi->interval.numerator *= 1000;
-        fi->interval.denominator = (framerate_req * fi->interval.numerator) / factor;
-    }
+	while (fi->interval.denominator == 0 && framerate_min > 0 && fi->interval.numerator < factor)
+	{
+		fi->interval.numerator *= 1000;
+		fi->interval.denominator = (framerate_req * fi->interval.numerator) / factor;
+	}
 
-    sensor->current_fr = AVT3_NUM_FRAMERATES;
-    sensor->frame_interval = fi->interval;
+	sensor->current_fr = AVT3_NUM_FRAMERATES;
+	sensor->frame_interval = fi->interval;
 
-    avt_dbg(sd, "set fie->num %d fie->denom %d",
-            fi->interval.numerator, fi->interval.denominator);
+	avt_dbg(sd, "set fie->num %d fie->denom %d",
+			fi->interval.numerator, fi->interval.denominator);
 
 out:
 	MUTEX_UNLOCK(&sensor->lock);
@@ -4843,26 +4843,26 @@ static int v4l2_subdev_video_ops_g_mbus_config(struct v4l2_subdev *sd,
 
 static void avt3_controls_stream_grab(struct avt3_dev *camera,bool grabbed)
 {
-    int i;
+	int i;
 
-    for (i = 0;i < AVT_MAX_CTRLS;i++)
-    {
-        struct v4l2_ctrl *ctrl = camera->avt3_ctrls[i];
+	for (i = 0;i < AVT_MAX_CTRLS;i++)
+	{
+		struct v4l2_ctrl *ctrl = camera->avt3_ctrls[i];
 
-        if (ctrl && ctrl->priv)
-        {
-            const struct avt_ctrl_mapping * const ctrl_mapping = ctrl->priv;
+		if (ctrl && ctrl->priv)
+		{
+			const struct avt_ctrl_mapping * const ctrl_mapping = ctrl->priv;
 
-            if (ctrl_mapping->avt_flags & AVT_CTRL_STREAM_DISABLED)
-            {
-                __v4l2_ctrl_grab(ctrl,grabbed);
-            }
-            else if (ctrl_mapping->avt_flags & AVT_CTRL_STREAM_ENABLED)
-            {
-                __v4l2_ctrl_grab(ctrl,!grabbed);
-            }
-        }
-    }
+			if (ctrl_mapping->avt_flags & AVT_CTRL_STREAM_DISABLED)
+			{
+				__v4l2_ctrl_grab(ctrl,grabbed);
+			}
+			else if (ctrl_mapping->avt_flags & AVT_CTRL_STREAM_ENABLED)
+			{
+				__v4l2_ctrl_grab(ctrl,!grabbed);
+			}
+		}
+	}
 }
 
 static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
@@ -4900,7 +4900,7 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 	if (enable && !sensor->is_streaming)
 	{
 		struct v4l2_ext_control vc;
-        struct v4l2_ctrl *trigger_mode_ctrl,*trigger_selection_ctrl,*trigger_activation_ctrl;
+		struct v4l2_ctrl *trigger_mode_ctrl,*trigger_selection_ctrl,*trigger_activation_ctrl;
 
 		u64 u64FrMin = 0;
 		u64 u64FrMax = 0;
@@ -5033,20 +5033,7 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 				 sensor->frame_interval.numerator, sensor->frame_interval.denominator);
 
 		/* Save new frame rate to camera register */
-		if (sensor->frame_interval.numerator == 1)
-		{
-			vc.value64 = sensor->frame_interval.denominator;
-			vc.value64 = vc.value64 * 1000000L;
-			dev_info(&client->dev, "%s[%d]: BCRM_ACQUISITION_FRAME_RATE: sensor->frame_interval.numerator %u, sensor->frame_interval.denominator %u  %llu\n",
-					 __func__, __LINE__,
-					 sensor->frame_interval.numerator, sensor->frame_interval.denominator, vc.value64);
-		}
-
-		if (sensor->frame_interval.numerator == 1000)
-		{
-			vc.value64 = sensor->frame_interval.denominator;
-			vc.value64 = vc.value64 * 1000L;
-		}
+		vc.value64 = (sensor->frame_interval.denominator * 1000000) / sensor->frame_interval.numerator;
 
 		dev_info(&client->dev, "%s[%d]: BCRM_ACQUISITION_FRAME_RATE_64RW (min: %llu req: %llu max: %llu) uHz\n",
 				 __func__, __LINE__,
@@ -5111,7 +5098,7 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 			sensor->is_streaming = enable;
 	}
 
-    avt3_controls_stream_grab(sensor,enable);
+	avt3_controls_stream_grab(sensor,enable);
 
 out:
 	MUTEX_UNLOCK(&sensor->lock);
@@ -5745,7 +5732,7 @@ int v4l2_subdev_video_ops_s_mbus_config(struct v4l2_subdev *sd,
 //	__u32		   capturemode;	  /*  Current mode */
 //	struct v4l2_fract  timeperframe;  /*  Time per frame in seconds */
 //	__u32		   extendedmode;  /*  Driver-specific extensions */
-//	__u32              readbuffers;   /*  # of buffers for read */
+//	__u32  			readbuffers;   /*  # of buffers for read */
 //	__u32		   reserved[4];
 //};
 //#endif
@@ -6478,9 +6465,27 @@ static int bcrm_regmap_write64(struct avt3_dev *sensor,
 
 	ret = regmap_read(sensor->regmap8, sensor->cci_reg.reg.bcrm_addr + BCRM_WRITE_HANDSHAKE_8RW, &handshake_val);
 
+	if (ret < 0)
+	{
+		dev_err(&sensor->i2c_client->dev,"%s[%d]: Reading handshake value failed with: %d\n",__func__, __LINE__,ret);
+		return ret;
+	}
+
 	ret = regmap_write(sensor->regmap8, sensor->cci_reg.reg.bcrm_addr + BCRM_WRITE_HANDSHAKE_8RW, handshake_val & ~BCRM_HANDSHAKE_STATUS_MASK); /* reset only handshake status */
 
+	if (ret < 0)
+	{
+		dev_err(&sensor->i2c_client->dev,"%s[%d]: Clearing handshake status failed with: %d\n",__func__, __LINE__,ret);
+		return ret;
+	}
+
 	ret = regmap_bulk_write(map, reg, &val, 1);
+
+	if (ret < 0)
+	{
+		dev_err(&sensor->i2c_client->dev,"%s[%d]: Writing value failed with: %d\n",__func__, __LINE__,ret);
+		return ret;
+	}
 
 	if (!sensor->bcrm_write_handshake)
 	{
@@ -6500,7 +6505,17 @@ static int bcrm_regmap_write64(struct avt3_dev *sensor,
 
 	ret = wait_for_completion_timeout(&sensor->bcrm_wrhs_completion,
 									  msecs_to_jiffies(sensor->bcrm_handshake_timeout_ms / 5));
-	return ret;
+
+	// If wait_for_completion_timeout returns a positive value, then the handshake was successfully
+	// and ret contains the remaining time before the timeout would occur
+	if (ret > 0)
+	{
+		return 0;
+	}
+
+	dev_err(&sensor->i2c_client->dev,"%s[%d]: Write handshake timeout\n",__func__, __LINE__);
+
+	return -EIO;
 }
 
 static int bcrm_regmap_write(struct avt3_dev *sensor,
@@ -6514,9 +6529,28 @@ static int bcrm_regmap_write(struct avt3_dev *sensor,
 
 	ret = regmap_read(sensor->regmap8, sensor->cci_reg.reg.bcrm_addr + BCRM_WRITE_HANDSHAKE_8RW, &handshake_val);
 
+	if (ret < 0)
+	{
+		dev_err(&sensor->i2c_client->dev,"%s[%d]: Reading handshake value failed with: %d\n",__func__, __LINE__,ret);
+		return ret;
+	}
+
 	ret = regmap_write(sensor->regmap8, sensor->cci_reg.reg.bcrm_addr + BCRM_WRITE_HANDSHAKE_8RW, handshake_val & ~BCRM_HANDSHAKE_STATUS_MASK); /* reset only handshake status */
 
+	if (ret < 0)
+	{
+		dev_err(&sensor->i2c_client->dev,"%s[%d]: Clearing handshake status failed with: %d\n",__func__, __LINE__,ret);
+		return ret;
+	}
+
 	ret = regmap_write(map, reg, val);
+
+	if (ret < 0)
+	{
+		dev_err(&sensor->i2c_client->dev,"%s[%d]: Writing value failed with: %d\n",__func__, __LINE__,ret);
+		return ret;
+	}
+
 	msleep(10);
 
 	if (!sensor->bcrm_write_handshake)
@@ -6539,7 +6573,17 @@ static int bcrm_regmap_write(struct avt3_dev *sensor,
 
 	ret = wait_for_completion_timeout(&sensor->bcrm_wrhs_completion,
 									  msecs_to_jiffies(sensor->bcrm_handshake_timeout_ms / 5));
-	return ret;
+
+	// If wait_for_completion_timeout returns a positive value, then the handshake was successfully
+	// and ret contains the remaining time before the timeout would occur
+	if (ret > 0)
+	{
+		return 0;
+	}
+
+	dev_err(&sensor->i2c_client->dev,"%s[%d]: Write handshake timeout\n",__func__, __LINE__);
+
+	return -EIO;
 }
 
 static void bcrm_wrhs_work_func(struct work_struct *work)
@@ -6553,7 +6597,7 @@ static void bcrm_wrhs_work_func(struct work_struct *work)
 		container_of(work, struct avt3_dev, bcrm_wrhs_work);
 
 	//	dev_info(&sensor->i2c_client->dev, "%s[%d]: workqueue_test: 0x%08X current->pid 0x%08x\n",
-	//      __func__, __LINE__, (u32)work, current->pid );
+	//  	__func__, __LINE__, (u32)work, current->pid );
 
 	do
 	{
