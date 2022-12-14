@@ -7161,6 +7161,15 @@ static int avt3_probe(struct i2c_client *client)
 	sensor->streamcap.capability = V4L2_CAP_TIMEPERFRAME;
 	sensor->streamcap.capturemode = V4L2_MODE_HIGHQUALITY;
 
+	// Init controls before registering the device, because the control handler must be fully initialized before
+	// the subdevice is registered.
+	ret = avt3_init_controls(sensor);
+	if (ret)
+	{
+		dev_err(dev, "%s[%d]: avt3_init_controls failed with (%d)\n", __func__, __LINE__, ret);
+		goto entity_cleanup;
+	}
+
 #if 1
 	ret = v4l2_async_register_subdev(&sensor->sd);
 #else
@@ -7185,12 +7194,7 @@ static int avt3_probe(struct i2c_client *client)
 		goto free_ctrls;
 	}
 
-	ret = avt3_init_controls(sensor);
-	if (ret)
-	{
-		dev_err(dev, "%s[%d]: avt3_init_controls failed with (%d)\n", __func__, __LINE__, ret);
-		goto entity_cleanup;
-	}
+
 
 #ifdef DPHY_RESET_WORKAROUND
 	sema_init(&sensor->streamon_sem, 0);
