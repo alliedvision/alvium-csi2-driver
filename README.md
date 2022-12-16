@@ -1,7 +1,7 @@
 # Alvium CSI2 driver
 
 ## Overview
-This repository contains the source code of the linux Alvium CSI2 driver module version 2022-1-beta. 
+This repository contains the source code of the linux Alvium CSI2 driver module version 2023-1-beta. 
 
 THE SOFTWARE IS PRELIMINARY AND STILL IN TESTING AND VERIFICATION PHASE AND IS PROVIDED ON AN “AS IS” AND “AS AVAILABLE” BASIS AND IS BELIEVED TO CONTAIN DEFECTS. A PRIMARY PURPOSE OF THIS EARLY ACCESS IS TO OBTAIN FEEDBACK ON PERFORMANCE AND THE IDENTIFICATION OF DEFECT SOFTWARE, HARDWARE AND DOCUMENTATION.
 
