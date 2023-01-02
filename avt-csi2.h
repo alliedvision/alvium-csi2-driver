@@ -123,7 +123,6 @@ enum avt3_mode_id
 //#define AVT_RESET_DELAY2			(2500000)
 
 #define AVT_CTRL_STREAM_DISABLED (1 << 1)
-#define AVT_CTRL_STREAM_ENABLED (1 << 2)
 
 
 struct avt_ctrl_mapping {
@@ -440,7 +439,6 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
             .type			= V4L2_CTRL_TYPE_BUTTON,
             .flags			= V4L2_CTRL_FLAG_INACTIVE,
             .custom         = true,
-            .avt_flags      = AVT_CTRL_STREAM_ENABLED,
     },
 };
 
@@ -449,7 +447,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 
 enum avt_exposure_mode {
 	EMODE_MANUAL = 0,
-	EMODE_AUTO,
+	EMODE_AUTO = 2,
 };
 
 struct avt3_dev
