@@ -3974,7 +3974,26 @@ static int avt3_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 		// reg = SHARPNESS_32RW;
 		//  ToDo: implement sharpness settings
 		break;
+	case V4L2_CID_EXPOSURE_AUTO:
+		if (!sensor->feature_inquiry_reg.feature_inq.exposure_auto_avail) {
+			dev_warn(&client->dev,
+					 "%s[%d]: V4L2_CID_EXPOSURE_AUTO not supported by current camera model and firmware!\n",
+					 __func__, __LINE__);
+			return -ENOTSUPP;
+		}
+		dev_info(&client->dev, "%s[%d]: V4L2_CID_EXPOSURE_AUTO %d\n", __func__, __LINE__, ctrl->val);
 
+		if (ctrl->val)
+		{
+			sensor->exposure_mode = EMODE_MANUAL;
+		}
+		else
+		{
+			sensor->exposure_mode = EMODE_AUTO;
+		}
+
+		ret = bcrm_regmap_write(sensor, sensor->regmap8, sensor->cci_reg.reg.bcrm_addr + BCRM_EXPOSURE_AUTO_8RW, sensor->exposure_mode);
+		break;
 	default:
 	{
 		if (ctrl->priv != NULL)
@@ -4196,6 +4215,8 @@ static int avt3_init_controls(struct avt3_dev *sensor)
 
 	for (i = 0, j = 0; j < ARRAY_SIZE(avt_ctrl_mappings); ++j)
 	{
+		const struct avt_ctrl_mapping * const ctrl_mapping = &avt_ctrl_mappings[j];
+
 		switch (avt_ctrl_mappings[j].id)
 		{
 		case V4L2_CID_CONTRAST:
@@ -4377,7 +4398,7 @@ static int avt3_init_controls(struct avt3_dev *sensor)
 				sensor->avt3_ctrl_cfg[i].step,
 				sensor->avt3_ctrl_cfg[i].def);
 
-		if (avt_ctrl_mappings[j].custom)
+		if (ctrl_mapping->custom)
 		{
 			struct v4l2_ctrl_config config;
 			const struct avt_ctrl_mapping * const ctrl_mapping = &avt_ctrl_mappings[j];
@@ -4390,12 +4411,6 @@ static int avt3_init_controls(struct avt3_dev *sensor)
 			config.name = ctrl_mapping->attr.name;
 			config.type = ctrl_mapping->type;
 			config.flags = ctrl_mapping->flags;
-
-			if (ctrl_mapping->avt_flags & AVT_CTRL_STREAM_ENABLED)
-			{
-				config.flags |= V4L2_CTRL_FLAG_GRABBED;
-			}
-
 
 			switch (ctrl_mapping->type)
 			{
@@ -4441,6 +4456,30 @@ static int avt3_init_controls(struct avt3_dev *sensor)
 						break;
 				}
 			}
+		}
+		else if (ctrl_mapping->type == V4L2_CTRL_TYPE_MENU)
+		{
+			if (ctrl_mapping->id == V4L2_CID_EXPOSURE_AUTO)
+			{
+				sensor->avt3_ctrl_cfg[i].max = 1;
+				sensor->avt3_ctrl_cfg[i].step = 0;
+				if (sensor->avt3_ctrl_cfg[i].def == 0)
+				{
+					sensor->avt3_ctrl_cfg[i].def = V4L2_EXPOSURE_MANUAL;
+				}
+				else
+				{
+					sensor->avt3_ctrl_cfg[i].def = V4L2_EXPOSURE_AUTO;
+				}
+			}
+
+			ctrl = v4l2_ctrl_new_std_menu(&sensor->v4l2_ctrl_hdl,
+										  &avt3_ctrl_ops,
+										  sensor->avt3_ctrl_cfg[i].id,
+										  sensor->avt3_ctrl_cfg[i].max,
+										  sensor->avt3_ctrl_cfg[i].step,
+										  sensor->avt3_ctrl_cfg[i].def
+										  );
 		}
 		else
 		{
@@ -4543,7 +4582,7 @@ static int avt3_pad_ops_enum_frame_size(struct v4l2_subdev *sd,
 		avt_dbg(sd, "fse->index %d, fse->which %s", fse->index,
 				fse->which == V4L2_SUBDEV_FORMAT_TRY ? "V4L2_SUBDEV_FORMAT_TRY" : "V4L2_SUBDEV_FORMAT_ACTIVE");
 
-	if (fse->pad == 0 && fse->which == V4L2_SUBDEV_FORMAT_TRY)
+	if (fse->pad != 0 && fse->which == V4L2_SUBDEV_FORMAT_TRY)
 	{
 		avt_info(sd, "se->which == V4L2_SUBDEV_FORMAT_TRY and no pad availble.");
 		return -EINVAL;
@@ -4857,10 +4896,6 @@ static void avt3_controls_stream_grab(struct avt3_dev *camera,bool grabbed)
 			{
 				__v4l2_ctrl_grab(ctrl,grabbed);
 			}
-			else if (ctrl_mapping->avt_flags & AVT_CTRL_STREAM_ENABLED)
-			{
-				__v4l2_ctrl_grab(ctrl,!grabbed);
-			}
 		}
 	}
 }
@@ -4960,15 +4995,17 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 			goto out;
 		}
 
-		ret = bcrm_regmap_write64(sensor, sensor->regmap64,
-								  sensor->cci_reg.reg.bcrm_addr + BCRM_EXPOSURE_TIME_64RW, sensor->exposure_time);
-
-		if (ret < 0)
+		if (sensor->exposure_mode == EMODE_MANUAL)
 		{
-			dev_err(&client->dev, "%s[%d]: BCRM_EXPOSURE_TIME_64RW: i2c write failed (%d)\n",
-					__func__, __LINE__,
-					ret);
-			goto out;
+			ret = bcrm_regmap_write64(sensor, sensor->regmap64,
+									  sensor->cci_reg.reg.bcrm_addr + BCRM_EXPOSURE_TIME_64RW, sensor->exposure_time);
+
+			if (ret < 0) {
+				dev_err(&client->dev, "%s[%d]: BCRM_EXPOSURE_TIME_64RW: i2c write failed (%d)\n",
+						__func__, __LINE__,
+						ret);
+				goto out;
+			}
 		}
 
 		ret = regmap_bulk_read(sensor->regmap64,
@@ -5033,7 +5070,7 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 				 sensor->frame_interval.numerator, sensor->frame_interval.denominator);
 
 		/* Save new frame rate to camera register */
-		vc.value64 = (sensor->frame_interval.denominator * 1000000) / sensor->frame_interval.numerator;
+		vc.value64 = (((u64)sensor->frame_interval.denominator) * 1000000) / ((u64)sensor->frame_interval.numerator);
 
 		dev_info(&client->dev, "%s[%d]: BCRM_ACQUISITION_FRAME_RATE_64RW (min: %llu req: %llu max: %llu) uHz\n",
 				 __func__, __LINE__,
@@ -6722,6 +6759,21 @@ static uint64_t wait_for_bcrm_write_handshake(struct i2c_client *client, uint64_
 	return;
 }
 
+static int avt3_detect(struct i2c_client *client)
+{
+	u8 value = 0;
+	int ret;
+
+	ret = i2c_master_send(client,&value,1);
+
+	if (ret < 0 )
+		return ret;
+
+	ret = i2c_master_recv(client,&value,1);
+
+	return ret;
+}
+
 /*******************************************************************
  *  avt_csi2_probe                                                 *
  *******************************************************************
@@ -6745,11 +6797,16 @@ static int avt3_probe(struct i2c_client *client)
 	dev_info(&client->dev, "%s[%d]: %s",
 			 __func__, __LINE__, __FILE__);
 
+	if (avt3_detect(client) < 0)
+	{
+		dev_warn(&client->dev,"No camera detected!");
+		return -ENODEV;
+	}
+
 	sensor = devm_kzalloc(dev, sizeof(*sensor), GFP_KERNEL);
 	if (!sensor)
 	{
-		ret = -ENOMEM;
-		goto err_exit;
+		return -ENOMEM;
 	}
 
 	sensor->i2c_client = client;
@@ -7295,7 +7352,7 @@ module_i2c_driver(avt3_i2c_driver);
 MODULE_DESCRIPTION("Allied Vision's MIPI-CSI2 Camera Driver");
 MODULE_AUTHOR("Allied Vision Inc.");
 MODULE_LICENSE("GPL");
-MODULE_VERSION("2022-1-beta");
+MODULE_VERSION("2023-2-beta");
 
 #ifdef DPHY_RESET_WORKAROUND
 if (sensor->phyreset_on_streamon)
