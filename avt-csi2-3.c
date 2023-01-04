@@ -3920,11 +3920,13 @@ static int avt3_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 
 	case V4L2_CID_RED_BALANCE:
 		dev_info(&client->dev, "%s[%d]: V4L2_CID_RED_BALANCE %d\n", __func__, __LINE__, ctrl->val);
+		val64.s64 = ctrl->val;
 		ret = regmap_bulk_write(sensor->regmap64, sensor->cci_reg.reg.bcrm_addr + BCRM_RED_BALANCE_RATIO_64RW, &val64, 1);
 		break;
 
 	case V4L2_CID_BLUE_BALANCE:
 		dev_info(&client->dev, "%s[%d]: V4L2_CID_BLUE_BALANCE %d\n", __func__, __LINE__, ctrl->val);
+		val64.s64 = ctrl->val;
 		ret = regmap_bulk_write(sensor->regmap64, sensor->cci_reg.reg.bcrm_addr + BCRM_BLUE_BALANCE_RATIO_64RW, &val64, 1);
 		break;
 
@@ -3960,7 +3962,7 @@ static int avt3_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 			return -ENOTSUPP;
 		}
 		dev_info(&client->dev, "%s[%d]: V4L2_CID_AUTOGAIN %d\n", __func__, __LINE__, ctrl->val);
-		ret = bcrm_regmap_write(sensor, sensor->regmap8, sensor->cci_reg.reg.bcrm_addr + BCRM_GAIN_AUTO_8RW, ctrl->val);
+		ret = bcrm_regmap_write(sensor, sensor->regmap8, sensor->cci_reg.reg.bcrm_addr + BCRM_GAIN_AUTO_8RW, ctrl->val ? 2 : 0);
 		break;
 
 	case V4L2_CID_SHARPNESS:
