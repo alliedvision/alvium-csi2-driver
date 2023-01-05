@@ -3861,7 +3861,7 @@ static int avt3_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 		}
 		avt_dbg(&sensor->sd, "V4L2_CID_GAMMA %d", ctrl->val);
 		val64.s64 = ctrl->val;
-		ret = regmap_bulk_write(sensor->regmap64, sensor->cci_reg.reg.bcrm_addr + BCRM_GAMMA_64RW, &val64, 1);
+		ret = bcrm_regmap_write64(sensor,sensor->regmap64, sensor->cci_reg.reg.bcrm_addr + BCRM_GAMMA_64RW, val64.s64);
 		break;
 
 	case V4L2_CID_CONTRAST:
@@ -3921,19 +3921,19 @@ static int avt3_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 	case V4L2_CID_RED_BALANCE:
 		dev_info(&client->dev, "%s[%d]: V4L2_CID_RED_BALANCE %d\n", __func__, __LINE__, ctrl->val);
 		val64.s64 = ctrl->val;
-		ret = regmap_bulk_write(sensor->regmap64, sensor->cci_reg.reg.bcrm_addr + BCRM_RED_BALANCE_RATIO_64RW, &val64, 1);
+		ret = bcrm_regmap_write64(sensor,sensor->regmap64, sensor->cci_reg.reg.bcrm_addr + BCRM_RED_BALANCE_RATIO_64RW, val64.s64);
 		break;
 
 	case V4L2_CID_BLUE_BALANCE:
 		dev_info(&client->dev, "%s[%d]: V4L2_CID_BLUE_BALANCE %d\n", __func__, __LINE__, ctrl->val);
 		val64.s64 = ctrl->val;
-		ret = regmap_bulk_write(sensor->regmap64, sensor->cci_reg.reg.bcrm_addr + BCRM_BLUE_BALANCE_RATIO_64RW, &val64, 1);
+		ret = bcrm_regmap_write64(sensor,sensor->regmap64, sensor->cci_reg.reg.bcrm_addr + BCRM_BLUE_BALANCE_RATIO_64RW, val64.s64);
 		break;
 
 	case V4L2_CID_EXPOSURE:
 		dev_info(&client->dev, "%s[%d]: V4L2_CID_EXPOSURE %d\n", __func__, __LINE__, ctrl->val);
 		sensor->exposure_time = val64.s64 = ctrl->val;
-		ret = regmap_bulk_write(sensor->regmap64, sensor->cci_reg.reg.bcrm_addr + BCRM_EXPOSURE_TIME_64RW, &val64, 1);
+		ret = bcrm_regmap_write64(sensor,sensor->regmap64, sensor->cci_reg.reg.bcrm_addr + BCRM_EXPOSURE_TIME_64RW, val64.s64);
 		break;
 
 	case V4L2_CID_EXPOSURE_ABSOLUTE:
@@ -3941,7 +3941,7 @@ static int avt3_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 		val64.s64 = ctrl->val;
 		sensor->exposure_time = val64.s64 * 100;
 		dev_info(&client->dev, "%s[%d]: V4L2_CID_EXPOSURE_ABSOLUTE %d --> %lld ns\n", __func__, __LINE__, ctrl->val, sensor->exposure_time);
-		ret = regmap_bulk_write(sensor->regmap64, sensor->cci_reg.reg.bcrm_addr + BCRM_EXPOSURE_TIME_64RW, &val64, 1);
+		ret = bcrm_regmap_write64(sensor,sensor->regmap64, sensor->cci_reg.reg.bcrm_addr + BCRM_EXPOSURE_TIME_64RW, val64.s64);
 		break;
 
 	case V4L2_CID_GAIN:
@@ -3952,7 +3952,7 @@ static int avt3_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 		}
 		dev_info(&client->dev, "%s[%d]: V4L2_CID_GAIN %d\n", __func__, __LINE__, ctrl->val);
 		sensor->gain = val64.s64 = ctrl->val;
-		ret = regmap_bulk_write(sensor->regmap64, sensor->cci_reg.reg.bcrm_addr + BCRM_GAIN_64RW, &val64, 1);
+		ret = bcrm_regmap_write64(sensor, sensor->regmap64, sensor->cci_reg.reg.bcrm_addr + BCRM_GAIN_64RW, val64.s64);
 		break;
 
 	case V4L2_CID_AUTOGAIN:
@@ -6510,6 +6510,11 @@ static int bcrm_regmap_write64(struct avt3_dev *sensor,
 		return ret;
 	}
 
+	if ((handshake_val & BCRM_HANDSHAKE_STATUS_MASK) != 0)
+	{
+		dev_warn(&sensor->i2c_client->dev,"%s[%d]: Write handshake still in progress",__func__, __LINE__);
+	}
+
 	ret = regmap_write(sensor->regmap8, sensor->cci_reg.reg.bcrm_addr + BCRM_WRITE_HANDSHAKE_8RW, handshake_val & ~BCRM_HANDSHAKE_STATUS_MASK); /* reset only handshake status */
 
 	if (ret < 0)
@@ -6572,6 +6577,11 @@ static int bcrm_regmap_write(struct avt3_dev *sensor,
 	{
 		dev_err(&sensor->i2c_client->dev,"%s[%d]: Reading handshake value failed with: %d\n",__func__, __LINE__,ret);
 		return ret;
+	}
+
+	if ((handshake_val & BCRM_HANDSHAKE_STATUS_MASK) != 0)
+	{
+		dev_warn(&sensor->i2c_client->dev,"%s[%d]: Write handshake still in progress",__func__, __LINE__);
 	}
 
 	ret = regmap_write(sensor->regmap8, sensor->cci_reg.reg.bcrm_addr + BCRM_WRITE_HANDSHAKE_8RW, handshake_val & ~BCRM_HANDSHAKE_STATUS_MASK); /* reset only handshake status */
