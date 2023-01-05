@@ -6773,17 +6773,38 @@ static uint64_t wait_for_bcrm_write_handshake(struct i2c_client *client, uint64_
 
 static int avt3_detect(struct i2c_client *client)
 {
-	u8 value = 0;
+	const u16 address = 0x0;
+	u32 value = 0;
 	int ret;
+	const struct i2c_msg msgs[2] = {
+			{
+				.addr = client->addr,
+				.flags = 0,
+				.buf = (__u8*)&address,
+				.len = 2,
+			},
+			{
+				.addr = client->addr,
+				.flags = I2C_M_RD,
+				.buf = (__u8*)&value,
+				.len = 4,
+			},
+	};
 
-	ret = i2c_master_send(client,&value,1);
+
+	ret = i2c_transfer(client->adapter, msgs, 2);
 
 	if (ret < 0 )
+	{
 		return ret;
+	}
 
-	ret = i2c_master_recv(client,&value,1);
+	if (value == 0)
+	{
+		return -1;
+	}
 
-	return ret;
+	return 0;
 }
 
 /*******************************************************************
