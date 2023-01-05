@@ -279,45 +279,6 @@ static struct avt3_dev *client_to_avt3_dev(const struct i2c_client *client)
 	return container_of(i2c_get_clientdata(client), struct avt3_dev, sd);
 }
 
-static uint32_t i2c_read(struct i2c_client *client, uint32_t reg,
-						 uint32_t size, uint32_t count, char *buf)
-{
-	struct avt3_dev *sensor = client_to_avt3_dev(client);
-	int ret = 0;
-
-#ifdef I2C_READ_COMPATIBLE_MODE
-	/* read byte per byte regardless the endianess
-	 * that means ignore parameter size and read count
-	 * number of bytes */
-
-	ret = regmap_bulk_read(sensor->regmap8, reg, buf, count);
-#else
-	/* Read count pakets of size bytes per packet and correct endianess
-	 * should work independently on the endianess of the host cross_update.
-	 * Take care on the absolute number of bytes what is size * count.  */
-
-	switch (size)
-	{
-	case AV_CAM_DATA_SIZE_8:
-		ret = regmap_bulk_read(sensor->regmap8, reg, buf, count);
-		break;
-	case AV_CAM_DATA_SIZE_16:
-		ret = regmap_bulk_read(sensor->regmap16, reg, buf, count);
-		break;
-	case AV_CAM_DATA_SIZE_32:
-		ret = regmap_bulk_read(sensor->regmap32, reg, buf, count);
-		break;
-	case AV_CAM_DATA_SIZE_64:
-		ret = regmap_bulk_read(sensor->regmap64, reg, buf, count);
-		break;
-	default:
-		avt_err(&sensor->sd, "wrong value of parameter size %d", size);
-		ret = -EINVAL;
-	}
-#endif
-	return ret;
-}
-
 // static int avt3_set_mipi_clock(struct v4l2_subdev *sd);
 
 #define DUMP_BCRM_REG8(CLIENT, BCRM_REG) dump_bcrm_reg(CLIENT, (BCRM_REG), (#BCRM_REG), AV_CAM_DATA_SIZE_8)
@@ -3741,7 +3702,7 @@ static struct v4l2_ctrl* avt3_ctrl_find(struct avt3_dev *camera,u32 id)
 
 	for (i = 0; i < AVT_MAX_CTRLS; i++)
 	{
-		const struct v4l2_ctrl * ctrl = camera->avt3_ctrls[i];
+		struct v4l2_ctrl * ctrl = camera->avt3_ctrls[i];
 
 		if (ctrl && ctrl->id == id)
 		{
@@ -4001,10 +3962,8 @@ static int avt3_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 		if (ctrl->priv != NULL)
 		{
 			const struct avt_ctrl_mapping * const ctrl_mapping = ctrl->priv;
-			const struct regmap * ctrl_regmap = avt3_get_regmap_by_size(sensor,ctrl_mapping->data_size);
-
+			struct regmap * const ctrl_regmap = avt3_get_regmap_by_size(sensor,ctrl_mapping->data_size);
 			dev_info(&client->dev, "%s[%d]: Write custom ctrl %s (%x)\n", __func__, __LINE__, ctrl_mapping->attr.name, ctrl->id);
-
 
 
 			if (ctrl_mapping->data_size == AV_CAM_DATA_SIZE_64)
@@ -4435,7 +4394,7 @@ static int avt3_init_controls(struct avt3_dev *sensor)
 
 			sensor->avt3_ctrl_cfg[i] = config;
 
-			ctrl = v4l2_ctrl_new_custom(&sensor->v4l2_ctrl_hdl,&config,ctrl_mapping);
+			ctrl = v4l2_ctrl_new_custom(&sensor->v4l2_ctrl_hdl,&config,(void*)ctrl_mapping);
 
 			if (ctrl != NULL)
 			{
@@ -4737,7 +4696,6 @@ static int avt3_video_ops_s_frame_interval(struct v4l2_subdev *sd,
 										   struct v4l2_subdev_frame_interval *fi)
 {
 	struct avt3_dev *sensor = to_avt3_dev(sd);
-	int fps_idx;
 	int ret = 0;
 	const u64 factor = 1000000L;
 	u64 framerate_req,framerate_min,framerate_max;
@@ -4937,7 +4895,6 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 	if (enable && !sensor->is_streaming)
 	{
 		struct v4l2_ext_control vc;
-		struct v4l2_ctrl *trigger_mode_ctrl,*trigger_selection_ctrl,*trigger_activation_ctrl;
 
 		u64 u64FrMin = 0;
 		u64 u64FrMax = 0;
@@ -5240,26 +5197,6 @@ int avt3_core_ops_s_register(struct v4l2_subdev *sd, const struct v4l2_dbg_regis
 //
 //	return 0;
 //}
-
-static void set_channel_pending_trigger(struct v4l2_subdev *sd)
-{
-	//	struct tegra_channel *tch;
-	struct media_pad *pad_csi, *pad_vi;
-	struct v4l2_subdev *sd_csi, *sd_vi;
-	struct video_device *vdev_vi;
-
-	if (!sd->entity.pads)
-		return;
-
-	pad_csi = media_entity_remote_pad(&sd->entity.pads[0]);
-	sd_csi = media_entity_to_v4l2_subdev(pad_csi->entity);
-	pad_vi = media_entity_remote_pad(&sd_csi->entity.pads[1]);
-	sd_vi = media_entity_to_v4l2_subdev(pad_vi->entity);
-	vdev_vi = media_entity_to_video_device(pad_vi->entity);
-	//	tch = video_get_drvdata(vdev_vi);
-
-	//	tch->pending_trigger = true;
-}
 
 #if 1
 long avt3_core_ops_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
@@ -6776,7 +6713,7 @@ static int avt3_detect(struct i2c_client *client)
 	const u16 address = 0x0;
 	u32 value = 0;
 	int ret;
-	const struct i2c_msg msgs[2] = {
+	struct i2c_msg msgs[2] = {
 			{
 				.addr = client->addr,
 				.flags = 0,
@@ -6794,7 +6731,7 @@ static int avt3_detect(struct i2c_client *client)
 
 	ret = i2c_transfer(client->adapter, msgs, 2);
 
-	if (ret < 0 )
+	if (ret < 0)
 	{
 		return ret;
 	}
