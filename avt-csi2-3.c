@@ -279,45 +279,6 @@ static struct avt3_dev *client_to_avt3_dev(const struct i2c_client *client)
 	return container_of(i2c_get_clientdata(client), struct avt3_dev, sd);
 }
 
-static uint32_t i2c_read(struct i2c_client *client, uint32_t reg,
-						 uint32_t size, uint32_t count, char *buf)
-{
-	struct avt3_dev *sensor = client_to_avt3_dev(client);
-	int ret = 0;
-
-#ifdef I2C_READ_COMPATIBLE_MODE
-	/* read byte per byte regardless the endianess
-	 * that means ignore parameter size and read count
-	 * number of bytes */
-
-	ret = regmap_bulk_read(sensor->regmap8, reg, buf, count);
-#else
-	/* Read count pakets of size bytes per packet and correct endianess
-	 * should work independently on the endianess of the host cross_update.
-	 * Take care on the absolute number of bytes what is size * count.  */
-
-	switch (size)
-	{
-	case AV_CAM_DATA_SIZE_8:
-		ret = regmap_bulk_read(sensor->regmap8, reg, buf, count);
-		break;
-	case AV_CAM_DATA_SIZE_16:
-		ret = regmap_bulk_read(sensor->regmap16, reg, buf, count);
-		break;
-	case AV_CAM_DATA_SIZE_32:
-		ret = regmap_bulk_read(sensor->regmap32, reg, buf, count);
-		break;
-	case AV_CAM_DATA_SIZE_64:
-		ret = regmap_bulk_read(sensor->regmap64, reg, buf, count);
-		break;
-	default:
-		avt_err(&sensor->sd, "wrong value of parameter size %d", size);
-		ret = -EINVAL;
-	}
-#endif
-	return ret;
-}
-
 // static int avt3_set_mipi_clock(struct v4l2_subdev *sd);
 
 #define DUMP_BCRM_REG8(CLIENT, BCRM_REG) dump_bcrm_reg(CLIENT, (BCRM_REG), (#BCRM_REG), AV_CAM_DATA_SIZE_8)
@@ -3741,7 +3702,7 @@ static struct v4l2_ctrl* avt3_ctrl_find(struct avt3_dev *camera,u32 id)
 
 	for (i = 0; i < AVT_MAX_CTRLS; i++)
 	{
-		const struct v4l2_ctrl * ctrl = camera->avt3_ctrls[i];
+		struct v4l2_ctrl * ctrl = camera->avt3_ctrls[i];
 
 		if (ctrl && ctrl->id == id)
 		{
@@ -3861,7 +3822,7 @@ static int avt3_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 		}
 		avt_dbg(&sensor->sd, "V4L2_CID_GAMMA %d", ctrl->val);
 		val64.s64 = ctrl->val;
-		ret = regmap_bulk_write(sensor->regmap64, sensor->cci_reg.reg.bcrm_addr + BCRM_GAMMA_64RW, &val64, 1);
+		ret = bcrm_regmap_write64(sensor,sensor->regmap64, sensor->cci_reg.reg.bcrm_addr + BCRM_GAMMA_64RW, val64.s64);
 		break;
 
 	case V4L2_CID_CONTRAST:
@@ -3920,18 +3881,20 @@ static int avt3_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 
 	case V4L2_CID_RED_BALANCE:
 		dev_info(&client->dev, "%s[%d]: V4L2_CID_RED_BALANCE %d\n", __func__, __LINE__, ctrl->val);
-		ret = regmap_bulk_write(sensor->regmap64, sensor->cci_reg.reg.bcrm_addr + BCRM_RED_BALANCE_RATIO_64RW, &val64, 1);
+		val64.s64 = ctrl->val;
+		ret = bcrm_regmap_write64(sensor,sensor->regmap64, sensor->cci_reg.reg.bcrm_addr + BCRM_RED_BALANCE_RATIO_64RW, val64.s64);
 		break;
 
 	case V4L2_CID_BLUE_BALANCE:
 		dev_info(&client->dev, "%s[%d]: V4L2_CID_BLUE_BALANCE %d\n", __func__, __LINE__, ctrl->val);
-		ret = regmap_bulk_write(sensor->regmap64, sensor->cci_reg.reg.bcrm_addr + BCRM_BLUE_BALANCE_RATIO_64RW, &val64, 1);
+		val64.s64 = ctrl->val;
+		ret = bcrm_regmap_write64(sensor,sensor->regmap64, sensor->cci_reg.reg.bcrm_addr + BCRM_BLUE_BALANCE_RATIO_64RW, val64.s64);
 		break;
 
 	case V4L2_CID_EXPOSURE:
 		dev_info(&client->dev, "%s[%d]: V4L2_CID_EXPOSURE %d\n", __func__, __LINE__, ctrl->val);
 		sensor->exposure_time = val64.s64 = ctrl->val;
-		ret = regmap_bulk_write(sensor->regmap64, sensor->cci_reg.reg.bcrm_addr + BCRM_EXPOSURE_TIME_64RW, &val64, 1);
+		ret = bcrm_regmap_write64(sensor,sensor->regmap64, sensor->cci_reg.reg.bcrm_addr + BCRM_EXPOSURE_TIME_64RW, val64.s64);
 		break;
 
 	case V4L2_CID_EXPOSURE_ABSOLUTE:
@@ -3939,7 +3902,7 @@ static int avt3_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 		val64.s64 = ctrl->val;
 		sensor->exposure_time = val64.s64 * 100;
 		dev_info(&client->dev, "%s[%d]: V4L2_CID_EXPOSURE_ABSOLUTE %d --> %lld ns\n", __func__, __LINE__, ctrl->val, sensor->exposure_time);
-		ret = regmap_bulk_write(sensor->regmap64, sensor->cci_reg.reg.bcrm_addr + BCRM_EXPOSURE_TIME_64RW, &val64, 1);
+		ret = bcrm_regmap_write64(sensor,sensor->regmap64, sensor->cci_reg.reg.bcrm_addr + BCRM_EXPOSURE_TIME_64RW, val64.s64);
 		break;
 
 	case V4L2_CID_GAIN:
@@ -3950,7 +3913,7 @@ static int avt3_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 		}
 		dev_info(&client->dev, "%s[%d]: V4L2_CID_GAIN %d\n", __func__, __LINE__, ctrl->val);
 		sensor->gain = val64.s64 = ctrl->val;
-		ret = regmap_bulk_write(sensor->regmap64, sensor->cci_reg.reg.bcrm_addr + BCRM_GAIN_64RW, &val64, 1);
+		ret = bcrm_regmap_write64(sensor, sensor->regmap64, sensor->cci_reg.reg.bcrm_addr + BCRM_GAIN_64RW, val64.s64);
 		break;
 
 	case V4L2_CID_AUTOGAIN:
@@ -3960,7 +3923,7 @@ static int avt3_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 			return -ENOTSUPP;
 		}
 		dev_info(&client->dev, "%s[%d]: V4L2_CID_AUTOGAIN %d\n", __func__, __LINE__, ctrl->val);
-		ret = bcrm_regmap_write(sensor, sensor->regmap8, sensor->cci_reg.reg.bcrm_addr + BCRM_GAIN_AUTO_8RW, ctrl->val);
+		ret = bcrm_regmap_write(sensor, sensor->regmap8, sensor->cci_reg.reg.bcrm_addr + BCRM_GAIN_AUTO_8RW, ctrl->val ? 2 : 0);
 		break;
 
 	case V4L2_CID_SHARPNESS:
@@ -3974,16 +3937,33 @@ static int avt3_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 		// reg = SHARPNESS_32RW;
 		//  ToDo: implement sharpness settings
 		break;
+	case V4L2_CID_EXPOSURE_AUTO:
+		if (!sensor->feature_inquiry_reg.feature_inq.exposure_auto_avail) {
+			dev_warn(&client->dev,
+					 "%s[%d]: V4L2_CID_EXPOSURE_AUTO not supported by current camera model and firmware!\n",
+					 __func__, __LINE__);
+			return -ENOTSUPP;
+		}
+		dev_info(&client->dev, "%s[%d]: V4L2_CID_EXPOSURE_AUTO %d\n", __func__, __LINE__, ctrl->val);
 
+		if (ctrl->val)
+		{
+			sensor->exposure_mode = EMODE_MANUAL;
+		}
+		else
+		{
+			sensor->exposure_mode = EMODE_AUTO;
+		}
+
+		ret = bcrm_regmap_write(sensor, sensor->regmap8, sensor->cci_reg.reg.bcrm_addr + BCRM_EXPOSURE_AUTO_8RW, sensor->exposure_mode);
+		break;
 	default:
 	{
 		if (ctrl->priv != NULL)
 		{
 			const struct avt_ctrl_mapping * const ctrl_mapping = ctrl->priv;
-			const struct regmap * ctrl_regmap = avt3_get_regmap_by_size(sensor,ctrl_mapping->data_size);
-
+			struct regmap * const ctrl_regmap = avt3_get_regmap_by_size(sensor,ctrl_mapping->data_size);
 			dev_info(&client->dev, "%s[%d]: Write custom ctrl %s (%x)\n", __func__, __LINE__, ctrl_mapping->attr.name, ctrl->id);
-
 
 
 			if (ctrl_mapping->data_size == AV_CAM_DATA_SIZE_64)
@@ -4196,6 +4176,8 @@ static int avt3_init_controls(struct avt3_dev *sensor)
 
 	for (i = 0, j = 0; j < ARRAY_SIZE(avt_ctrl_mappings); ++j)
 	{
+		const struct avt_ctrl_mapping * const ctrl_mapping = &avt_ctrl_mappings[j];
+
 		switch (avt_ctrl_mappings[j].id)
 		{
 		case V4L2_CID_CONTRAST:
@@ -4377,7 +4359,7 @@ static int avt3_init_controls(struct avt3_dev *sensor)
 				sensor->avt3_ctrl_cfg[i].step,
 				sensor->avt3_ctrl_cfg[i].def);
 
-		if (avt_ctrl_mappings[j].custom)
+		if (ctrl_mapping->custom)
 		{
 			struct v4l2_ctrl_config config;
 			const struct avt_ctrl_mapping * const ctrl_mapping = &avt_ctrl_mappings[j];
@@ -4390,12 +4372,6 @@ static int avt3_init_controls(struct avt3_dev *sensor)
 			config.name = ctrl_mapping->attr.name;
 			config.type = ctrl_mapping->type;
 			config.flags = ctrl_mapping->flags;
-
-			if (ctrl_mapping->avt_flags & AVT_CTRL_STREAM_ENABLED)
-			{
-				config.flags |= V4L2_CTRL_FLAG_GRABBED;
-			}
-
 
 			switch (ctrl_mapping->type)
 			{
@@ -4418,7 +4394,7 @@ static int avt3_init_controls(struct avt3_dev *sensor)
 
 			sensor->avt3_ctrl_cfg[i] = config;
 
-			ctrl = v4l2_ctrl_new_custom(&sensor->v4l2_ctrl_hdl,&config,ctrl_mapping);
+			ctrl = v4l2_ctrl_new_custom(&sensor->v4l2_ctrl_hdl,&config,(void*)ctrl_mapping);
 
 			if (ctrl != NULL)
 			{
@@ -4441,6 +4417,30 @@ static int avt3_init_controls(struct avt3_dev *sensor)
 						break;
 				}
 			}
+		}
+		else if (ctrl_mapping->type == V4L2_CTRL_TYPE_MENU)
+		{
+			if (ctrl_mapping->id == V4L2_CID_EXPOSURE_AUTO)
+			{
+				sensor->avt3_ctrl_cfg[i].max = 1;
+				sensor->avt3_ctrl_cfg[i].step = 0;
+				if (sensor->avt3_ctrl_cfg[i].def == 0)
+				{
+					sensor->avt3_ctrl_cfg[i].def = V4L2_EXPOSURE_MANUAL;
+				}
+				else
+				{
+					sensor->avt3_ctrl_cfg[i].def = V4L2_EXPOSURE_AUTO;
+				}
+			}
+
+			ctrl = v4l2_ctrl_new_std_menu(&sensor->v4l2_ctrl_hdl,
+										  &avt3_ctrl_ops,
+										  sensor->avt3_ctrl_cfg[i].id,
+										  sensor->avt3_ctrl_cfg[i].max,
+										  sensor->avt3_ctrl_cfg[i].step,
+										  sensor->avt3_ctrl_cfg[i].def
+										  );
 		}
 		else
 		{
@@ -4543,7 +4543,7 @@ static int avt3_pad_ops_enum_frame_size(struct v4l2_subdev *sd,
 		avt_dbg(sd, "fse->index %d, fse->which %s", fse->index,
 				fse->which == V4L2_SUBDEV_FORMAT_TRY ? "V4L2_SUBDEV_FORMAT_TRY" : "V4L2_SUBDEV_FORMAT_ACTIVE");
 
-	if (fse->pad == 0 && fse->which == V4L2_SUBDEV_FORMAT_TRY)
+	if (fse->pad != 0 && fse->which == V4L2_SUBDEV_FORMAT_TRY)
 	{
 		avt_info(sd, "se->which == V4L2_SUBDEV_FORMAT_TRY and no pad availble.");
 		return -EINVAL;
@@ -4696,7 +4696,6 @@ static int avt3_video_ops_s_frame_interval(struct v4l2_subdev *sd,
 										   struct v4l2_subdev_frame_interval *fi)
 {
 	struct avt3_dev *sensor = to_avt3_dev(sd);
-	int fps_idx;
 	int ret = 0;
 	const u64 factor = 1000000L;
 	u64 framerate_req,framerate_min,framerate_max;
@@ -4857,10 +4856,6 @@ static void avt3_controls_stream_grab(struct avt3_dev *camera,bool grabbed)
 			{
 				__v4l2_ctrl_grab(ctrl,grabbed);
 			}
-			else if (ctrl_mapping->avt_flags & AVT_CTRL_STREAM_ENABLED)
-			{
-				__v4l2_ctrl_grab(ctrl,!grabbed);
-			}
 		}
 	}
 }
@@ -4900,7 +4895,6 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 	if (enable && !sensor->is_streaming)
 	{
 		struct v4l2_ext_control vc;
-		struct v4l2_ctrl *trigger_mode_ctrl,*trigger_selection_ctrl,*trigger_activation_ctrl;
 
 		u64 u64FrMin = 0;
 		u64 u64FrMax = 0;
@@ -4960,15 +4954,17 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 			goto out;
 		}
 
-		ret = bcrm_regmap_write64(sensor, sensor->regmap64,
-								  sensor->cci_reg.reg.bcrm_addr + BCRM_EXPOSURE_TIME_64RW, sensor->exposure_time);
-
-		if (ret < 0)
+		if (sensor->exposure_mode == EMODE_MANUAL)
 		{
-			dev_err(&client->dev, "%s[%d]: BCRM_EXPOSURE_TIME_64RW: i2c write failed (%d)\n",
-					__func__, __LINE__,
-					ret);
-			goto out;
+			ret = bcrm_regmap_write64(sensor, sensor->regmap64,
+									  sensor->cci_reg.reg.bcrm_addr + BCRM_EXPOSURE_TIME_64RW, sensor->exposure_time);
+
+			if (ret < 0) {
+				dev_err(&client->dev, "%s[%d]: BCRM_EXPOSURE_TIME_64RW: i2c write failed (%d)\n",
+						__func__, __LINE__,
+						ret);
+				goto out;
+			}
 		}
 
 		ret = regmap_bulk_read(sensor->regmap64,
@@ -5033,7 +5029,7 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 				 sensor->frame_interval.numerator, sensor->frame_interval.denominator);
 
 		/* Save new frame rate to camera register */
-		vc.value64 = (sensor->frame_interval.denominator * 1000000) / sensor->frame_interval.numerator;
+		vc.value64 = (((u64)sensor->frame_interval.denominator) * 1000000) / ((u64)sensor->frame_interval.numerator);
 
 		dev_info(&client->dev, "%s[%d]: BCRM_ACQUISITION_FRAME_RATE_64RW (min: %llu req: %llu max: %llu) uHz\n",
 				 __func__, __LINE__,
@@ -5201,26 +5197,6 @@ int avt3_core_ops_s_register(struct v4l2_subdev *sd, const struct v4l2_dbg_regis
 //
 //	return 0;
 //}
-
-static void set_channel_pending_trigger(struct v4l2_subdev *sd)
-{
-	//	struct tegra_channel *tch;
-	struct media_pad *pad_csi, *pad_vi;
-	struct v4l2_subdev *sd_csi, *sd_vi;
-	struct video_device *vdev_vi;
-
-	if (!sd->entity.pads)
-		return;
-
-	pad_csi = media_entity_remote_pad(&sd->entity.pads[0]);
-	sd_csi = media_entity_to_v4l2_subdev(pad_csi->entity);
-	pad_vi = media_entity_remote_pad(&sd_csi->entity.pads[1]);
-	sd_vi = media_entity_to_v4l2_subdev(pad_vi->entity);
-	vdev_vi = media_entity_to_video_device(pad_vi->entity);
-	//	tch = video_get_drvdata(vdev_vi);
-
-	//	tch->pending_trigger = true;
-}
 
 #if 1
 long avt3_core_ops_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
@@ -6471,6 +6447,11 @@ static int bcrm_regmap_write64(struct avt3_dev *sensor,
 		return ret;
 	}
 
+	if ((handshake_val & BCRM_HANDSHAKE_STATUS_MASK) != 0)
+	{
+		dev_warn(&sensor->i2c_client->dev,"%s[%d]: Write handshake still in progress",__func__, __LINE__);
+	}
+
 	ret = regmap_write(sensor->regmap8, sensor->cci_reg.reg.bcrm_addr + BCRM_WRITE_HANDSHAKE_8RW, handshake_val & ~BCRM_HANDSHAKE_STATUS_MASK); /* reset only handshake status */
 
 	if (ret < 0)
@@ -6533,6 +6514,11 @@ static int bcrm_regmap_write(struct avt3_dev *sensor,
 	{
 		dev_err(&sensor->i2c_client->dev,"%s[%d]: Reading handshake value failed with: %d\n",__func__, __LINE__,ret);
 		return ret;
+	}
+
+	if ((handshake_val & BCRM_HANDSHAKE_STATUS_MASK) != 0)
+	{
+		dev_warn(&sensor->i2c_client->dev,"%s[%d]: Write handshake still in progress",__func__, __LINE__);
 	}
 
 	ret = regmap_write(sensor->regmap8, sensor->cci_reg.reg.bcrm_addr + BCRM_WRITE_HANDSHAKE_8RW, handshake_val & ~BCRM_HANDSHAKE_STATUS_MASK); /* reset only handshake status */
@@ -6722,6 +6708,42 @@ static uint64_t wait_for_bcrm_write_handshake(struct i2c_client *client, uint64_
 	return;
 }
 
+static int avt3_detect(struct i2c_client *client)
+{
+	const u16 address = 0x0;
+	u32 value = 0;
+	int ret;
+	struct i2c_msg msgs[2] = {
+			{
+				.addr = client->addr,
+				.flags = 0,
+				.buf = (__u8*)&address,
+				.len = 2,
+			},
+			{
+				.addr = client->addr,
+				.flags = I2C_M_RD,
+				.buf = (__u8*)&value,
+				.len = 4,
+			},
+	};
+
+
+	ret = i2c_transfer(client->adapter, msgs, 2);
+
+	if (ret < 0)
+	{
+		return ret;
+	}
+
+	if (value == 0)
+	{
+		return -1;
+	}
+
+	return 0;
+}
+
 /*******************************************************************
  *  avt_csi2_probe                                                 *
  *******************************************************************
@@ -6745,11 +6767,16 @@ static int avt3_probe(struct i2c_client *client)
 	dev_info(&client->dev, "%s[%d]: %s",
 			 __func__, __LINE__, __FILE__);
 
+	if (avt3_detect(client) < 0)
+	{
+		dev_warn(&client->dev,"No camera detected!");
+		return -ENODEV;
+	}
+
 	sensor = devm_kzalloc(dev, sizeof(*sensor), GFP_KERNEL);
 	if (!sensor)
 	{
-		ret = -ENOMEM;
-		goto err_exit;
+		return -ENOMEM;
 	}
 
 	sensor->i2c_client = client;
@@ -7161,6 +7188,15 @@ static int avt3_probe(struct i2c_client *client)
 	sensor->streamcap.capability = V4L2_CAP_TIMEPERFRAME;
 	sensor->streamcap.capturemode = V4L2_MODE_HIGHQUALITY;
 
+	// Init controls before registering the device, because the control handler must be fully initialized before
+	// the subdevice is registered.
+	ret = avt3_init_controls(sensor);
+	if (ret)
+	{
+		dev_err(dev, "%s[%d]: avt3_init_controls failed with (%d)\n", __func__, __LINE__, ret);
+		goto entity_cleanup;
+	}
+
 #if 1
 	ret = v4l2_async_register_subdev(&sensor->sd);
 #else
@@ -7185,12 +7221,7 @@ static int avt3_probe(struct i2c_client *client)
 		goto free_ctrls;
 	}
 
-	ret = avt3_init_controls(sensor);
-	if (ret)
-	{
-		dev_err(dev, "%s[%d]: avt3_init_controls failed with (%d)\n", __func__, __LINE__, ret);
-		goto entity_cleanup;
-	}
+
 
 #ifdef DPHY_RESET_WORKAROUND
 	sema_init(&sensor->streamon_sem, 0);
@@ -7291,7 +7322,7 @@ module_i2c_driver(avt3_i2c_driver);
 MODULE_DESCRIPTION("Allied Vision's MIPI-CSI2 Camera Driver");
 MODULE_AUTHOR("Allied Vision Inc.");
 MODULE_LICENSE("GPL");
-MODULE_VERSION("2023-1-beta");
+MODULE_VERSION("2023-2-beta");
 
 #ifdef DPHY_RESET_WORKAROUND
 if (sensor->phyreset_on_streamon)

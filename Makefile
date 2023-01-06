@@ -1,5 +1,6 @@
 obj-m := avt-csi2-3.o
 
+ccflags-y := -Werror
 #obj-m += startstop.o
 #startstop-objs := start.o stop.o
 
