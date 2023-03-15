@@ -173,6 +173,15 @@ struct avt_val64
 
 #define BCRM_WAIT_HANDSHAKE_TIMEOUT_MS 3000000
 
+//Define formats for GenICam for CSI2, if they not exist
+#ifndef V4L2_PIX_FMT_CUSTOM
+#define V4L2_PIX_FMT_CUSTOM    v4l2_fourcc('T', 'P', '3', '1') /* 0x31 mipi datatype  */
+#endif
+
+#ifndef MEDIA_BUS_FMT_CUSTOM
+#define MEDIA_BUS_FMT_CUSTOM        		0x5002
+#endif
+
 struct avt3_mode_info
 {
 	enum avt3_mode_id id;
@@ -194,6 +203,8 @@ struct avt3_mode_info
 //	[7]: 'XR24' (32-bit BGRX 8-8-8-8)
 //	[8]: 'AR24' (32-bit BGRA 8-8-8-8)
 //
+
+//TODO: Remove
 /* that table is for testing only */
 static const struct avt3_mode_info avt3_mode_data[AVT3_NUM_MODES] = {
 	{AVT3_MODE_FF_32_16, 32, 32, 16, 16},
@@ -218,6 +229,7 @@ static const struct avt3_mode_info avt3_mode_data[AVT3_NUM_MODES] = {
 	{AVT3_MODE_5376_3672, 5376, 5376, 3672, 3672},
 };
 
+//TODO: Remove
 /* that table is for testing only */
 
 static const int avt3_framerates[] = {
@@ -661,18 +673,18 @@ static int read_gencp_registers(struct i2c_client *client)
 	crc_byte_count =
 		(uint32_t)((char *)&sensor->gencp_reg.checksum - (char *)&sensor->gencp_reg);
 
-	regmap_bulk_read(sensor->regmap16,
+	ret = regmap_bulk_read(sensor->regmap8,
 					 sensor->cci_reg.reg.gcprm_address + 0x0000,
 					 (char *)&sensor->gencp_reg,
-					 sizeof(sensor->gencp_reg) / AV_CAM_REG_SIZE);
-
-	crc = crc32(U32_MAX, &sensor->gencp_reg, crc_byte_count);
+					 sizeof(sensor->gencp_reg));
 
 	if (ret < 0)
 	{
 		avt_err(&sensor->sd, "regmap_read failed, ret %d", ret);
 		goto err_out;
 	}
+
+	crc = crc32(U32_MAX, &sensor->gencp_reg, crc_byte_count);
 
 	be32_to_cpus(&sensor->gencp_reg.gcprm_layout_version);
 	be16_to_cpus(&sensor->gencp_reg.gencp_out_buffer_address);
@@ -685,6 +697,8 @@ static int read_gencp_registers(struct i2c_client *client)
 	{
 		avt_err(&sensor->sd, "wrong GENCP CRC value! calculated = 0x%x, received = 0x%x\n",
 				crc, sensor->gencp_reg.checksum);
+		ret = -EINVAL;
+		goto err_out;
 	}
 
 	avt_dbg(&sensor->sd, "gcprm layout version: %x\n",
@@ -2298,6 +2312,9 @@ static int avt3_init_avail_formats(struct v4l2_subdev *sd)
 		}
 	}
 
+	set_mode_mapping(pfmt, MEDIA_BUS_FMT_CUSTOM, 0x31,
+					 V4L2_COLORSPACE_DEFAULT, V4L2_PIX_FMT_CUSTOM, bayer_ignore, "MEDIA_BUS_FMT_CUSTOM");
+
 	pfmt->mbus_code = -EINVAL;
 
 	avt_dbg(&sensor->sd, "available_fmts_cnt %d", sensor->available_fmts_cnt);
@@ -2602,10 +2619,14 @@ static int avt3_pad_ops_set_fmt(struct v4l2_subdev *sd,
 		goto out;
 	}
 
-	ret = avt3_try_fmt_internal(sd, mbus_fmt,
-								sensor->current_fr, &new_mode);
-	if (ret)
-		goto out;
+	//
+	if (sensor->mode != AVT_GENCP_MODE)
+	{
+		ret = avt3_try_fmt_internal(sd, mbus_fmt,
+									sensor->current_fr, &new_mode);
+		if (ret)
+			goto out;
+	}
 
 	if (format->which == V4L2_SUBDEV_FORMAT_TRY) {
 		adev_info(&sensor->i2c_client->dev, "format->which == V4L2_SUBDEV_FORMAT_TRY");
@@ -2620,17 +2641,18 @@ static int avt3_pad_ops_set_fmt(struct v4l2_subdev *sd,
 	}
 
 	*fmt = *mbus_fmt;
-
-	if (new_mode != sensor->current_mode)
+	if (sensor->mode != AVT_GENCP_MODE)
 	{
-		sensor->current_mode = new_mode;
-		sensor->pending_mode_change = true;
-	}
-	if (mbus_fmt->code != sensor->mbus_framefmt.code)
-		sensor->pending_fmt_change = true;
+		if (new_mode != sensor->current_mode) {
+			sensor->current_mode = new_mode;
+			sensor->pending_mode_change = true;
+		}
+		if (mbus_fmt->code != sensor->mbus_framefmt.code)
+			sensor->pending_fmt_change = true;
 
-	if (sensor->pending_mode_change || sensor->pending_fmt_change)
-		sensor->mbus_framefmt = *mbus_fmt;
+		if (sensor->pending_mode_change || sensor->pending_fmt_change)
+			sensor->mbus_framefmt = *mbus_fmt;
+	}
 
 out:
 	MUTEX_UNLOCK(&sensor->lock);
@@ -4879,6 +4901,9 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 			 sensor->mbus_framefmt.code,
 			 sensor->mbus_framefmt.ycbcr_enc);
 
+	if (sensor->mode == AVT_GENCP_MODE)
+		return 0;
+
 	MUTEX_LOCK(&sensor->lock);
 
 	CLEAR(ct);
@@ -5535,6 +5560,15 @@ long avt3_core_ops_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 			dev_err(&client->dev, "%s[%d]: i2c write failed (%d), bytes written = %d\n",
 					__func__, __LINE__, ret, i2c_reg->num_bytes);
 		}
+
+		if (i2c_reg->register_address == GENCP_CHANGEMODE_8W)
+		{
+			dev_info(&client->dev,"Switching mode according to ioctl request! New mode %d\n",
+					 (int)i2c_reg_buf[0]);
+
+			sensor->mode = i2c_reg_buf[0];
+		}
+
 		break;
 
 	case VIDIOC_G_DRIVER_INFO:
