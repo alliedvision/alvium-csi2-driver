@@ -79,6 +79,10 @@
 #define BCRM_WIDTH_MAX_32R                          0x0168
 #define BCRM_HEIGHT_MAX_32R                         0x016C
 
+#define BCRM_BINNING_INQ_16R			    0x0170
+#define BCRM_BINNING_SETTING_8RW		    0x0174
+#define BCRM_BINNING_MODE_8RW			    0x0178
+
 #define BCRM_EXPOSURE_TIME_64RW                     0x0180
 #define BCRM_EXPOSURE_TIME_MIN_64R                  0x0188
 #define BCRM_EXPOSURE_TIME_MAX_64R                  0x0190
@@ -170,6 +174,10 @@
 
 #define BCRM_HANDSHAKE_STATUS_MASK			0x01
 #define BCRM_HANDSHAKE_AVAILABLE_MASK		0x80
+
+#if !defined(V4L2_MBUS_CSI2_MAX_DATA_LANES) && defined(V4L2_FWNODE_CSI2_MAX_DATA_LANES)
+#define V4L2_MBUS_CSI2_MAX_DATA_LANES V4L2_FWNODE_CSI2_MAX_DATA_LANES
+#endif
 
 enum CCI_REG_INFO {
 	CCI_REGISTER_LAYOUT_VERSION = 0,
@@ -388,7 +396,7 @@ union bcrm_supported_lanecount_reg {
 struct avt_csi_information {
 	__u32 csi_clk_freq; //max_lane_frequency;
 	__u8 lane_count;
-	__u8 lane_assignment[V4L2_FWNODE_CSI2_MAX_DATA_LANES];
+	__u8 lane_assignment[V4L2_MBUS_CSI2_MAX_DATA_LANES];
 	__u8 clk_lane;
 };
 
