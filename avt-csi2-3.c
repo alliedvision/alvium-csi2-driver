@@ -7483,7 +7483,7 @@ module_i2c_driver(avt3_i2c_driver);
 MODULE_DESCRIPTION("Allied Vision's MIPI-CSI2 Camera Driver");
 MODULE_AUTHOR("Allied Vision Inc.");
 MODULE_LICENSE("GPL");
-MODULE_VERSION("2023-2-beta");
+MODULE_VERSION("1.0.0");
 
 #ifdef DPHY_RESET_WORKAROUND
 if (sensor->phyreset_on_streamon)
