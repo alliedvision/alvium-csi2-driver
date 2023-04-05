@@ -2567,31 +2567,34 @@ static int avt3_pad_ops_get_fmt(struct v4l2_subdev *sd,
 	return 0;
 }
 
-static void avt3_calc_compose(struct avt3_dev *camera,
-			      const struct v4l2_rect *crop,
+static void avt3_calc_compose(const struct avt3_dev * const camera,
+			      const struct v4l2_rect * const crop,
 			      u32 *width,u32 *height,
 			      const struct avt3_binning_info **info)
 {
 	const u32 type = camera->curr_binning_type;
-	struct avt3_binning_info *infos = camera->binning_infos[type];
+	const struct avt3_binning_info * const infos = camera->binning_infos[type];
 	const size_t cnt = camera->binning_info_cnt[type];
+	const struct v4l2_rect * const min = &camera->min_rect;
+	const struct v4l2_rect * const max = &camera->max_rect;
+	const bool x_changed = *width != camera->mbus_framefmt.width;
+	const bool y_changed = *height != camera->mbus_framefmt.height;
 	const struct avt3_binning_info *best;
 	struct v4l2_rect scaled_crop = *crop;
 	struct v4l2_rect binning_rect = {0};
-	struct v4l2_rect *min = &camera->min_rect, *max = &camera->max_rect;
-	int i;
-	u32 error, min_error = U32_MAX;
-	bool x_changed = *width != camera->mbus_framefmt.width;
-	bool y_changed = *height != camera->mbus_framefmt.height;
 
 	best = camera->curr_binning_info;
 
 	if (x_changed || y_changed) {
+		u32 min_error = U32_MAX;
+		int i;
+
 		for (i = 0; i < cnt; i++) {
-			struct avt3_binning_info *cur = &infos[i];
-			u32 s_width = camera->curr_rect.width / cur->vfact;
-			u32 s_height = camera->curr_rect.height / cur->hfact;
-			error = 0;
+			const struct avt3_binning_info * const cur = &infos[i];
+			const u32 s_width = camera->curr_rect.width / cur->vfact;
+			const u32 s_height = camera->curr_rect.height / cur->hfact;
+			u32 error = 0;
+
 			if (x_changed)
 				error += abs(s_width - *width);
 
@@ -2603,7 +2606,7 @@ static void avt3_calc_compose(struct avt3_dev *camera,
 
 			min_error = error;
 			best = cur;
-			if (!error)
+			if (error == 0)
 				break;
 		}
 	}
@@ -5374,39 +5377,13 @@ long avt3_core_ops_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
 	struct avt3_dev *sensor = to_avt3_dev(sd);
 	struct v4l2_capability *cap = arg;
-
-	//	struct avt_csi2_priv *priv = avt_get_priv(sd);
 	struct v4l2_i2c *i2c_reg;
 	struct v4l2_csi_driver_info *info;
 	struct v4l2_csi_config *config;
-	//	struct v4l2_queryctrl 		*queryctrl;
-	//	struct v4l2_query_ext_ctrl 	*queryctrlext;
-	//	struct v4l2_querymenu 		*querymenu;
-	//	struct v4l2_selection		*v4l2_sel;
-	//	struct v4l2_fmtdesc			*v4l2fmtdesc;
-	//	struct v4l2_ext_controls	*v4l2_xctl;
-	// struct v4l2_streamparm *v4l2_srmparm = arg;
-	//	struct v4l2_control			*v4l2_ctl;
-	//	struct v4l2_subdev_capability 		*v4l2_sd_capability;
-	//	struct v4l2_subdev_format 			*v4l2_sd_format;
-	//	struct v4l2_subdev_frame_interval 	*v4l2_sd_frame_interval;
-	//	struct v4l2_subdev_mbus_code_enum 	*v4l2_sd_mbus_code_enum;
-	//	struct v4l2_subdev_frame_size_enum 	*v4l2_sd_frame_size_enum;
-	//	struct v4l2_subdev_crop 			*v4l2_sd_crop;
-	//	struct v4l2_subdev_selection 		*v4l2_sd_selection;
-	//	struct v4l2_subdev_frame_interval_enum 	*v4l2_sd_frame_interval_enum;
 
-	//	struct v4l2_dbg_register
-	//	struct v4l2_frmsizeenum
-	//	struct v4l2_frmivalenum
-
-	//	uint32_t clk;
 	char *i2c_reg_buf;
-	//	struct v4l2_gencp_buffer_sizes *gencp_buf_sz;
 
 	avt_dbg(sd, "cmd 0x%08x %d %s", cmd, cmd & 0xff, __FILE__);
-
-	//	dump_stack();
 
 	switch (cmd)
 	{
@@ -5762,7 +5739,7 @@ static void avt3_get_compose(struct avt3_dev *camera,
 		   struct v4l2_subdev_state *sd_state,
 		   struct v4l2_subdev_selection *sel)
 {
-	struct v4l2_mbus_framefmt *frmfmt;
+	const struct v4l2_mbus_framefmt *frmfmt;
 
 	if (sel->which == V4L2_SUBDEV_FORMAT_TRY)
 		frmfmt = v4l2_subdev_get_try_format(&camera->sd,sd_state,
@@ -5776,11 +5753,11 @@ static void avt3_get_compose(struct avt3_dev *camera,
 	sel->r.height = frmfmt->height;
 }
 
-static void avt3_get_crop(struct avt3_dev *camera,
+static void avt3_get_crop(struct avt3_dev * camera,
 		   struct v4l2_subdev_state *sd_state,
 		   struct v4l2_subdev_selection *sel)
 {
-	struct v4l2_rect *rect;
+	const struct v4l2_rect *rect;
 
 	dev_info(&camera->i2c_client->dev, "%s[%d]: %s",
 		 __func__, __LINE__, __FILE__);
@@ -5801,7 +5778,6 @@ int avt3_pad_ops_get_selection(struct v4l2_subdev *sd,
 {
 	struct avt3_dev *sensor = to_avt3_dev(sd);
 	struct i2c_client *client = sensor->i2c_client;
-	int ret = 0;
 
 	dev_info(&client->dev, "%s[%d]: %s",
 			 __func__, __LINE__, __FILE__);
@@ -5841,11 +5817,10 @@ int avt3_pad_ops_get_selection(struct v4l2_subdev *sd,
 		break;
 
 	default:
-		ret = -EINVAL;
-		break;
+		return -EINVAL;
 	}
 
-	return ret;
+	return 0;
 }
 
 static int avt3_set_compose(struct avt3_dev *camera,
@@ -5854,7 +5829,7 @@ static int avt3_set_compose(struct avt3_dev *camera,
 {
 	struct v4l2_mbus_framefmt *frmfmt;
 	const struct avt3_binning_info *info;
-	struct v4l2_rect *crop;
+	const struct v4l2_rect *crop;
 
 	if (sel->which  == V4L2_SUBDEV_FORMAT_TRY) {
 		frmfmt = v4l2_subdev_get_try_format(&camera->sd, sd_state, sel->pad);
@@ -5923,7 +5898,7 @@ int avt3_pad_ops_set_selection(struct v4l2_subdev *sd,
 	int ret = -EINVAL;
 
 
-	if (V4L2_SUBDEV_FORMAT_ACTIVE == sel->which && true == sensor->is_streaming)
+	if (sensor->is_streaming && sel->which == V4L2_SUBDEV_FORMAT_ACTIVE)
 		return -EBUSY;
 
 	if (sel->pad > 0)
@@ -6358,7 +6333,7 @@ static int avt3_query_binning(struct avt3_dev *camera)
 	dev_info(&camera->i2c_client->dev,"Binning inq %u\n",binning_inq);
 
 	if (ret < 0)
-		goto exit;
+		return ret;
 
 	for (i = 0;i < avt_binning_setting_cnt;i++) {
 		const struct avt_binning_setting *setting =
@@ -6379,7 +6354,8 @@ static int avt3_query_binning(struct avt3_dev *camera)
 			sizeof(struct avt3_binning_info),GFP_KERNEL);
 	}
 
-	for (i = 0,j = 0;i < avt_binning_setting_cnt;i++) {
+	j = 0;
+	for (i = 0;i < avt_binning_setting_cnt;i++) {
 		const struct avt_binning_setting *setting = &avt_binning_settings[i];
 		if (setting->inq == -1 || binning_inq & (1<<setting->inq)) {
 			struct avt3_binning_info info = {0};
@@ -6429,19 +6405,19 @@ static int avt3_query_binning(struct avt3_dev *camera)
 	ret = bcrm_regmap_write(camera,camera->regmap8,camera->cci_reg.reg.bcrm_addr + BCRM_BINNING_SETTING_8RW,camera->curr_binning_info->sel);
 
 	if (ret < 0)
-		goto exit;
+		return ret;
 
 	ret = bcrm_regmap_write(camera,camera->regmap32,camera->cci_reg.reg.bcrm_addr + BCRM_IMG_WIDTH_32RW,camera->curr_binning_info->max_width);
 
 	if (ret < 0)
-		goto exit;
+		return ret;
 
 	ret = bcrm_regmap_write(camera,camera->regmap32,camera->cci_reg.reg.bcrm_addr + BCRM_IMG_HEIGHT_32RW,camera->curr_binning_info->max_height);
 
 	if (ret < 0)
-		goto exit;
-exit:
-	return ret;
+		return ret;
+
+	return 0;
 }
 
 
