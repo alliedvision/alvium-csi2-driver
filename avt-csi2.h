@@ -126,98 +126,98 @@ enum avt3_mode_id
 
 
 struct avt_ctrl_mapping {
-	u8	reg_size;
-	u8	data_size;
-	u16	min_offset;
-	u16	max_offset;
-	u16	reg_offset;
-	u16	step_offset;
-	u32	id;
-	u32	type;
-	u32	flags;
+	u8 reg_size;
+	u8 data_size;
+	u16 min_offset;
+	u16 max_offset;
+	u16 reg_offset;
+	u16 step_offset;
+	u32 id;
+	u32 type;
+	u32 flags;
 	struct {
 		s8	*name;
 		s8	feature_avail;
 	} attr;
-    bool custom;
-    s64 min_value;
-    s64 max_value;
-    s64 step_value;
-    s64 default_value;
-    const char * const * qmenu;
-    u32 avt_flags;
+	bool custom;
+	s64 min_value;
+	s64 max_value;
+	s64 step_value;
+	s64 default_value;
+	const char * const * qmenu;
+	u32 avt_flags;
 };
 
-#define AV_ATTR_REVERSE_X			{"Reverse X",		0}
-#define AV_ATTR_REVERSE_Y			{"Reverse Y",		1}
-#define AV_ATTR_INTENSITY_AUTO		{"Intensity Auto",	2}
-#define AV_ATTR_BRIGHTNESS			{"Brightness",		3}
+#define AV_ATTR_REVERSE_X		{"Reverse X",			0}
+#define AV_ATTR_REVERSE_Y		{"Reverse Y",			1}
+#define AV_ATTR_INTENSITY_AUTO		{"Intensity Auto",		2}
+#define AV_ATTR_BRIGHTNESS		{"Brightness",			3}
 /* Red & Blue balance features are enabled by default since it doesn't have
  * option in BCRM FEATURE REGISTER
  */
-#define AV_ATTR_RED_BALANCE			{"Red Balance",         3}
-#define AV_ATTR_BLUE_BALANCE		{"Blue Balance",        3}
-#define AV_ATTR_GAIN				{"Gain",				4}
-#define AV_ATTR_GAMMA				{"Gamma",				5}
-#define AV_ATTR_CONTRAST			{"Contrast",			6}
-#define AV_ATTR_SATURATION			{"Saturation",			7}
-#define AV_ATTR_HUE					{"Hue",					8}
+#define AV_ATTR_RED_BALANCE		{"Red Balance",			3}
+#define AV_ATTR_BLUE_BALANCE		{"Blue Balance",		3}
+#define AV_ATTR_GAIN			{"Gain",			4}
+#define AV_ATTR_GAMMA			{"Gamma",			5}
+#define AV_ATTR_CONTRAST		{"Contrast",			6}
+#define AV_ATTR_SATURATION		{"Saturation",			7}
+#define AV_ATTR_HUE			{"Hue",				8}
 #define AV_ATTR_WHITEBALANCE		{"White Balance",		9}
-#define AV_ATTR_SHARPNESS			{"Sharpness",	       10}
-#define AV_ATTR_EXPOSURE_AUTO		{"Exposure Auto",      11}
-#define AV_ATTR_AUTOGAIN			{"Auto Gain",          12}
-#define AV_ATTR_EXPOSURE			{"Exposure",	       13}
-#define AV_ATTR_EXPOSURE_ABS		{"Exposure Absolute",  13}
-#define AV_ATTR_WHITEBALANCE_AUTO	{"Auto White Balance", 14}
-#define AV_ATTR_LINK_FREQ			{"MIPI CSI-2 Link Frequency", 15}
+#define AV_ATTR_SHARPNESS		{"Sharpness",			10}
+#define AV_ATTR_EXPOSURE_AUTO		{"Exposure Auto",		11}
+#define AV_ATTR_AUTOGAIN		{"Auto Gain",			12}
+#define AV_ATTR_EXPOSURE		{"Exposure",			13}
+#define AV_ATTR_EXPOSURE_ABS		{"Exposure Absolute",		13}
+#define AV_ATTR_WHITEBALANCE_AUTO	{"Auto White Balance",		14}
+#define AV_ATTR_LINK_FREQ		{"MIPI CSI-2 Link Frequency",	15}
 
 
-#define AV_ATTR_TRIGGER_MODE                    {"Trigger Mode",                    17}
-#define AV_ATTR_TRIGGER_ACTIVATION              {"Trigger Activation",              17}
-#define AV_ATTR_TRIGGER_SOURCE                  {"Trigger Source",                  17}
-#define AV_ATTR_TRIGGER_SOFTWARE                {"Trigger Software",                17}
+#define AV_ATTR_TRIGGER_MODE		{"Trigger Mode",		17}
+#define AV_ATTR_TRIGGER_ACTIVATION	{"Trigger Activation",		17}
+#define AV_ATTR_TRIGGER_SOURCE		{"Trigger Source",		17}
+#define AV_ATTR_TRIGGER_SOFTWARE	{"Trigger Software",    	17}
 
-#define AV_ATTR_BINNING_MODE			{"Binning Mode",	-1}
-#define AV_ATTR_BINNING_SETTING			{"Binning Setting",	-1}
+#define AV_ATTR_BINNING_MODE		{"Binning Mode",		-1}
+#define AV_ATTR_BINNING_SETTING		{"Binning Setting",		-1}
 
 
 /* Trigger mode to ON/OFF */
-#define V4L2_CID_TRIGGER_MODE                   (V4L2_CID_CAMERA_CLASS_BASE+47)
+#define V4L2_CID_TRIGGER_MODE		(V4L2_CID_CAMERA_CLASS_BASE+47)
 
 /* trigger activation: edge_rising, edge_falling, edge_any, level_high, level_low */
-#define V4L2_CID_TRIGGER_ACTIVATION             (V4L2_CID_CAMERA_CLASS_BASE+48)
+#define V4L2_CID_TRIGGER_ACTIVATION	(V4L2_CID_CAMERA_CLASS_BASE+48)
 
 /* trigger source: software, gpio0, gpio1 */
-#define V4L2_CID_TRIGGER_SOURCE                 (V4L2_CID_CAMERA_CLASS_BASE+49)
+#define V4L2_CID_TRIGGER_SOURCE		(V4L2_CID_CAMERA_CLASS_BASE+49)
 
 /* Execute a software trigger */
-#define V4L2_CID_TRIGGER_SOFTWARE               (V4L2_CID_CAMERA_CLASS_BASE+50)
+#define V4L2_CID_TRIGGER_SOFTWARE	(V4L2_CID_CAMERA_CLASS_BASE+50)
 
 
 /* Camera temperature readout */
-#define V4L2_CID_DEVICE_TEMPERATURE             (V4L2_CID_CAMERA_CLASS_BASE+51)
+#define V4L2_CID_DEVICE_TEMPERATURE	(V4L2_CID_CAMERA_CLASS_BASE+51)
 
 /* Binning mode: avg, sum */
-#define V4L2_CID_BINNING_MODE             	(V4L2_CID_CAMERA_CLASS_BASE+52)
+#define V4L2_CID_BINNING_MODE		(V4L2_CID_CAMERA_CLASS_BASE+52)
 
 /* Binning mode: avg, sum */
-#define V4L2_CID_BINNING_SETTING             	(V4L2_CID_CAMERA_CLASS_BASE+53)
+#define V4L2_CID_BINNING_SETTING	(V4L2_CID_CAMERA_CLASS_BASE+53)
 
 
 
 static const char * const v4l2_triggeractivation_menu[] = {
-        "Rising Edge",
-        "Falling Edge",
-        "Any Edge",
-        "Level High",
-        "Level Low"
+	"Rising Edge",
+	"Falling Edge",
+	"Any Edge",
+	"Level High",
+	"Level Low"
 };
 static const char * const v4l2_triggersource_menu[] = {
-        "Line 0",
-        "Line 1",
-        "Line 2",
-        "Line 3",
-        "Software"
+	"Line 0",
+	"Line 1",
+	"Line 2",
+	"Line 3",
+	"Software"
 };
 
 static const char *  const v4l2_binning_mode_menu[] = {
@@ -514,66 +514,64 @@ struct avt3_dev
 	struct regmap *regmap32;
 	struct regmap *regmap64;
 	
-	struct media_pad 		pad;
-//	struct media_pad		pads[AVT_CSI2_SENS_PADS_NUM];
+	struct media_pad pad;
 	union device_firmware_version_reg cam_firmware_version;
-	uint32_t				bcrm_handshake_timeout_ms;
-	bool					bcrm_write_handshake;
+	uint32_t bcrm_handshake_timeout_ms;
+	bool bcrm_write_handshake;
 
 	struct v4l2_mbus_framefmt fmt;
-	bool 			pending_fmt_change;
-	bool 			pending_mode_change;
-	int 			open_refcnt;
-	bool 			is_streaming;
-	enum avt_mode 	mode;
+	bool pending_fmt_change;
+	bool pending_mode_change;
+	int open_refcnt;
+	bool is_streaming;
+	enum avt_mode mode;
 
-	struct v4l2_ctrl_handler	v4l2_ctrl_hdl;
-	struct v4l2_ctrl_config		avt3_ctrl_cfg[AVT_MAX_CTRLS];
-	struct v4l2_ctrl			*avt3_ctrls[AVT_MAX_CTRLS];
+	struct v4l2_ctrl_handler v4l2_ctrl_hdl;
+	struct v4l2_ctrl_config	avt3_ctrl_cfg[AVT_MAX_CTRLS];
+	struct v4l2_ctrl *avt3_ctrls[AVT_MAX_CTRLS];
 
 	struct v4l2_fwnode_endpoint v4l2_fwnode_ep; /* the parsed DT endpoint info */
-	struct fwnode_handle 		*endpoint;
+	struct fwnode_handle *endpoint;
 	
-	struct gpio_desc 		*reset_gpio;
-	struct gpio_desc		 *pwdn_gpio;
+	struct gpio_desc *reset_gpio;
+	struct gpio_desc *pwdn_gpio;
 
 	int power_count;
 	//int force_reset_at_close;
 
-	struct v4l2_mbus_framefmt 	mbus_framefmt;
-	struct v4l2_captureparm		streamcap;
+	struct v4l2_mbus_framefmt mbus_framefmt;
+	struct v4l2_captureparm streamcap;
 
-	struct v4l2_rect		max_rect;
-	struct v4l2_rect		min_rect;
-	struct v4l2_rect		curr_rect;
+	struct v4l2_rect max_rect;
+	struct v4l2_rect min_rect;
+	struct v4l2_rect curr_rect;
 
-	int							pending_hardtreset_request;
-	int							pending_softreset_request;
-	int 						pending_dphyreset_request;
+	int pending_hardtreset_request;
+	int pending_softreset_request;
+	int pending_dphyreset_request;
 
-	bool 						hflip;
-	bool 						vflip;
-	uint64_t 					gain;
-	uint64_t 					exposure_time;
-	int							exposure_mode;
-	//uint8_t						trigger_mode;	
-	struct v4l2_trigger_status	avt_trigger_status;
+	bool hflip;
+	bool vflip;
+	uint64_t gain;
+	uint64_t exposure_time;
+	int exposure_mode;
+	struct v4l2_trigger_status avt_trigger_status;
 	
-	uint32_t				 	avt_min_clk;
-	uint32_t					avt_max_clk;
+	uint32_t avt_min_clk;
+	uint32_t avt_max_clk;
 
-	enum avt3_frame_rate 		current_fr;
-	struct v4l2_fract 			frame_interval;
+	enum avt3_frame_rate current_fr;
+	struct v4l2_fract frame_interval;
 
 	union cci_reg cci_reg;
 	struct gencp_reg gencp_reg;
 
 	//union cci_device_caps_reg 		device_caps;
-	union bcrm_feature_inquiry_reg		feature_inquiry_reg;
-	union bcrm_avail_mipi_reg 			avail_mipi_reg;
-	union bcrm_avail_mipi_reg 			ignore_avail_mipi_reg;
-	union bcrm_bayer_inquiry_reg 		bayer_inquiry_reg;
-	union bcrm_supported_lanecount_reg	lane_capabilities;
+	union bcrm_feature_inquiry_reg feature_inquiry_reg;
+	union bcrm_avail_mipi_reg avail_mipi_reg;
+	union bcrm_avail_mipi_reg ignore_avail_mipi_reg;
+	union bcrm_bayer_inquiry_reg bayer_inquiry_reg;
+	union bcrm_supported_lanecount_reg lane_capabilities;
 
 	struct avt_csi_mipi_mode_mapping *available_fmts;
 //	uint16_t *available_fmts;
@@ -583,15 +581,15 @@ struct avt3_dev
 	struct completion bcrm_wrhs_completion;
 
 //	struct delayed_work bcrm_wrhs_dwork;
-	struct work_struct 			bcrm_wrhs_work;
-	struct workqueue_struct 	*bcrm_wrhs_queue;
+	struct work_struct bcrm_wrhs_work;
+	struct workqueue_struct *bcrm_wrhs_queue;
 
 // from avt_csi2_priv
-	u32						mbus_fmt_code;
-	bool 					cross_update;
-	struct avt_frame_param 	frmp;
-	uint32_t				streamon_delay; 
-	uint32_t				force_reset_on_init;
+	u32 mbus_fmt_code;
+	bool cross_update;
+	struct avt_frame_param frmp;
+	uint32_t streamon_delay;
+	uint32_t force_reset_on_init;
 
 #ifdef BCRM_HS_THREAD
 	struct task_struct *bcrm_hs_task;
@@ -667,19 +665,19 @@ enum bayer_format {
 };
 
 struct avt_csi_mipi_mode_mapping {
-//        u32   	pixelformat;
-        u32   mbus_code;
-		u16	  mipi_fmt;
-		u32   colorspace;
-        u32   fourcc;           /* v4l2 format id */
-		enum bayer_format bayer_pattern;
-//        int   bpp;
-		//bool  valid;
-		//bool  enumfmt;
-		//int	  idx;
-        char  name[32];
+	// u32 pixelformat;
+	u32 mbus_code;
+	u16 mipi_fmt;
+	u32 colorspace;
+	u32 fourcc;           /* v4l2 format id */
+	enum bayer_format bayer_pattern;
+	// int bpp;
+	// bool valid;
+	// bool enumfmt;
+	// int idx;
+	char name[32];
 #ifdef DEBUG
-		char  mb_code_string[32];
+	char  mb_code_string[32];
 #endif
 };
 
