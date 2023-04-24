@@ -53,76 +53,11 @@ enum avt_mode {
 	AVT_GENCP_MODE,
 };
 
-enum avt3_frame_rate
-{
-	AVT3_02_FPS = 0,
-	AVT3_05_FPS,
-	AVT3_08_FPS,
-	AVT3_10_FPS,
-	AVT3_11_FPS,
-	AVT3_12_FPS,
-	AVT3_13_FPS,
-	AVT3_14_FPS,
-	AVT3_15_FPS,
-	AVT3_20_FPS,
-	AVT3_24_FPS,
-	AVT3_25_FPS,
-	AVT3_30_FPS,
-	AVT3_40_FPS,
-	AVT3_45_FPS,
-	AVT3_50_FPS,
-	AVT3_60_FPS,
-	AVT3_75_FPS,
-	AVT3_90_FPS,
-	AVT3_100_FPS,
-	AVT3_120_FPS,
-	AVT3_150_FPS,
-	AVT3_200_FPS,
-	AVT3_250_FPS,
-	AVT3_300_FPS,
-	AVT3_500_FPS,
-	AVT3_750_FPS,
-	AVT3_1000_FPS,
-	AVT3_1200_FPS,
-	AVT3_1400_FPS,
-	AVT3_1500_FPS,
-	AVT3_1600_FPS,
-	AVT3_1650_FPS,
-	AVT3_1750_FPS,
-	AVT3_1800_FPS,
-	AVT3_2000_FPS,
-	AVT3_NUM_FRAMERATES,
-};
-
-enum avt3_mode_id
-{
-	AVT3_MODE_FF_32_16 = 0,
-//	AVT3_MODE_FF_32_32,
-	AVT3_MODE_FF_64_32,
-//	AVT3_MODE_FF_64_64,
-//	AVT3_MODE_FF_96_32,
-	AVT3_MODE_FF_128_32,
-	AVT3_MODE_FF_128_64,
-	AVT3_MODE_FF_176_64,
-	AVT3_MODE_QCIF_176_144,
-	AVT3_MODE_QVGA_320_240,
-	AVT3_MODE_VGA_640_480,
-	AVT3_MODE_NTSC_720_480,
-	AVT3_MODE_PAL_720_576,
-//	AVT3_MODE_XGA_1024_768,
-	AVT3_MODE_720P_1280_720,
-	AVT3_MODE_1080P_1920_1080,
-	AVT3_MODE_QSXGA_2592_1944,
-	AVT3_MODE_UHD_3840_2160,
-	AVT3_MODE_UHD2_4096_3672,
-	AVT3_MODE_5376_3672,
-	AVT3_NUM_MODES,
-};
-
 //#define AVT_RESET_DELAY1			(2000000)
 //#define AVT_RESET_DELAY2			(2500000)
 
-#define AVT_CTRL_STREAM_DISABLED (1 << 1)
+#define AVT_CTRL_FLAG_STREAM_DISABLED 		(1 << 1)
+#define AVT_CTRL_FLAG_READ_BACK 		(1 << 2)
 
 
 struct avt_ctrl_mapping {
@@ -165,7 +100,11 @@ struct avt_ctrl_mapping {
 #define AV_ATTR_WHITEBALANCE		{"White Balance",		9}
 #define AV_ATTR_SHARPNESS		{"Sharpness",			10}
 #define AV_ATTR_EXPOSURE_AUTO		{"Exposure Auto",		11}
+#define AV_ATTR_EXPOSURE_AUTO_MIN	{"Exposure Auto Min",		11}
+#define AV_ATTR_EXPOSURE_AUTO_MAX	{"Exposure Auto Max",		11}
 #define AV_ATTR_AUTOGAIN		{"Auto Gain",			12}
+#define AV_ATTR_GAIN_AUTO_MIN		{"Gain Auto Min",		12}
+#define AV_ATTR_GAIN_AUTO_MAX		{"Gain Auto Max",		12}
 #define AV_ATTR_EXPOSURE		{"Exposure",			13}
 #define AV_ATTR_EXPOSURE_ABS		{"Exposure Absolute",		13}
 #define AV_ATTR_WHITEBALANCE_AUTO	{"Auto White Balance",		14}
@@ -180,6 +119,17 @@ struct avt_ctrl_mapping {
 #define AV_ATTR_BINNING_MODE		{"Binning Mode",		-1}
 #define AV_ATTR_BINNING_SETTING		{"Binning Setting",		-1}
 
+#define AV_ATTR_FIRMWARE_VERSION	{"Firmware Version",		-1}
+#define AV_ATTR_CAMERA_NAME		{"Camera name",			-1}
+#define AV_ATTR_SERIAL_NUMBER		{"Serial Number",		-1}
+
+#define V4L2_CID_EXPOSURE_AUTO_MIN              (V4L2_CID_CAMERA_CLASS_BASE+40)
+#define V4L2_CID_EXPOSURE_AUTO_MAX              (V4L2_CID_CAMERA_CLASS_BASE+41)
+#define V4L2_CID_GAIN_AUTO_MIN                  (V4L2_CID_CAMERA_CLASS_BASE+42)
+#define V4L2_CID_GAIN_AUTO_MAX                  (V4L2_CID_CAMERA_CLASS_BASE+43)
+#define V4L2_CID_EXPOSURE_ACTIVE_LINE_MODE      (V4L2_CID_CAMERA_CLASS_BASE+44)
+#define V4L2_CID_EXPOSURE_ACTIVE_LINE_SELECTOR  (V4L2_CID_CAMERA_CLASS_BASE+45)
+#define V4L2_CID_EXPOSURE_ACTIVE_INVERT         (V4L2_CID_CAMERA_CLASS_BASE+46)
 
 /* Trigger mode to ON/OFF */
 #define V4L2_CID_TRIGGER_MODE		(V4L2_CID_CAMERA_CLASS_BASE+47)
@@ -203,7 +153,11 @@ struct avt_ctrl_mapping {
 /* Binning mode: avg, sum */
 #define V4L2_CID_BINNING_SETTING	(V4L2_CID_CAMERA_CLASS_BASE+53)
 
+#define AVT_CID_FIRMWARE_VERSION 	(V4L2_CID_CAMERA_CLASS_BASE+54)
+#define AVT_CID_CAMERA_NAME 		(V4L2_CID_CAMERA_CLASS_BASE+55)
+#define AVT_CID_SERIAL_NUMBER 		(V4L2_CID_CAMERA_CLASS_BASE+56)
 
+#define AVT_CID_ACQUISITION_STATUS 	(V4L2_CID_CAMERA_CLASS_BASE+57)
 
 static const char * const v4l2_triggeractivation_menu[] = {
 	"Rising Edge",
@@ -232,11 +186,12 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.min_offset		= BCRM_EXPOSURE_TIME_MIN_64R,
 		.max_offset		= BCRM_EXPOSURE_TIME_MAX_64R,
 		.reg_offset		= BCRM_EXPOSURE_TIME_64RW,
-		.step_offset		= BCRM_EXPOSURE_TIME_INC_64R,
+		.step_value		= 1,
 		.reg_size		= AV_CAM_REG_SIZE,
 		.data_size		= AV_CAM_DATA_SIZE_64,
 		.type			= V4L2_CTRL_TYPE_INTEGER64,
-		.flags			= 0,
+		.flags			= V4L2_CTRL_FLAG_VOLATILE
+			 		| V4L2_CTRL_FLAG_EXECUTE_ON_WRITE,
 	},
 	{
 		.id			= V4L2_CID_EXPOSURE_ABSOLUTE,
@@ -244,11 +199,12 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.min_offset		= BCRM_EXPOSURE_TIME_MIN_64R,
 		.max_offset		= BCRM_EXPOSURE_TIME_MAX_64R,
 		.reg_offset		= BCRM_EXPOSURE_TIME_64RW,
-		.step_offset		= BCRM_EXPOSURE_TIME_INC_64R,
+		.step_value		= 1,
 		.reg_size		= AV_CAM_REG_SIZE,
 		.data_size		= AV_CAM_DATA_SIZE_64,
-		.type			= V4L2_CTRL_TYPE_INTEGER64,
-		.flags			= 0,
+		.type			= V4L2_CTRL_TYPE_INTEGER,
+		.flags			= V4L2_CTRL_FLAG_VOLATILE
+			 		| V4L2_CTRL_FLAG_EXECUTE_ON_WRITE,
 	},
 	{
 		.id			= V4L2_CID_GAIN,
@@ -292,6 +248,8 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.data_size		= AV_CAM_DATA_SIZE_32,
 		.type			= V4L2_CTRL_TYPE_INTEGER,
 		.flags			= 0,
+		.avt_flags		= AVT_CTRL_FLAG_STREAM_DISABLED,
+		.custom			= true,
 	},
 	{
 		.id			= V4L2_CID_CONTRAST,
@@ -316,6 +274,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.data_size		= AV_CAM_DATA_SIZE_32,
 		.type			= V4L2_CTRL_TYPE_INTEGER,
 		.flags			= 0,
+		.custom			= true,
 	},
 
 	{
@@ -336,8 +295,9 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.reg_offset		= BCRM_WHITE_BALANCE_AUTO_8RW,
 		.reg_size		= AV_CAM_REG_SIZE,
 		.data_size		= AV_CAM_DATA_SIZE_8,
-		.type			= V4L2_CTRL_TYPE_INTEGER, //V4L2_CTRL_TYPE_BOOLEAN,
+		.type			= V4L2_CTRL_TYPE_BOOLEAN,
 		.flags			= 0,
+		.custom 		= true,
 	},
 	{
 		.id			= V4L2_CID_DO_WHITE_BALANCE,
@@ -412,6 +372,9 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.reg_size 		= AV_CAM_REG_SIZE,
 		.data_size 		= AV_CAM_DATA_SIZE_8,
 		.type 			= V4L2_CTRL_TYPE_MENU,
+		.min_value		= 0,
+		.max_value		= 1,
+		.default_value		= 1,
 		.flags 			= 0,
 	},
 	{
@@ -423,7 +386,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.type 			= V4L2_CTRL_TYPE_BOOLEAN,
 		.flags 			= 0,
 		.custom 		= true,
-		.avt_flags 		= AVT_CTRL_STREAM_DISABLED,
+		.avt_flags 		= AVT_CTRL_FLAG_STREAM_DISABLED,
 	},
 	{
 		.id 			= V4L2_CID_TRIGGER_ACTIVATION,
@@ -437,7 +400,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.min_value 		= 0,
 		.max_value 		= 4,
 		.qmenu 			= v4l2_triggeractivation_menu,
-		.avt_flags 		= AVT_CTRL_STREAM_DISABLED,
+		.avt_flags 		= AVT_CTRL_FLAG_STREAM_DISABLED,
 	},
 	{
 		.id 			= V4L2_CID_TRIGGER_SOURCE,
@@ -451,7 +414,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.min_value 		= 0,
 		.max_value 		= 4,
 		.qmenu 			= v4l2_triggersource_menu,
-		.avt_flags 		= AVT_CTRL_STREAM_DISABLED,
+		.avt_flags 		= AVT_CTRL_FLAG_STREAM_DISABLED,
 	},
 	{
 		.id 			= V4L2_CID_TRIGGER_SOFTWARE,
@@ -475,7 +438,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.max_value 		= 1,
 		.qmenu			= v4l2_binning_mode_menu,
 		.custom			= true,
-		.avt_flags		= AVT_CTRL_STREAM_DISABLED,
+		.avt_flags		= AVT_CTRL_FLAG_STREAM_DISABLED,
 	},
 	{
 		.id 			= V4L2_CID_BINNING_SETTING,
@@ -483,7 +446,112 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.type			= V4L2_CTRL_TYPE_AREA,
 		.flags			= V4L2_CTRL_FLAG_VOLATILE,
 		.custom			= true,
-	}
+	},
+	{
+		.id 			= AVT_CID_FIRMWARE_VERSION,
+		.attr			= AV_ATTR_FIRMWARE_VERSION,
+		.type			= V4L2_CTRL_TYPE_STRING,
+		.flags			= V4L2_CTRL_FLAG_READ_ONLY,
+		.min_value		= 0,
+		.max_value		= 20,
+		.step_value		= 1,
+		.custom			= true,
+	},
+	{
+		.id 			= AVT_CID_CAMERA_NAME,
+		.attr			= AV_ATTR_CAMERA_NAME,
+		.type			= V4L2_CTRL_TYPE_STRING,
+		.flags			= V4L2_CTRL_FLAG_READ_ONLY,
+		.min_value		= 0,
+		.max_value		= 128,
+		.step_value		= 1,
+		.custom			= true,
+	},
+	{
+		.id 			= AVT_CID_SERIAL_NUMBER,
+		.attr			= AV_ATTR_SERIAL_NUMBER,
+		.type			= V4L2_CTRL_TYPE_STRING,
+		.flags			= V4L2_CTRL_FLAG_READ_ONLY,
+		.min_value		= 0,
+		.max_value		= 64,
+		.step_value		= 1,
+		.custom			= true,
+	},
+	{
+		.id 			= AVT_CID_ACQUISITION_STATUS,
+		.attr			= {"Acquisition status", -1},
+		.reg_size		= AV_CAM_REG_SIZE,
+		.data_size		= AV_CAM_DATA_SIZE_8,
+		.reg_offset 		= BCRM_ACQUISITION_STATUS_8R,
+		.type			= V4L2_CTRL_TYPE_BOOLEAN,
+		.flags			= V4L2_CTRL_FLAG_VOLATILE
+					| V4L2_CTRL_FLAG_READ_ONLY,
+	},
+	{
+		.id			= V4L2_CID_EXPOSURE_AUTO_MIN,
+		.attr			= AV_ATTR_EXPOSURE_AUTO_MIN,
+		.min_offset		= BCRM_EXPOSURE_TIME_MIN_64R,
+		.max_offset		= BCRM_EXPOSURE_AUTO_MAX_64RW,
+		.reg_offset		= BCRM_EXPOSURE_AUTO_MIN_64RW,
+		.step_value		= 1,
+		.reg_size		= AV_CAM_REG_SIZE,
+		.data_size		= AV_CAM_DATA_SIZE_64,
+		.type			= V4L2_CTRL_TYPE_INTEGER64,
+		.flags			= 0,
+		.avt_flags 		= AVT_CTRL_FLAG_READ_BACK,
+	},
+	{
+		.id			= V4L2_CID_EXPOSURE_AUTO_MAX,
+		.attr			= AV_ATTR_EXPOSURE_AUTO_MAX,
+		.min_offset		= BCRM_EXPOSURE_AUTO_MIN_64RW,
+		.max_offset		= BCRM_EXPOSURE_TIME_MAX_64R,
+		.reg_offset		= BCRM_EXPOSURE_AUTO_MAX_64RW,
+		.step_value		= 1,
+		.reg_size		= AV_CAM_REG_SIZE,
+		.data_size		= AV_CAM_DATA_SIZE_64,
+		.type			= V4L2_CTRL_TYPE_INTEGER64,
+		.flags			= 0,
+		.avt_flags 		= AVT_CTRL_FLAG_READ_BACK,
+	},
+	{
+		.id			= V4L2_CID_GAIN_AUTO_MIN,
+		.attr			= AV_ATTR_GAIN_AUTO_MIN,
+		.min_offset		= BCRM_GAIN_MIN_64R,
+		.max_offset		= BCRM_GAIN_AUTO_MAX_64RW,
+		.reg_offset		= BCRM_GAIN_AUTO_MIN_64RW,
+		.step_value		= 1,
+		.reg_size		= AV_CAM_REG_SIZE,
+		.data_size		= AV_CAM_DATA_SIZE_64,
+		.type			= V4L2_CTRL_TYPE_INTEGER64,
+		.flags			= 0,
+		.avt_flags 		= AVT_CTRL_FLAG_READ_BACK,
+	},
+	{
+		.id			= V4L2_CID_GAIN_AUTO_MAX,
+		.attr			= AV_ATTR_GAIN_AUTO_MAX,
+		.min_offset		= BCRM_GAIN_AUTO_MIN_64RW,
+		.max_offset		= BCRM_GAIN_MAX_64R,
+		.reg_offset		= BCRM_GAIN_AUTO_MAX_64RW,
+		.step_value		= 1,
+		.reg_size		= AV_CAM_REG_SIZE,
+		.data_size		= AV_CAM_DATA_SIZE_64,
+		.type			= V4L2_CTRL_TYPE_INTEGER64,
+		.flags			= 0,
+		.avt_flags 		= AVT_CTRL_FLAG_READ_BACK,
+	},
+	{
+		.id			= V4L2_CID_DEVICE_TEMPERATURE,
+		.attr			= { "Device Temperature", 14 },
+		.reg_offset		= BCRM_DEVICE_TEMPERATURE_32R,
+		.reg_size		= AV_CAM_REG_SIZE,
+		.data_size		= AV_CAM_DATA_SIZE_32,
+		.min_value		= 0,
+		.max_value		= INT_MAX,
+		.step_value		= 1,
+		.type			= V4L2_CTRL_TYPE_INTEGER,
+		.flags			= V4L2_CTRL_FLAG_VOLATILE
+			 		| V4L2_CTRL_FLAG_READ_ONLY,
+	},
 };
 
 #define AVT_MAX_CTRLS (ARRAY_SIZE(avt_ctrl_mappings))
@@ -560,7 +628,6 @@ struct avt3_dev
 	uint32_t avt_min_clk;
 	uint32_t avt_max_clk;
 
-	enum avt3_frame_rate current_fr;
 	struct v4l2_fract frame_interval;
 
 	union cci_reg cci_reg;
@@ -601,6 +668,10 @@ struct avt3_dev
 	size_t binning_info_cnt[AVT_BINNING_TYPE_CNT];
 	u32 curr_binning_type;
 	const struct avt3_binning_info *curr_binning_info;
+
+	struct v4l2_rect sensor_rect;
+
+	bool framerate_auto;
 };
 
 struct avt_ctrl {
@@ -692,7 +763,7 @@ struct bcrm_to_v4l2 {
 
 #define CLEAR(x)       memset(&(x), 0, sizeof(x))
 
-#define EXP_ABS		100000UL
+#define EXP_ABS		100000LL
 #define UHZ_TO_HZ	1000000UL
 
 #define CCI_REG_LAYOUT_MINVER_MASK (0x0000ffff)
