@@ -2678,7 +2678,7 @@ static int avt3_try_fmt_internal(struct v4l2_subdev *sd,
 	fmt->colorspace = sensor->available_fmts[i].colorspace;
 	fmt->ycbcr_enc = V4L2_MAP_YCBCR_ENC_DEFAULT(fmt->colorspace);
 	fmt->quantization = V4L2_QUANTIZATION_FULL_RANGE;
-	fmt->xfer_func = V4L2_MAP_XFER_FUNC_DEFAULT(fmt->colorspace);
+	fmt->xfer_func = V4L2_XFER_FUNC_DEFAULT;//V4L2_MAP_XFER_FUNC_DEFAULT(fmt->colorspace);
 
 	return 0;
 }
@@ -7278,9 +7278,9 @@ static int avt3_probe(struct i2c_client *client)
 	fmt->colorspace = V4L2_COLORSPACE_SRGB;
 	fmt->ycbcr_enc = V4L2_MAP_YCBCR_ENC_DEFAULT(fmt->colorspace);
 	fmt->quantization = V4L2_QUANTIZATION_FULL_RANGE;
-	fmt->xfer_func = V4L2_MAP_XFER_FUNC_DEFAULT(fmt->colorspace);
-	fmt->width = sensor->curr_binning_info->max_width;
-	fmt->height = sensor->curr_binning_info->max_height;
+	fmt->xfer_func = V4L2_XFER_FUNC_DEFAULT;//V4L2_MAP_XFER_FUNC_DEFAULT(fmt->colorspace);
+	fmt->width = sensor->max_rect.width;
+	fmt->height = sensor->max_rect.height;
 	fmt->field = V4L2_FIELD_NONE;
 
 	sensor->streamcap.capability = V4L2_CAP_TIMEPERFRAME;
