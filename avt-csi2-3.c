@@ -469,6 +469,10 @@ static void bcrm_dump(struct i2c_client *client)
 	DUMP_BCRM_REG32(client, BCRM_SHARPNESS_INC_32R);
 
 	DUMP_BCRM_REG32(client, BCRM_DEVICE_TEMPERATURE_32R);
+
+	DUMP_BCRM_REG64(client, BCRM_EXPOSURE_AUTO_MIN_64RW);
+	DUMP_BCRM_REG64(client, BCRM_EXPOSURE_AUTO_MAX_64RW);
+
 }
 
 static void dump_bcrm_reg(struct i2c_client *client, u16 nOffset, const char *pRegName, int regsize)
@@ -3791,6 +3795,149 @@ static int avt3_ioctl_g_ctrl(struct v4l2_subdev *sd, struct v4l2_control *vc)
 	return ret;
 }
 
+static int read_control_value(struct avt3_dev *camera,s64 *value,
+			      const u16 reg,const u8 size)
+{
+	int ret;
+	switch (size) {
+	case AV_CAM_DATA_SIZE_8: {
+		s8 temp;
+		ret = bcrm_read8(camera,reg,&temp);
+		if (ret < 0)
+			return ret;
+
+		*value = temp;
+
+		break;
+	}
+	case AV_CAM_DATA_SIZE_16: {
+		s16 temp;
+		ret = bcrm_read16(camera,reg,&temp);
+		if (ret < 0)
+			return ret;
+
+		*value = temp;
+
+		break;
+	}
+	case AV_CAM_DATA_SIZE_32: {
+		s32 temp;
+		ret = bcrm_read32(camera,reg,&temp);
+		if (ret < 0)
+			return ret;
+
+		*value = temp;
+
+		break;
+	}
+	case AV_CAM_DATA_SIZE_64: {
+		s64 temp;
+		ret = bcrm_read64(camera,reg,&temp);
+		if (ret < 0)
+			return ret;
+
+		*value = temp;
+
+		break;
+	}
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static void avt3_ctrl_to_reg(const u32 cid,s64 * value)
+{
+	switch (cid) {
+	case V4L2_CID_EXPOSURE_AUTO:
+		if (*value == V4L2_EXPOSURE_MANUAL)
+			*value = 0;
+		else
+			*value = 2;
+		break;
+	case V4L2_CID_AUTOGAIN:
+		if (*value)
+			*value = 2;
+		else
+			*value = 0;
+		break;
+	case V4L2_CID_EXPOSURE_ABSOLUTE:
+		*value = *value * EXP_ABS;
+		break;
+	default:
+		break;
+	}
+}
+
+static void avt3_ctrl_from_reg(const u32 cid,s64 * value)
+{
+	switch (cid) {
+	case V4L2_CID_EXPOSURE_AUTO:
+		if (*value)
+			*value = V4L2_EXPOSURE_AUTO;
+		else
+			*value = V4L2_EXPOSURE_MANUAL;
+		break;
+	case V4L2_CID_AUTOGAIN:
+		if (*value)
+			*value = 1;
+		else
+			*value = 0;
+		break;
+	case V4L2_CID_EXPOSURE_ABSOLUTE:
+		*value = *value / EXP_ABS;
+		break;
+	default:
+		break;
+	}
+}
+
+static int avt3_update_ctrl_value(struct avt3_dev *camera,
+				  struct v4l2_ctrl *ctrl,const u16 reg,
+				  const u8 data_size )
+{
+	int ret;
+	s64 value;
+
+	ret = read_control_value(camera,&value,
+				 reg,
+				 data_size);
+
+	if (ret < 0)
+		return ret;
+
+	avt3_ctrl_from_reg(ctrl->id,&value);
+
+	switch (ctrl->type) {
+	case V4L2_CTRL_TYPE_MENU:
+	case V4L2_CTRL_TYPE_BOOLEAN:
+	case V4L2_CTRL_TYPE_INTEGER:
+		ctrl->val = (s32)value;
+		break;
+	case V4L2_CTRL_TYPE_INTEGER64:
+		*ctrl->p_cur.p_s64 = value;
+		*ctrl->p_new.p_s64 = value;
+		break;
+	case V4L2_CTRL_TYPE_U8:
+		*ctrl->p_cur.p_u8 = value;
+		*ctrl->p_new.p_u8 = value;
+		break;
+	case V4L2_CTRL_TYPE_U16:
+		*ctrl->p_cur.p_u16 = value;
+		*ctrl->p_new.p_u16 = value;
+		break;
+	case V4L2_CTRL_TYPE_U32:
+		*ctrl->p_cur.p_u32 = value;
+		*ctrl->p_new.p_u32 = value;
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
 static int avt3_g_volatile_ctrl(struct v4l2_ctrl *ctrl)
 {
 
@@ -3805,6 +3952,15 @@ static int avt3_g_volatile_ctrl(struct v4l2_ctrl *ctrl)
 		ctrl->p_new.p_area->width = sensor->curr_binning_info->hfact;
 		ctrl->p_new.p_area->height = sensor->curr_binning_info->vfact;
 		return 0;
+	}
+
+	if (ctrl->priv) {
+		const struct avt_ctrl_mapping * const ctrl_mapping = ctrl->priv;
+
+
+		return avt3_update_ctrl_value(sensor,ctrl,
+					      ctrl_mapping->reg_offset,
+					      ctrl_mapping->data_size);
 	}
 
 	c.id = ctrl->id;
@@ -3836,7 +3992,7 @@ static struct regmap* avt3_get_regmap_by_size(struct avt3_dev *camera,u8 data_si
 	switch (data_size)
 	{
 		case AV_CAM_DATA_SIZE_8:
-   		return camera->regmap8;
+   			return camera->regmap8;
 		case AV_CAM_DATA_SIZE_16:
 			return camera->regmap16;
 		case AV_CAM_DATA_SIZE_32:
@@ -3865,33 +4021,116 @@ static void avt3_update_sw_ctrl_state(struct avt3_dev *camera)
 	}
 }
 
+static void avt3_ctrl_changed(struct avt3_dev *camera,
+			      const struct v4l2_ctrl * const ctrl)
+{
+	switch (ctrl->id)
+	{
+	case V4L2_CID_TRIGGER_MODE:
+		camera->avt_trigger_status.trigger_mode_enabled = ctrl->val;
+		avt3_update_sw_ctrl_state(camera);
+		break;
+	case V4L2_CID_TRIGGER_SOURCE:
+		camera->avt_trigger_status.trigger_source = ctrl->val;
+		avt3_update_sw_ctrl_state(camera);
+		break;
+	case V4L2_CID_TRIGGER_ACTIVATION:
+		camera->avt_trigger_status.trigger_activation = ctrl->val;
+		break;
+	case V4L2_CID_EXPOSURE_AUTO_MIN: {
+		struct v4l2_ctrl *max_ctrl;
+
+		max_ctrl = avt3_ctrl_find(camera,V4L2_CID_EXPOSURE_AUTO_MAX);
+
+		if (max_ctrl == NULL)
+			break;
+
+		__v4l2_ctrl_modify_range(max_ctrl,*ctrl->p_new.p_s64,
+					 max_ctrl->maximum,max_ctrl->step,
+					 max_ctrl->default_value);
+
+		break;
+	}
+	case V4L2_CID_EXPOSURE_AUTO_MAX: {
+		struct v4l2_ctrl *min_ctrl;
+
+		min_ctrl = avt3_ctrl_find(camera,V4L2_CID_EXPOSURE_AUTO_MIN);
+
+		if (min_ctrl == NULL)
+			break;
+
+		__v4l2_ctrl_modify_range(min_ctrl,min_ctrl->minimum,
+					 *ctrl->p_new.p_s64,min_ctrl->step,
+					 min_ctrl->default_value);
+
+		break;
+	}
+	case V4L2_CID_GAIN_AUTO_MIN: {
+		struct v4l2_ctrl *max_ctrl;
+
+		max_ctrl = avt3_ctrl_find(camera,V4L2_CID_GAIN_AUTO_MAX);
+
+		if (max_ctrl == NULL)
+			break;
+
+		__v4l2_ctrl_modify_range(max_ctrl,*ctrl->p_new.p_s64,
+					 max_ctrl->maximum,max_ctrl->step,
+					 max_ctrl->default_value);
+
+		break;
+	}
+	case V4L2_CID_GAIN_AUTO_MAX: {
+		struct v4l2_ctrl *min_ctrl;
+
+		min_ctrl = avt3_ctrl_find(camera,V4L2_CID_GAIN_AUTO_MIN);
+
+		if (min_ctrl == NULL)
+			break;
+
+		__v4l2_ctrl_modify_range(min_ctrl,min_ctrl->minimum,
+					 *ctrl->p_new.p_s64,min_ctrl->step,
+					 min_ctrl->default_value);
+
+		break;
+	}
+	case V4L2_CID_AUTOGAIN: {
+		struct v4l2_ctrl *gain_ctrl;
+
+		gain_ctrl = avt3_ctrl_find(camera,V4L2_CID_GAIN);
+
+		if (gain_ctrl != NULL)
+			__v4l2_ctrl_grab(gain_ctrl,ctrl->val);
+
+		break;
+	}
+	case V4L2_CID_EXPOSURE_AUTO: {
+		struct v4l2_ctrl *exp_ctrl,*exp_abs_ctrl;
+		bool grabbed = (ctrl->val == V4L2_EXPOSURE_AUTO);
+
+		exp_ctrl = avt3_ctrl_find(camera,V4L2_CID_EXPOSURE);
+
+		if (exp_ctrl != NULL)
+			__v4l2_ctrl_grab(exp_ctrl,grabbed);
+
+		exp_abs_ctrl = avt3_ctrl_find(camera,V4L2_CID_EXPOSURE_ABSOLUTE);
+
+		if (exp_abs_ctrl != NULL)
+			__v4l2_ctrl_grab(exp_abs_ctrl,grabbed);
+
+		break;
+	}
+	default:
+		break;
+	}
+
+}
+
 static int avt3_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 {
 	struct avt3_dev *sensor = container_of(ctrl->handler, struct avt3_dev, v4l2_ctrl_hdl);
 	struct i2c_client *client = sensor->i2c_client;
 	int ret = 0;
 
-	struct avt_val64 val64;
-
-	CLEAR(val64);
-
-	//				regmap_read(sensor->regmap8, sensor->cci_reg.bcrm_addr + nOffset, &val64.u32[0]);
-	//				regmap_read(sensor->regmap16, sensor->cci_reg.bcrm_addr + nOffset, &val64.u32[0]);
-	//				regmap_read(sensor->regmap32, sensor->cci_reg.bcrm_addr + nOffset, &val64.u32[0]);
-	//				regmap_bulk_read(sensor->regmap64, sensor->cci_reg.bcrm_addr + nOffset, &val64, 1);
-	// struct avt_ctrl ct;
-	//	struct v4l2_ext_control c;
-
-	/* v4l2_ctrl_lock() locks our own mutex */
-
-	/*
-	 * If the device is not powered up by the host driver do
-	 * not apply any controls to H/W at this time. Instead
-	 * the controls will be restored right after power-up.
-	 */
-
-	//	dev_info(&sensor->i2c_client->dev, "%s[%d]: ctrl->id 0x%08X, sensor->power_count %d",
-	//			 __func__, __LINE__, ctrl->id, sensor->power_count);
 
 	/* ignore if sensor is in sleep mode */
 	if (sensor->power_count == 0)
@@ -3906,241 +4145,71 @@ static int avt3_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 		avt_info(&sensor->sd, "ctrl->id 0x%08X, sensor->power_count %d", ctrl->id, sensor->power_count);
 	}
 
-	switch (ctrl->id)
+	if (ctrl->priv != NULL)
 	{
+		const struct avt_ctrl_mapping * const ctrl_mapping = ctrl->priv;
+		const u16 reg = ctrl_mapping->reg_offset;
+		const u8 data_size = ctrl_mapping->data_size;
+		struct regmap * const ctrl_regmap
+			= avt3_get_regmap_by_size(sensor,data_size);
+		const u16 addr = get_bcrm_addr(sensor,reg);
+		s64 temp;
+		dev_info(&client->dev, "%s[%d]: Write custom ctrl %s (%x)\n",
+			 __func__, __LINE__, ctrl_mapping->attr.name, ctrl->id);
 
-		/* BLACK LEVEL is deprecated and thus we use Brightness */
-	case V4L2_CID_BRIGHTNESS:
-		if (!sensor->feature_inquiry_reg.feature_inq.black_level_avail)
+		if (ctrl_mapping->data_size == AV_CAM_DATA_SIZE_64)
 		{
-			avt_info(&sensor->sd, "V4L2_CID_BRIGHTNESS not supported by current camera model and firmware!");
-			return -ENOTSUPP;
-		}
-		avt_dbg(&sensor->sd, "V4L2_CID_BRIGHTNESS %d", ctrl->val);
-		ret = bcrm_regmap_write(sensor, sensor->regmap32, sensor->cci_reg.reg.bcrm_addr + BCRM_BLACK_LEVEL_32RW, ctrl->val);
-		break;
+			temp = *ctrl->p_new.p_s64;
+			avt3_ctrl_to_reg(ctrl->id,&temp);
 
-	case V4L2_CID_HFLIP:
-		avt_info(&sensor->sd, "V4L2_CID_HFLIP %d", ctrl->val);
-		ret = bcrm_regmap_write(sensor, sensor->regmap8, sensor->cci_reg.reg.bcrm_addr + BCRM_IMG_REVERSE_X_8RW, ctrl->val);
-		sensor->hflip = ctrl->val;
-		break;
-
-	case V4L2_CID_VFLIP:
-		avt_dbg(&sensor->sd, "V4L2_CID_VFLIP %d\n", ctrl->val);
-		ret = bcrm_regmap_write(sensor, sensor->regmap8, sensor->cci_reg.reg.bcrm_addr + BCRM_IMG_REVERSE_Y_8RW, ctrl->val);
-		sensor->vflip = ctrl->val;
-		break;
-
-	case V4L2_CID_GAMMA:
-		if (!sensor->feature_inquiry_reg.feature_inq.gamma_avail)
-		{
-			avt_info(&sensor->sd, "V4L2_CID_GAMMA not supported by current camera model and firmware!");
-			return -ENOTSUPP;
-		}
-		avt_dbg(&sensor->sd, "V4L2_CID_GAMMA %d", ctrl->val);
-		val64.s64 = ctrl->val;
-		ret = bcrm_regmap_write64(sensor,sensor->regmap64, sensor->cci_reg.reg.bcrm_addr + BCRM_GAMMA_64RW, val64.s64);
-		break;
-
-	case V4L2_CID_CONTRAST:
-		if (!sensor->feature_inquiry_reg.feature_inq.contrast_avail)
-		{
-			dev_warn(&client->dev, "%s[%d]: V4L2_CID_CONTRAST not supported by current camera model and firmware!\n", __func__, __LINE__);
-			return -ENOTSUPP;
-		}
-		dev_info(&client->dev, "%s[%d]: V4L2_CID_CONTRAST %d\n", __func__, __LINE__, ctrl->val);
-		val64.s64 = ctrl->val;
-		ret = bcrm_regmap_write(sensor, sensor->regmap32, sensor->cci_reg.reg.bcrm_addr + BCRM_CONTRAST_VALUE_32RW, ctrl->val);
-		break;
-
-	case V4L2_CID_DO_WHITE_BALANCE:
-		dev_info(&client->dev, "%s[%d]: V4L2_CID_DO_WHITE_BALANCE %d\n", __func__, __LINE__, ctrl->val);
-		if (!sensor->feature_inquiry_reg.feature_inq.white_balance_auto_avail)
-		{
-			dev_warn(&client->dev, "%s[%d]: V4L2_CID_DO_WHITE_BALANCE %d but sensor->feature_inquiry_reg.feature_inq.white_balance_auto_avail == 0 \n", __func__, __LINE__, ctrl->val);
-			return -ENOTSUPP;
-		}
-		ret = bcrm_regmap_write(sensor, sensor->regmap8, sensor->cci_reg.reg.bcrm_addr + BCRM_WHITE_BALANCE_AUTO_8RW, ctrl->val > 0 ? 1 : 0);
-		break;
-
-	case V4L2_CID_AUTO_WHITE_BALANCE:
-		if (!sensor->feature_inquiry_reg.feature_inq.white_balance_auto_avail)
-		{
-			dev_warn(&client->dev, "%s[%d]: V4L2_CID_AUTO_WHITE_BALANCE\n", __func__, __LINE__);
-			return -ENOTSUPP;
-		}
-		dev_info(&client->dev, "%s[%d]: V4L2_CID_AUTO_WHITE_BALANCE %d\n", __func__, __LINE__, ctrl->val);
-
-		ret = bcrm_regmap_write(sensor, sensor->regmap8,
-								sensor->cci_reg.reg.bcrm_addr + BCRM_WHITE_BALANCE_AUTO_8RW,
-								ctrl->val > 0 ? 2 : 0);
-		break;
-
-	case V4L2_CID_SATURATION:
-		if (!sensor->feature_inquiry_reg.feature_inq.saturation_avail)
-		{
-			dev_warn(&client->dev, "%s[%d]: V4L2_CID_SATURATION not supported by current camera model and firmware!\n", __func__, __LINE__);
-			return -ENOTSUPP;
-		}
-		dev_info(&client->dev, "%s[%d]: V4L2_CID_SATURATION %d\n", __func__, __LINE__, ctrl->val);
-		ret = bcrm_regmap_write(sensor, sensor->regmap32, sensor->cci_reg.reg.bcrm_addr + BCRM_SATURATION_32RW, ctrl->val);
-		break;
-
-	case V4L2_CID_HUE:
-		if (!sensor->feature_inquiry_reg.feature_inq.hue_avail)
-		{
-			dev_warn(&client->dev, "%s[%d]: V4L2_CID_HUE not supported by current camera model and firmware!\n", __func__, __LINE__);
-			return -ENOTSUPP;
-		}
-		dev_info(&client->dev, "%s[%d]: V4L2_CID_HUE %d\n", __func__, __LINE__, ctrl->val);
-		ret = bcrm_regmap_write(sensor, sensor->regmap32, sensor->cci_reg.reg.bcrm_addr + BCRM_HUE_32RW, ctrl->val);
-		break;
-
-	case V4L2_CID_RED_BALANCE:
-		dev_info(&client->dev, "%s[%d]: V4L2_CID_RED_BALANCE %d\n", __func__, __LINE__, ctrl->val);
-		val64.s64 = ctrl->val;
-		ret = bcrm_regmap_write64(sensor,sensor->regmap64, sensor->cci_reg.reg.bcrm_addr + BCRM_RED_BALANCE_RATIO_64RW, val64.s64);
-		break;
-
-	case V4L2_CID_BLUE_BALANCE:
-		dev_info(&client->dev, "%s[%d]: V4L2_CID_BLUE_BALANCE %d\n", __func__, __LINE__, ctrl->val);
-		val64.s64 = ctrl->val;
-		ret = bcrm_regmap_write64(sensor,sensor->regmap64, sensor->cci_reg.reg.bcrm_addr + BCRM_BLUE_BALANCE_RATIO_64RW, val64.s64);
-		break;
-
-	case V4L2_CID_EXPOSURE:
-		dev_info(&client->dev, "%s[%d]: V4L2_CID_EXPOSURE %d\n", __func__, __LINE__, ctrl->val);
-		sensor->exposure_time = val64.s64 = ctrl->val;
-		ret = bcrm_regmap_write64(sensor,sensor->regmap64, sensor->cci_reg.reg.bcrm_addr + BCRM_EXPOSURE_TIME_64RW, val64.s64);
-		break;
-
-	case V4L2_CID_EXPOSURE_ABSOLUTE:
-		// dev_info(&client->dev, "%s[%d]: V4L2_CID_EXPOSURE_ABSOLUTE %d\n", __func__, __LINE__, ctrl->val);
-		val64.s64 = ctrl->val;
-		sensor->exposure_time = val64.s64 * 100;
-		dev_info(&client->dev, "%s[%d]: V4L2_CID_EXPOSURE_ABSOLUTE %d --> %lld ns\n", __func__, __LINE__, ctrl->val, sensor->exposure_time);
-		ret = bcrm_regmap_write64(sensor,sensor->regmap64, sensor->cci_reg.reg.bcrm_addr + BCRM_EXPOSURE_TIME_64RW, val64.s64);
-		break;
-
-	case V4L2_CID_GAIN:
-		if (!sensor->feature_inquiry_reg.feature_inq.gain_avail)
-		{
-			dev_warn(&client->dev, "%s[%d]: V4L2_CID_GAIN not supported by current camera model and firmware!\n", __func__, __LINE__);
-			return -ENOTSUPP;
-		}
-		dev_info(&client->dev, "%s[%d]: V4L2_CID_GAIN %d\n", __func__, __LINE__, ctrl->val);
-		sensor->gain = val64.s64 = ctrl->val;
-		ret = bcrm_regmap_write64(sensor, sensor->regmap64, sensor->cci_reg.reg.bcrm_addr + BCRM_GAIN_64RW, val64.s64);
-		break;
-
-	case V4L2_CID_AUTOGAIN:
-		if (!sensor->feature_inquiry_reg.feature_inq.gain_auto_avail)
-		{
-			dev_warn(&client->dev, "%s[%d]: V4L2_CID_GAIN not supported by current camera model and firmware!\n", __func__, __LINE__);
-			return -ENOTSUPP;
-		}
-		dev_info(&client->dev, "%s[%d]: V4L2_CID_AUTOGAIN %d\n", __func__, __LINE__, ctrl->val);
-		ret = bcrm_regmap_write(sensor, sensor->regmap8, sensor->cci_reg.reg.bcrm_addr + BCRM_GAIN_AUTO_8RW, ctrl->val ? 2 : 0);
-		break;
-
-	case V4L2_CID_SHARPNESS:
-		if (!sensor->feature_inquiry_reg.feature_inq.sharpness_avail)
-		{
-			dev_warn(&client->dev, "%s[%d]: V4L2_CID_SHARPNESS not supported by current camera model and firmware!\n",
-					 __func__, __LINE__);
-			return -ENOTSUPP;
-		}
-		dev_info(&client->dev, "%s[%d]: V4L2_CID_SHARPNESS\n", __func__, __LINE__);
-		// reg = SHARPNESS_32RW;
-		//  ToDo: implement sharpness settings
-		break;
-	case V4L2_CID_EXPOSURE_AUTO:
-		if (!sensor->feature_inquiry_reg.feature_inq.exposure_auto_avail) {
-			dev_warn(&client->dev,
-					 "%s[%d]: V4L2_CID_EXPOSURE_AUTO not supported by current camera model and firmware!\n",
-					 __func__, __LINE__);
-			return -ENOTSUPP;
-		}
-		dev_info(&client->dev, "%s[%d]: V4L2_CID_EXPOSURE_AUTO %d\n", __func__, __LINE__, ctrl->val);
-
-		if (ctrl->val)
-		{
-			sensor->exposure_mode = EMODE_MANUAL;
-		}
-		else
-		{
-			sensor->exposure_mode = EMODE_AUTO;
-		}
-
-		ret = bcrm_regmap_write(sensor, sensor->regmap8, sensor->cci_reg.reg.bcrm_addr + BCRM_EXPOSURE_AUTO_8RW, sensor->exposure_mode);
-		break;
-	default:
-	{
-		if (ctrl->priv != NULL)
-		{
-			const struct avt_ctrl_mapping * const ctrl_mapping = ctrl->priv;
-			struct regmap * const ctrl_regmap = avt3_get_regmap_by_size(sensor,ctrl_mapping->data_size);
-			dev_info(&client->dev, "%s[%d]: Write custom ctrl %s (%x)\n", __func__, __LINE__, ctrl_mapping->attr.name, ctrl->id);
-
-
-			if (ctrl_mapping->data_size == AV_CAM_DATA_SIZE_64)
+			if (ctrl_mapping->type == V4L2_CTRL_TYPE_BUTTON)
 			{
-				if (ctrl_mapping->type == V4L2_CTRL_TYPE_BUTTON)
-				{
-					bcrm_regmap_write64(sensor, ctrl_regmap,
-  									sensor->cci_reg.reg.bcrm_addr + ctrl_mapping->reg_offset, 1);
-				}
-				else
-				{
-
-					bcrm_regmap_write64(sensor, ctrl_regmap,
-  									sensor->cci_reg.reg.bcrm_addr + ctrl_mapping->reg_offset, *ctrl->p_new.p_s64);
-				}
+				bcrm_regmap_write64(sensor, ctrl_regmap,
+						    addr, 1);
 			}
 			else
 			{
-				if (ctrl_mapping->type == V4L2_CTRL_TYPE_BUTTON)
-				{
-					bcrm_regmap_write(sensor, ctrl_regmap,
-  									sensor->cci_reg.reg.bcrm_addr + ctrl_mapping->reg_offset, 1);
-				}
-				else
-				{
 
-					bcrm_regmap_write(sensor, ctrl_regmap,
-  									sensor->cci_reg.reg.bcrm_addr + ctrl_mapping->reg_offset, ctrl->val);
-				}
-			}
-
-			switch (ctrl->id)
-			{
-				case V4L2_CID_TRIGGER_MODE:
-					sensor->avt_trigger_status.trigger_mode_enabled = ctrl->val;
-					avt3_update_sw_ctrl_state(sensor);
-					break;
-				case V4L2_CID_TRIGGER_SOURCE:
-					sensor->avt_trigger_status.trigger_source = ctrl->val;
-					avt3_update_sw_ctrl_state(sensor);
-					break;
-				case V4L2_CID_TRIGGER_ACTIVATION:
-					sensor->avt_trigger_status.trigger_activation = ctrl->val;
-					break;
-				default:
-					break;
+				bcrm_regmap_write64(sensor, ctrl_regmap,
+						    addr, temp);
 			}
 		}
 		else
 		{
-			dev_err(&sensor->i2c_client->dev, "%s[%d]: case default or not supported id %d, val %d\n",
-					__func__, __LINE__, ctrl->id, ctrl->val);
-			return -EINVAL;
+			temp = ctrl->val;
+			avt3_ctrl_to_reg(ctrl->id,&temp);
+
+			if (ctrl_mapping->type == V4L2_CTRL_TYPE_BUTTON)
+			{
+				bcrm_regmap_write(sensor, ctrl_regmap,
+						  addr, 1);
+			}
+			else
+			{
+				bcrm_regmap_write(sensor, ctrl_regmap,
+						  addr, temp);
+			}
 		}
+
+		if (ctrl_mapping->avt_flags & AVT_CTRL_FLAG_READ_BACK) {
+			ret =  avt3_update_ctrl_value(sensor,ctrl,
+						      reg,data_size);
+			if (ret < 0)
+				dev_err(&sensor->i2c_client->dev,
+					"Control read back failed with %d",
+					ret);
+		}
+
+		avt3_ctrl_changed(sensor,ctrl);
+	}
+	else
+	{
+		dev_err(&sensor->i2c_client->dev,
+			"%s[%d]: case default or not supported id %d, val %d\n",
+			__func__, __LINE__, ctrl->id, ctrl->val);
+		return -EINVAL;
 	}
 
-	}
-
-	//		ret = regmap_bulk_write(sensor->regmap64, sensor->cci_reg.reg.bcrm_addr + BCRM_RED_BALANCE_RATIO_64RW, &val64, 1);
 	return ret;
 }
 
@@ -4149,119 +4218,15 @@ static const struct v4l2_ctrl_ops avt3_ctrl_ops = {
 	.s_ctrl = avt3_v4l2_ctrl_ops_s_ctrl,
 };
 
-static int avt3_initctrl(struct v4l2_subdev *sd,
-						 const struct avt_ctrl_mapping *avt_ctrl_mapping,
-						 struct v4l2_query_ext_ctrl *qectrl)
+
+static int avt3_fill_ctrl_config(struct avt3_dev *camera,
+				 struct v4l2_ctrl_config *config,
+				 const struct avt_ctrl_mapping *mapping)
 {
-	//	struct i2c_client *client = v4l2_get_subdevdata(sd);
-	struct avt3_dev *sensor = to_avt3_dev(sd);
-	int ret = 0;
-	s32 s32tmp;
+	int ret;
 
-	qectrl->type = avt_ctrl_mapping->type;
 
-	if (qectrl->type == V4L2_CTRL_TYPE_INTEGER ||
-		qectrl->type == V4L2_CTRL_TYPE_INTEGER64)
-		qectrl->flags |= V4L2_CTRL_FLAG_SLIDER;
 
-	memset(qectrl->name, 0, sizeof(qectrl->name));
-	strncpy(qectrl->name, avt_ctrl_mapping->attr.name, sizeof(qectrl->name) - 1);
-
-	switch (avt_ctrl_mapping->data_size)
-	{
-
-	case AV_CAM_DATA_SIZE_8:
-		ret = regmap_read(sensor->regmap8,
-						  sensor->cci_reg.reg.bcrm_addr + avt_ctrl_mapping->reg_offset, &s32tmp);
-		qectrl->default_value = s32tmp;
-		if (V4L2_CTRL_TYPE_INTEGER == avt_ctrl_mapping->type ||
-			V4L2_CTRL_TYPE_INTEGER64 == avt_ctrl_mapping->type)
-		{
-			ret = regmap_read(sensor->regmap8,
-							  sensor->cci_reg.reg.bcrm_addr + avt_ctrl_mapping->max_offset, &s32tmp);
-			qectrl->maximum = s32tmp;
-			ret = regmap_read(sensor->regmap8,
-							  sensor->cci_reg.reg.bcrm_addr + avt_ctrl_mapping->min_offset, &s32tmp);
-			qectrl->minimum = s32tmp;
-			ret = regmap_read(sensor->regmap8,
-							  sensor->cci_reg.reg.bcrm_addr + avt_ctrl_mapping->step_offset, &s32tmp);
-			qectrl->step = s32tmp;
-		}
-		break;
-
-	case AV_CAM_DATA_SIZE_16:
-		ret = regmap_read(sensor->regmap16,
-						  sensor->cci_reg.reg.bcrm_addr + avt_ctrl_mapping->reg_offset, &s32tmp);
-		qectrl->default_value = s32tmp;
-		if (V4L2_CTRL_TYPE_INTEGER == avt_ctrl_mapping->type ||
-			V4L2_CTRL_TYPE_INTEGER64 == avt_ctrl_mapping->type)
-		{
-			ret = regmap_read(sensor->regmap16,
-							  sensor->cci_reg.reg.bcrm_addr + avt_ctrl_mapping->max_offset, &s32tmp);
-			qectrl->maximum = s32tmp;
-			ret = regmap_read(sensor->regmap16,
-							  sensor->cci_reg.reg.bcrm_addr + avt_ctrl_mapping->min_offset, &s32tmp);
-			qectrl->minimum = s32tmp;
-			ret = regmap_read(sensor->regmap16,
-							  sensor->cci_reg.reg.bcrm_addr + avt_ctrl_mapping->step_offset, &s32tmp);
-			qectrl->step = s32tmp;
-		}
-		break;
-
-	case AV_CAM_DATA_SIZE_32:
-		ret = regmap_read(sensor->regmap32,
-						  sensor->cci_reg.reg.bcrm_addr + avt_ctrl_mapping->reg_offset, &s32tmp);
-		qectrl->default_value = s32tmp;
-		if (V4L2_CTRL_TYPE_INTEGER == avt_ctrl_mapping->type ||
-			V4L2_CTRL_TYPE_INTEGER64 == avt_ctrl_mapping->type)
-		{
-			ret = regmap_read(sensor->regmap32,
-							  sensor->cci_reg.reg.bcrm_addr + avt_ctrl_mapping->max_offset, &s32tmp);
-			qectrl->maximum = s32tmp;
-			ret = regmap_read(sensor->regmap32,
-							  sensor->cci_reg.reg.bcrm_addr + avt_ctrl_mapping->min_offset, &s32tmp);
-			qectrl->minimum = s32tmp;
-			ret = regmap_read(sensor->regmap32,
-							  sensor->cci_reg.reg.bcrm_addr + avt_ctrl_mapping->step_offset, &s32tmp);
-			qectrl->step = s32tmp;
-
-			qectrl->default_value = qectrl->default_value - qectrl->default_value % qectrl->step;
-		}
-		break;
-
-	case AV_CAM_DATA_SIZE_64:
-		ret = regmap_bulk_read(sensor->regmap64,
-							   sensor->cci_reg.reg.bcrm_addr + avt_ctrl_mapping->reg_offset,
-							   &qectrl->default_value, 1);
-		if (V4L2_CTRL_TYPE_INTEGER == avt_ctrl_mapping->type ||
-			V4L2_CTRL_TYPE_INTEGER64 == avt_ctrl_mapping->type)
-		{
-			ret = regmap_bulk_read(sensor->regmap64,
-								   sensor->cci_reg.reg.bcrm_addr + avt_ctrl_mapping->min_offset,
-								   &qectrl->minimum, 1);
-			ret = regmap_bulk_read(sensor->regmap64,
-								   sensor->cci_reg.reg.bcrm_addr + avt_ctrl_mapping->max_offset,
-								   &qectrl->maximum, 1);
-			ret = regmap_bulk_read(sensor->regmap64,
-								   sensor->cci_reg.reg.bcrm_addr + avt_ctrl_mapping->step_offset,
-								   &qectrl->step, 1);
-			qectrl->default_value = qectrl->default_value - qectrl->default_value % qectrl->step;
-		}
-		break;
-
-	default:
-		break;
-	}
-	avt_dbg(sd, "prepared control qectrl->id 0x%08X, size %d, qectrl->type %d, qectrl->name %s, [%lld, %lld], %lld, s %lld\n",
-			qectrl->id, avt_ctrl_mapping->data_size,
-			qectrl->type, qectrl->name, qectrl->minimum, qectrl->maximum, qectrl->default_value, qectrl->step);
-	return ret;
-}
-
-static void avt3_fill_ctrl_config(struct v4l2_ctrl_config *config,
-				 const struct avt_ctrl_mapping *mapping,
-				 const struct v4l2_query_ext_ctrl *qectrl)
-{
 	config->ops = &avt3_ctrl_ops;
 	config->id = mapping->id;
 	config->name = mapping->attr.name;
@@ -4275,7 +4240,14 @@ static void avt3_fill_ctrl_config(struct v4l2_ctrl_config *config,
 		config->menu_skip_mask = 0;
 		config->max = mapping->max_value;
 		config->qmenu = mapping->qmenu;
-		config->def = qectrl->default_value;
+		ret = read_control_value(camera, &config->def,
+					 mapping->reg_offset,
+					 mapping->data_size);
+		if (ret < 0)
+			return ret;
+
+		avt3_ctrl_from_reg(mapping->id,&config->def);
+
 		break;
 	case V4L2_CTRL_TYPE_BOOLEAN:
 		config->min = 0;
@@ -4284,27 +4256,173 @@ static void avt3_fill_ctrl_config(struct v4l2_ctrl_config *config,
 		break;
 	case V4L2_CTRL_TYPE_INTEGER:
 	case V4L2_CTRL_TYPE_INTEGER64:
+	case V4L2_CTRL_TYPE_STRING:
 		if (!mapping->min_offset)
 			config->min = mapping->min_value;
-		else
-			config->min = qectrl->minimum;
+		else {
+			ret = read_control_value(camera, &config->min,
+						 mapping->min_offset,
+						 mapping->data_size);
+			if (ret < 0)
+				return ret;
+
+			avt3_ctrl_from_reg(mapping->id,&config->min);
+		}
 
 		if (!mapping->max_offset)
 			config->max = mapping->max_value;
-		else
-			config->max = qectrl->maximum;
+		else {
+			ret = read_control_value(camera, &config->max,
+						 mapping->max_offset,
+						 mapping->data_size);
+			if (ret < 0)
+				return ret;
+
+			avt3_ctrl_from_reg(mapping->id,&config->max);
+		}
 
 		if (!mapping->step_offset)
 			config->step = mapping->step_value;
-		else
-			config->step = qectrl->step;
+		else {
+			ret = read_control_value(camera, &config->step,
+						 mapping->step_offset,
+						 mapping->data_size);
+			if (ret < 0)
+				return ret;
+
+			avt3_ctrl_from_reg(mapping->id,&config->step);
+		}
 
 		if (!mapping->reg_offset)
 			config->def = mapping->default_value;
-		else
-			config->def = qectrl->default_value;
+		else {
+			ret = read_control_value(camera, &config->def,
+						 mapping->reg_offset,
+						 mapping->data_size);
+			if (ret < 0)
+				return ret;
+
+			avt3_ctrl_from_reg(mapping->id,&config->def);
+
+			if (config->def < config->min) {
+				config->def = config->min;
+			}
+
+			if (config->def > config->max) {
+				config->def = config->max;
+			}
+		}
 
 		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+static void avt3_ctrl_added(struct avt3_dev *camera,struct v4l2_ctrl *ctrl)
+{
+	switch (ctrl->id)
+	{
+	case V4L2_CID_TRIGGER_MODE:
+		camera->avt_trigger_status.trigger_mode_enabled = ctrl->val;
+		avt3_update_sw_ctrl_state(camera);
+		break;
+	case V4L2_CID_TRIGGER_SOURCE:
+		camera->avt_trigger_status.trigger_source = ctrl->val;
+		avt3_update_sw_ctrl_state(camera);
+		break;
+	case V4L2_CID_TRIGGER_ACTIVATION:
+		camera->avt_trigger_status.trigger_activation = ctrl->val;
+		break;
+	case V4L2_CID_TRIGGER_SOFTWARE:
+		avt3_update_sw_ctrl_state(camera);
+		break;
+	case AVT_CID_FIRMWARE_VERSION: {
+		const union device_firmware_version_reg *fw_version =
+			&camera->cam_firmware_version;
+		snprintf(ctrl->p_cur.p_char,ctrl->elem_size,
+			"%02u.%02u.%02u.%08x",
+			 fw_version->device_firmware.special_version,
+			 fw_version->device_firmware.major_version,
+			 fw_version->device_firmware.minor_version,
+			 fw_version->device_firmware.patch_version);
+		break;
+	}
+	case AVT_CID_CAMERA_NAME:  {
+		snprintf(ctrl->p_cur.p_char,ctrl->elem_size,"%s %s",
+			 camera->cci_reg.reg.family_name,
+			 camera->cci_reg.reg.model_name);
+
+		break;
+	}
+	case AVT_CID_SERIAL_NUMBER:  {
+		snprintf(ctrl->p_cur.p_char,ctrl->elem_size,"%s",
+			 camera->cci_reg.reg.serial_number);
+
+		break;
+	}
+	case V4L2_CID_EXPOSURE_AUTO_MIN: {
+		struct v4l2_ctrl *max_ctrl = NULL;
+
+		max_ctrl = avt3_ctrl_find(camera,V4L2_CID_EXPOSURE_AUTO_MAX);
+
+		if (max_ctrl == NULL)
+			return;
+
+		v4l2_ctrl_modify_range(ctrl,ctrl->minimum,
+					 max_ctrl->default_value,ctrl->step,
+					 ctrl->default_value);
+
+		break;
+	}
+	case V4L2_CID_EXPOSURE_AUTO_MAX: {
+		struct v4l2_ctrl *min_ctrl = NULL;
+
+		min_ctrl = avt3_ctrl_find(camera,V4L2_CID_EXPOSURE_AUTO_MIN);
+
+		if (min_ctrl == NULL) {
+			avt_warn(&camera->sd,"V4L2_CID_EXPOSURE_AUTO_MIN not found!");
+			return;
+		}
+
+		v4l2_ctrl_modify_range(ctrl,min_ctrl->default_value,
+					 ctrl->maximum,ctrl->step,
+					 ctrl->default_value);
+
+		break;
+	}
+	case V4L2_CID_GAIN_AUTO_MIN: {
+		struct v4l2_ctrl *max_ctrl = NULL;
+
+		max_ctrl = avt3_ctrl_find(camera,V4L2_CID_GAIN_AUTO_MAX);
+
+		if (max_ctrl == NULL)
+			return;
+
+		v4l2_ctrl_modify_range(ctrl,ctrl->minimum,
+				       max_ctrl->default_value,ctrl->step,
+				       ctrl->default_value);
+
+		break;
+	}
+	case V4L2_CID_GAIN_AUTO_MAX: {
+		struct v4l2_ctrl *min_ctrl = NULL;
+
+		min_ctrl = avt3_ctrl_find(camera,V4L2_CID_GAIN_AUTO_MIN);
+
+		if (min_ctrl == NULL) {
+			avt_warn(&camera->sd,"V4L2_CID_EXPOSURE_AUTO_MIN not found!");
+			return;
+		}
+
+		v4l2_ctrl_modify_range(ctrl,min_ctrl->default_value,
+				       ctrl->maximum,ctrl->step,
+				       ctrl->default_value);
+
+		break;
+	}
 	default:
 		break;
 	}
@@ -4314,16 +4432,13 @@ static int avt3_init_controls(struct avt3_dev *sensor)
 {
 	// struct i2c_client *client = sensor->i2c_client;
 	// struct v4l2_queryctrl qectrl;
-	struct v4l2_query_ext_ctrl qectrl;
+	//struct v4l2_query_ext_ctrl qectrl;
+	struct v4l2_ctrl_config config;
 	struct v4l2_ctrl *ctrl;
 	int ret;
 	int i, j;
 
 	avt_dbg(&sensor->sd, "code uses now v4l2_ctrl_new_std and v4l2_query_ext_ctrl (VIDIOC_QUERY_EXT_CTRL / s64) ");
-
-	//	MUTEX_LOCK(&sensor->lock);
-
-	//	dev_info(&sensor->i2c_client->dev, "%s[%d]: try to call v4l2_ctrl_handler_init", __func__, __LINE__);
 
 	ret = v4l2_ctrl_handler_init(&sensor->v4l2_ctrl_hdl, ARRAY_SIZE(avt_ctrl_mappings));
 	if (ret < 0)
@@ -4336,286 +4451,54 @@ static int avt3_init_controls(struct avt3_dev *sensor)
 
 	for (i = 0, j = 0; j < ARRAY_SIZE(avt_ctrl_mappings); ++j)
 	{
-		const struct avt_ctrl_mapping * const ctrl_mapping = &avt_ctrl_mappings[j];
+		const struct avt_ctrl_mapping * const ctrl_mapping
+			= &avt_ctrl_mappings[j];
+		const s8 feat_bit = ctrl_mapping->attr.feature_avail;
+		const u64 inq_reg = sensor->feature_inquiry_reg.value;
 
-		switch (avt_ctrl_mappings[j].id)
-		{
-		case V4L2_CID_CONTRAST:
-			if (!sensor->feature_inquiry_reg.feature_inq.contrast_avail)
-			{
-				avt_info(&sensor->sd, "skip V4L2_CID_CONTRAST %d",
-						 sensor->feature_inquiry_reg.feature_inq.contrast_avail);
-				continue;
-			}
-			break;
-		case V4L2_CID_SATURATION:
-			if (!sensor->feature_inquiry_reg.feature_inq.saturation_avail)
-			{
-				avt_info(&sensor->sd, "skip V4L2_CID_SATURATION %d",
-						 sensor->feature_inquiry_reg.feature_inq.saturation_avail);
-				continue;
-			}
-			break;
-		case V4L2_CID_HUE:
-			if (!sensor->feature_inquiry_reg.feature_inq.hue_avail)
-			{
-				avt_info(&sensor->sd, "skip V4L2_CID_HUE %d",
-						 sensor->feature_inquiry_reg.feature_inq.hue_avail);
-				continue;
-			}
-			break;
-		case V4L2_CID_AUTO_WHITE_BALANCE:
-			if (!sensor->feature_inquiry_reg.feature_inq.white_balance_auto_avail)
-			{
-				avt_info(&sensor->sd, "skip V4L2_CID_AUTO_WHITE_BALANCE %d",
-						 sensor->feature_inquiry_reg.feature_inq.white_balance_auto_avail);
-				continue;
-			}
-			break;
-		case V4L2_CID_DO_WHITE_BALANCE:
-			if (!sensor->feature_inquiry_reg.feature_inq.white_balance_avail)
-			{
-				avt_info(&sensor->sd, "skip V4L2_CID_DO_WHITE_BALANCE %d",
-						 sensor->feature_inquiry_reg.feature_inq.white_balance_avail);
-				continue;
-			}
-			break;
-		case V4L2_CID_GAMMA:
-			if (!sensor->feature_inquiry_reg.feature_inq.gamma_avail)
-			{
-				avt_info(&sensor->sd, "skip V4L2_CID_GAMMA %d",
-						 sensor->feature_inquiry_reg.feature_inq.gamma_avail);
-				continue;
-			}
-			break;
-		case V4L2_CID_AUTOGAIN:
-			if (!sensor->feature_inquiry_reg.feature_inq.gain_auto_avail)
-			{
-				avt_info(&sensor->sd, "skip V4L2_CID_AUTOGAIN %d",
-						 sensor->feature_inquiry_reg.feature_inq.gain_auto_avail);
-				continue;
-			}
-			break;
-		case V4L2_CID_GAIN:
-			if (!sensor->feature_inquiry_reg.feature_inq.gain_avail)
-			{
-				avt_info(&sensor->sd, "skip V4L2_CID_GAIN %d",
-						 sensor->feature_inquiry_reg.feature_inq.gain_avail);
-				continue;
-			}
-			break;
-		case V4L2_CID_HFLIP:
-			if (!sensor->feature_inquiry_reg.feature_inq.reverse_x_avail)
-			{
-				avt_info(&sensor->sd, "skip V4L2_CID_HFLIP %d",
-						 sensor->feature_inquiry_reg.feature_inq.reverse_x_avail);
-				continue;
-			}
-			break;
-		case V4L2_CID_VFLIP:
-			if (!sensor->feature_inquiry_reg.feature_inq.reverse_y_avail)
-			{
-				avt_info(&sensor->sd, "skip V4L2_CID_VFLIP %d",
-						 sensor->feature_inquiry_reg.feature_inq.reverse_y_avail);
-				continue;
-			}
-			break;
-		case V4L2_CID_SHARPNESS:
-			if (!sensor->feature_inquiry_reg.feature_inq.sharpness_avail)
-			{
-				avt_info(&sensor->sd, "skip V4L2_CID_SHARPNESS %d",
-						 sensor->feature_inquiry_reg.feature_inq.sharpness_avail);
-				continue;
-			}
-			break;
-		case V4L2_CID_EXPOSURE_AUTO:
-			if (!sensor->feature_inquiry_reg.feature_inq.exposure_auto_avail)
-			{
-				avt_info(&sensor->sd, "skip V4L2_CID_EXPOSURE_AUTO %d",
-						 sensor->feature_inquiry_reg.feature_inq.exposure_auto_avail);
-				continue;
-			}
-			break;
-		case V4L2_CID_BRIGHTNESS:
-			if (!sensor->feature_inquiry_reg.feature_inq.black_level_avail)
-			{
-				avt_info(&sensor->sd, "skip V4L2_CID_BRIGHTNESS %d",
-						 sensor->feature_inquiry_reg.feature_inq.black_level_avail);
-				continue;
-			}
-			break;
-		case V4L2_CID_TRIGGER_MODE:
-		case V4L2_CID_TRIGGER_ACTIVATION:
-		case V4L2_CID_TRIGGER_SOURCE:
-		case V4L2_CID_TRIGGER_SOFTWARE:
-			if (!sensor->feature_inquiry_reg.feature_inq.frame_trigger)
-			{
-				avt_info(&sensor->sd, "skip trigger ctrl %d %d",
- 						avt_ctrl_mappings[j].id,sensor->feature_inquiry_reg.feature_inq.frame_trigger);
-				continue;
-			}
-			break;
-		/* let's asume that this features are available on all cameras */
-		case V4L2_CID_EXPOSURE:
-		case V4L2_CID_EXPOSURE_ABSOLUTE:
-		case V4L2_CID_RED_BALANCE:
-		case V4L2_CID_BLUE_BALANCE:
-			break;
-		default:
-			if (ctrl_mapping->attr.feature_avail != -1) {
-				continue;
-			}
-
-		}
-
-		CLEAR(qectrl);
-		CLEAR(sensor->avt3_ctrl_cfg[i]);
-		qectrl.id = avt_ctrl_mappings[j].id;
-
-		avt_dbg(&sensor->sd, "avt_ctrl_mappings[%d]: %s - Regs: [0x%04x, 0x%04x]: 0x%04x d: 0x%04x", j,
-				avt_ctrl_mappings[j].attr.name,
-				avt_ctrl_mappings[j].min_offset,
-				avt_ctrl_mappings[j].max_offset,
-				avt_ctrl_mappings[j].step_offset,
-				avt_ctrl_mappings[j].reg_offset);
-
-		ret = avt3_initctrl(&sensor->sd, &avt_ctrl_mappings[j], &qectrl);
-
-		if (ret < 0)
-		{
-			avt_err(&sensor->sd, "[%d] avt3_initctrl failed i %d, j %d\n",
-					avt_ctrl_mappings[j].id, i, j);
-			continue;
-		}
-
-		avt_dbg(&sensor->sd, "[%d] Checking caps: %s - [%lld, %lld]: %lld d: %lld - %sabled", j,
-				avt_ctrl_mappings[j].attr.name,
-				qectrl.minimum,
-				qectrl.maximum,
-				qectrl.step,
-				qectrl.default_value,
-				(qectrl.flags & V4L2_CTRL_FLAG_DISABLED) ? "dis" : "en");
-
-		if (qectrl.flags & V4L2_CTRL_FLAG_DISABLED /*|| (qectrl.minimum == qectrl.maximum)*/)
-			continue;
-
-		//		qectrl.type = sensor->avt3_ctrl_cfg[i].type
-
-		if (qectrl.type == V4L2_CTRL_TYPE_INTEGER ||
-			qectrl.type == V4L2_CTRL_TYPE_INTEGER64)
-			sensor->avt3_ctrl_cfg[i].flags |= V4L2_CTRL_FLAG_SLIDER;
-
-		sensor->avt3_ctrl_cfg[i].ops = &avt3_ctrl_ops;
-		sensor->avt3_ctrl_cfg[i].name = avt_ctrl_mappings[j].attr.name;
-		sensor->avt3_ctrl_cfg[i].id = avt_ctrl_mappings[j].id;
-
-		sensor->avt3_ctrl_cfg[i].min = qectrl.minimum;
-		sensor->avt3_ctrl_cfg[i].max = qectrl.maximum;
-		sensor->avt3_ctrl_cfg[i].def = qectrl.default_value;
-		sensor->avt3_ctrl_cfg[i].step = qectrl.step;
-
-		avt_dbg(&sensor->sd, "v4l2_ctrl_new_std %s ctrl %d [%lld, %lld] s %lld d %lld\n",
-				sensor->avt3_ctrl_cfg[i].name,
-				sensor->avt3_ctrl_cfg[i].id,
-				sensor->avt3_ctrl_cfg[i].min,
-				sensor->avt3_ctrl_cfg[i].max,
-				sensor->avt3_ctrl_cfg[i].step,
-				sensor->avt3_ctrl_cfg[i].def);
-
-		if (ctrl_mapping->custom)
-		{
-			struct v4l2_ctrl_config config;
-			CLEAR(config);
-
-			avt_info(&sensor->sd, "Init custom ctrl %s (%x)\n",
+		if ((feat_bit != -1 && (inq_reg & (1 << feat_bit)) == 0)) {
+			avt_info(&sensor->sd,
+				 "Control %s (0x%x) not supported by camera\n",
 				 ctrl_mapping->attr.name,ctrl_mapping->id);
-
-
-			avt3_fill_ctrl_config(&config,ctrl_mapping,&qectrl);
-
-			sensor->avt3_ctrl_cfg[i] = config;
-
-			ctrl = v4l2_ctrl_new_custom(&sensor->v4l2_ctrl_hdl,
-						    &config,(void*)ctrl_mapping);
-
-			if (ctrl != NULL)
-			{
-				switch (ctrl->id)
-				{
-					case V4L2_CID_TRIGGER_MODE:
-						sensor->avt_trigger_status.trigger_mode_enabled = ctrl->val;
-						avt3_update_sw_ctrl_state(sensor);
-						break;
-					case V4L2_CID_TRIGGER_SOURCE:
-						sensor->avt_trigger_status.trigger_source = ctrl->val;
-						avt3_update_sw_ctrl_state(sensor);
-						break;
-					case V4L2_CID_TRIGGER_ACTIVATION:
-						sensor->avt_trigger_status.trigger_activation = ctrl->val;
-						break;
-					case V4L2_CID_TRIGGER_SOFTWARE:
-						avt3_update_sw_ctrl_state(sensor);
-					default:
-						break;
-				}
-			}
+			continue;
 		}
-		else if (ctrl_mapping->type == V4L2_CTRL_TYPE_MENU)
-		{
-			if (ctrl_mapping->id == V4L2_CID_EXPOSURE_AUTO)
-			{
-				sensor->avt3_ctrl_cfg[i].max = 1;
-				sensor->avt3_ctrl_cfg[i].step = 0;
-				if (sensor->avt3_ctrl_cfg[i].def == 0)
-				{
-					sensor->avt3_ctrl_cfg[i].def = V4L2_EXPOSURE_MANUAL;
-				}
-				else
-				{
-					sensor->avt3_ctrl_cfg[i].def = V4L2_EXPOSURE_AUTO;
-				}
-			}
 
-			ctrl = v4l2_ctrl_new_std_menu(&sensor->v4l2_ctrl_hdl,
-										  &avt3_ctrl_ops,
-										  sensor->avt3_ctrl_cfg[i].id,
-										  sensor->avt3_ctrl_cfg[i].max,
-										  sensor->avt3_ctrl_cfg[i].step,
-										  sensor->avt3_ctrl_cfg[i].def
-										  );
-		}
-		else
-		{
-			ctrl = v4l2_ctrl_new_std(&sensor->v4l2_ctrl_hdl,
-                                     &avt3_ctrl_ops,
- 									sensor->avt3_ctrl_cfg[i].id,
- 									sensor->avt3_ctrl_cfg[i].min,
- 									sensor->avt3_ctrl_cfg[i].max,
- 									sensor->avt3_ctrl_cfg[i].step,
- 									sensor->avt3_ctrl_cfg[i].def);
-		}
-		//		v4l2_ctrl_new_std(&priv->hdl, &ov6550_ctrl_ops,
-		//						V4L2_CID_VFLIP, 0, 1, 1, 0);
-		//		v4l2_ctrl_new_std(&priv->hdl, &ov6550_ctrl_ops,
-		//						V4L2_CID_HFLIP, 0, 1, 1, 0);
-		//		priv->autogain = v4l2_ctrl_new_std(&priv->hdl, &ov6550_ctrl_ops,
-		//						V4L2_CID_AUTOGAIN, 0, 1, 1, 1);
-		//		priv->gain = v4l2_ctrl_new_std(&priv->hdl, &ov6550_ctrl_ops,
-		//						V4L2_CID_GAIN, 0, 0x3f, 1, DEF_GAIN);
-		//		priv->autowb = v4l2_ctrl_new_std(&priv->hdl, &ov6550_ctrl_ops,
-		//						V4L2_CID_AUTO_WHITE_BALANCE, 0, 1, 1, 1);
+		CLEAR(config);
 
-		//	}
+		avt_dbg(&sensor->sd, "Init ctrl %s (0x%x)\n",
+			 ctrl_mapping->attr.name,ctrl_mapping->id);
+
+
+		avt3_fill_ctrl_config(sensor,&config,ctrl_mapping);
+
+
+		sensor->avt3_ctrl_cfg[i] = config;
+
+		ctrl = v4l2_ctrl_new_custom(&sensor->v4l2_ctrl_hdl,
+					    &config,(void*)ctrl_mapping);
+
 		if (ctrl == NULL)
 		{
-			avt_err(&sensor->sd, "Failed to init %s ctrl %d 0x%08x\n",
-					sensor->avt3_ctrl_cfg[i].name,
-					sensor->v4l2_ctrl_hdl.error, sensor->v4l2_ctrl_hdl.error);
+			avt_err(&sensor->sd,
+				"Failed to init %s ctrl %d 0x%08x\n",
+				sensor->avt3_ctrl_cfg[i].name,
+				sensor->v4l2_ctrl_hdl.error,
+				sensor->v4l2_ctrl_hdl.error);
 
-            //Clear error
+			if (sensor->v4l2_ctrl_hdl.error == -ERANGE) {
+				avt_err(&sensor->sd,
+					"Invalid ctrl range min: %lld max: %lld "
+					"step: %lld def: %lld",
+					config.min,config.max,config.step,config.def);
+			}
+
+            		//Clear error
 			sensor->v4l2_ctrl_hdl.error = 0;
 			continue;
 		}
+
+
+		avt3_ctrl_added(sensor,ctrl);
 
 		sensor->avt3_ctrls[i] = ctrl;
 		i++;
@@ -4813,11 +4696,11 @@ static int avt3_pad_ops_enum_frame_interval(
 	fie->interval.numerator = 1;
 	set_frameinterval(&fie->interval,max_framerate,1000000);
 
-				return 0;
-			}
+	return 0;
+}
 
 static int avt3_video_ops_g_frame_interval(struct v4l2_subdev *sd,
-										   struct v4l2_subdev_frame_interval *fi)
+					   struct v4l2_subdev_frame_interval *fi)
 {
 	struct avt3_dev *sensor = to_avt3_dev(sd);
 
@@ -4832,8 +4715,10 @@ static int avt3_video_ops_g_frame_interval(struct v4l2_subdev *sd,
 	return 0;
 }
 
+
+
 static int avt3_video_ops_s_frame_interval(struct v4l2_subdev *sd,
-										   struct v4l2_subdev_frame_interval *fi)
+					   struct v4l2_subdev_frame_interval *fi)
 {
 	struct avt3_dev *camera = to_avt3_dev(sd);
 	int ret = 0;
@@ -4878,8 +4763,8 @@ static int avt3_video_ops_s_frame_interval(struct v4l2_subdev *sd,
 		camera->framerate_auto = true;
 	}
 	else {
-	framerate_req = (fi->interval.denominator * factor) / fi->interval.numerator;
-	framerate_req = clamp(framerate_req,framerate_min,framerate_max);
+		framerate_req = (fi->interval.denominator * factor) / fi->interval.numerator;
+		framerate_req = clamp(framerate_req,framerate_min,framerate_max);
 
 		set_frameinterval(&fi->interval,framerate_req,factor);
 
@@ -4991,7 +4876,8 @@ static void avt3_controls_stream_grab(struct avt3_dev *camera,bool grabbed)
 		{
 			const struct avt_ctrl_mapping * const ctrl_mapping = ctrl->priv;
 
-			if (ctrl_mapping->avt_flags & AVT_CTRL_STREAM_DISABLED)
+			if (ctrl_mapping->avt_flags &
+			    AVT_CTRL_FLAG_STREAM_DISABLED)
 			{
 				__v4l2_ctrl_grab(ctrl,grabbed);
 			}
@@ -5162,8 +5048,8 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 			if (ret < 0)
 			{
 				dev_err(&client->dev, "%s[%d]: BCRM_ACQUISITION_FRAME_RATE_ENABLE_8RW: bcrm_regmap_write failed (%d)\n",
-						__func__, __LINE__,
-						ret);
+					__func__, __LINE__,
+					ret);
 				goto out;
 			}
 
@@ -6157,8 +6043,8 @@ static int avt3_get_sensor_capabilities(struct v4l2_subdev *sd)
 	avt_dbg(sd, "BCRM_IMG_HEIGHT_MIN_32R %u", sensor->min_rect.height);
 
 	ret = regmap_read(sensor->regmap32,
-					  sensor->cci_reg.reg.bcrm_addr + BCRM_IMG_HEIGHT_MAX_32R,
-					  &sensor->max_rect.height);
+			  sensor->cci_reg.reg.bcrm_addr + BCRM_IMG_HEIGHT_MAX_32R,
+			  &sensor->max_rect.height);
 
 	if (ret < 0)
 	{
@@ -6186,8 +6072,8 @@ static int avt3_get_sensor_capabilities(struct v4l2_subdev *sd)
 	avt_dbg(sd, "BCRM_IMG_HEIGHT_MAX_32R %u", sensor->max_rect.height);
 
 	ret = regmap_bulk_read(sensor->regmap64,
-						   sensor->cci_reg.reg.bcrm_addr + BCRM_GAIN_MIN_64R,
-						   &value64, 1);
+			       sensor->cci_reg.reg.bcrm_addr + BCRM_GAIN_MIN_64R,
+			       &value64, 1);
 
 	if (ret < 0)
 	{
@@ -6197,8 +6083,8 @@ static int avt3_get_sensor_capabilities(struct v4l2_subdev *sd)
 	avt_dbg(sd, "BCRM_GAIN_MIN_64R %llu", value64);
 
 	ret = regmap_bulk_read(sensor->regmap64,
-						   sensor->cci_reg.reg.bcrm_addr + BCRM_GAIN_MAX_64R,
-						   &value64, 1);
+			       sensor->cci_reg.reg.bcrm_addr + BCRM_GAIN_MAX_64R,
+			       &value64, 1);
 
 	if (ret < 0)
 	{
@@ -6226,9 +6112,7 @@ static int avt3_get_sensor_capabilities(struct v4l2_subdev *sd)
 	sensor->curr_rect.left = 0;
 	sensor->curr_rect.top = 0;
 
-	ret = regmap_write(sensor->regmap8,
-					   GENCP_CHANGEMODE_8W,
-					   bcm_mode);
+	ret = regmap_write(sensor->regmap8,GENCP_CHANGEMODE_8W,bcm_mode);
 
 	if (ret < 0)
 	{
