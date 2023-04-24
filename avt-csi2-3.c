@@ -6245,9 +6245,9 @@ static int avt3_query_binning(struct avt3_dev *camera)
 			info.max_height = sensor_rect->height / setting->vfact;
 
 			v4l_bound_align_image(&info.max_width,0,
-					      sensor_rect->width,3,
+					      info.max_width,3,
 					      &info.max_height,0,
-					      sensor_rect->height,3,0);
+					      info.max_height,3,0);
 
 			dev_info(&camera->i2c_client->dev,
 				"Binning setting %dx%d: width %u height %u\n",
