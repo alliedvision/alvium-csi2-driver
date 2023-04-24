@@ -601,6 +601,8 @@ struct avt3_dev
 	size_t binning_info_cnt[AVT_BINNING_TYPE_CNT];
 	u32 curr_binning_type;
 	const struct avt3_binning_info *curr_binning_info;
+
+	struct v4l2_rect sensor_rect;
 };
 
 struct avt_ctrl {

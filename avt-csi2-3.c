@@ -563,6 +563,36 @@ static bool bcrm_get_write_handshake_availibility(struct i2c_client *client)
 	}
 }
 
+static inline u16 get_bcrm_addr(struct avt3_dev *camera,u16 reg)
+{
+	return camera->cci_reg.reg.bcrm_addr + reg;
+}
+
+static inline int bcrm_read8(struct avt3_dev *camera,u16 reg,u8 *val)
+{
+	const u16 bcrm_addr = get_bcrm_addr(camera,reg);
+	return regmap_bulk_read(camera->regmap8,bcrm_addr,val,1);
+}
+
+static inline int bcrm_read16(struct avt3_dev *camera,u16 reg,u16 *val)
+{
+	const u16 bcrm_addr = get_bcrm_addr(camera,reg);
+	return regmap_bulk_read(camera->regmap8,bcrm_addr,val,1);
+}
+
+static inline int bcrm_read32(struct avt3_dev *camera,u16 reg,u32 *val)
+{
+	const u16 bcrm_addr = get_bcrm_addr(camera,reg);
+	return regmap_read(camera->regmap32,bcrm_addr,val);
+}
+
+static inline int bcrm_read64(struct avt3_dev *camera,u16 reg,u64 *val)
+{
+	const u16 bcrm_addr = get_bcrm_addr(camera,reg);
+	return regmap_bulk_read(camera->regmap64,bcrm_addr,val,1);
+}
+
+
 static int read_cci_registers(struct i2c_client *client)
 {
 	struct avt3_dev *sensor = client_to_avt3_dev(client);
@@ -893,7 +923,7 @@ static int bcrm_version_check(struct i2c_client *client)
 
 	MUTEX_LOCK(&sensor->lock);
 	/* reading the BCRM version */
-	ret = regmap_read(sensor->regmap32, sensor->cci_reg.reg.bcrm_addr + BCRM_VERSION_32R, &value);
+	ret = bcrm_read32(sensor,BCRM_VERSION_32R,&value);
 
 	if (ret < 0)
 	{
@@ -2576,7 +2606,7 @@ static void avt3_calc_compose(const struct avt3_dev * const camera,
 	const struct avt3_binning_info * const infos = camera->binning_infos[type];
 	const size_t cnt = camera->binning_info_cnt[type];
 	const struct v4l2_rect * const min = &camera->min_rect;
-	const struct v4l2_rect * const max = &camera->max_rect;
+	const struct v4l2_rect * const max = &camera->sensor_rect;
 	const bool x_changed = *width != camera->mbus_framefmt.width;
 	const bool y_changed = *height != camera->mbus_framefmt.height;
 	const struct avt3_binning_info *best;
@@ -5058,7 +5088,7 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 		binning_rect.width = binning_info->max_width;
 		binning_rect.height = binning_info->max_height;
 
-		v4l2_rect_scale(&crop_rect,&sensor->max_rect,&binning_rect);
+		v4l2_rect_scale(&crop_rect,&sensor->sensor_rect,&binning_rect);
 
 
 		v4l_bound_align_image(&crop_rect.width,sensor->min_rect.width,
@@ -5811,9 +5841,11 @@ int avt3_pad_ops_get_selection(struct v4l2_subdev *sd,
 	case V4L2_SEL_TGT_CROP_BOUNDS:
 	/* Default cropping area */
 	case V4L2_SEL_TGT_CROP_DEFAULT:
+		sel->r = sensor->max_rect;
+		break;
 	/* Native frame size */
 	case V4L2_SEL_TGT_NATIVE_SIZE:
-		sel->r = sensor->max_rect;
+		sel->r = sensor->sensor_rect;
 		break;
 
 	default:
@@ -6054,6 +6086,7 @@ static int avt3_get_sensor_capabilities(struct v4l2_subdev *sd)
 	uint32_t avt_current_clk = 0;
 	uint32_t clk;
 	uint8_t bcm_mode = 0;
+	u32 temp;
 
 	//	struct v4l2_subdev_selection sel;
 
@@ -6220,6 +6253,24 @@ static int avt3_get_sensor_capabilities(struct v4l2_subdev *sd)
 		avt_err(sd, "regmap_read failed (%d)", ret);
 		// goto err_out;
 	}
+
+	ret = device_property_read_u32(&sensor->i2c_client->dev,"avt,max-width",
+				 &temp);
+
+	if (ret == 0)
+	{
+		if (sensor->max_rect.width > temp)
+			sensor->max_rect.width = temp;
+	}
+
+	ret = device_property_read_u32(&sensor->i2c_client->dev,"avt,max-height",
+				 &temp);
+	if (ret == 0)
+	{
+		if (sensor->max_rect.height > temp)
+			sensor->max_rect.height = temp;
+	}
+
 	avt_dbg(sd, "BCRM_IMG_HEIGHT_MAX_32R %u", sensor->max_rect.height);
 
 	ret = regmap_bulk_read(sensor->regmap64,
@@ -6243,6 +6294,21 @@ static int avt3_get_sensor_capabilities(struct v4l2_subdev *sd)
 		// goto err_out;
 	}
 	avt_dbg(sd, "BCRM_GAIN_MAX_64R %llu", value64);
+
+	ret = bcrm_read32(sensor,BCRM_SENSOR_WIDTH_32R,
+			  &sensor->sensor_rect.width);
+
+	if (ret < 0)
+		return ret;
+
+	ret = bcrm_read32(sensor,BCRM_SENSOR_HEIGHT_32R,
+			  &sensor->sensor_rect.height);
+
+	if (ret < 0)
+		return ret;
+
+	sensor->sensor_rect.left = 0;
+	sensor->sensor_rect.top = 0;
 
 	sensor->curr_rect = sensor->max_rect;
 	sensor->curr_rect.left = 0;
@@ -6325,15 +6391,30 @@ static int avt3_query_binning(struct avt3_dev *camera)
 {
 	int ret,i,j;
 	u16 binning_inq;
+	u32 width_inc,height_inc;
+	const struct v4l2_rect *sensor_rect = &camera->sensor_rect;
 
-	ret = regmap_read(camera->regmap8,
-			  camera->cci_reg.reg.bcrm_addr + BCRM_BINNING_INQ_16R,
-			  (unsigned int*)&binning_inq);
+	ret = bcrm_read8(camera,BCRM_BINNING_INQ_16R,(u8*)&binning_inq);
 
 	dev_info(&camera->i2c_client->dev,"Binning inq %u\n",binning_inq);
 
 	if (ret < 0)
 		return ret;
+
+
+	ret = bcrm_read32(camera,BCRM_IMG_WIDTH_INC_32R,&width_inc);
+
+	if (ret < 0)
+		return ret;
+
+	width_inc = ilog2(width_inc);
+
+	ret = bcrm_read32(camera,BCRM_IMG_HEIGHT_INC_32R,&height_inc);
+
+	if (ret < 0)
+		return ret;
+
+	height_inc = ilog2(height_inc);
 
 	for (i = 0;i < avt_binning_setting_cnt;i++) {
 		const struct avt_binning_setting *setting =
@@ -6364,28 +6445,18 @@ static int avt3_query_binning(struct avt3_dev *camera)
 			info.hfact = setting->hfact;
 			info.sel = setting->sel;
 
-			ret = bcrm_regmap_write(camera,camera->regmap8,
-						camera->cci_reg.reg.bcrm_addr + BCRM_BINNING_SETTING_8RW,
-						setting->sel);
+			info.max_width = sensor_rect->width / setting->hfact;
+			info.max_height = sensor_rect->height / setting->vfact;
 
-			if (ret < 0)
-				continue;
-
-			ret = regmap_read(camera->regmap32,camera->cci_reg.reg.bcrm_addr + BCRM_WIDTH_MAX_32R,
-					  &info.max_width);
-
-			if (ret < 0)
-				continue;
-
-			ret = regmap_read(camera->regmap32,camera->cci_reg.reg.bcrm_addr + BCRM_HEIGHT_MAX_32R,
-					  &info.max_height);
-
-			if (ret < 0)
-				continue;
+			v4l_bound_align_image(&info.max_width,0,
+					      sensor_rect->width,3,
+					      &info.max_height,0,
+					      sensor_rect->height,3,0);
 
 			dev_info(&camera->i2c_client->dev,
 				"Binning setting %dx%d: width %u height %u\n",
-				 setting->hfact,setting->vfact,info.max_width,info.max_height);
+				 setting->hfact,setting->vfact,
+				 info.max_width,info.max_height);
 
 			if (setting->type == NONE) {
 				int l;
@@ -6401,21 +6472,6 @@ static int avt3_query_binning(struct avt3_dev *camera)
 
 
 	camera->curr_binning_info = &camera->binning_infos[0][0];
-
-	ret = bcrm_regmap_write(camera,camera->regmap8,camera->cci_reg.reg.bcrm_addr + BCRM_BINNING_SETTING_8RW,camera->curr_binning_info->sel);
-
-	if (ret < 0)
-		return ret;
-
-	ret = bcrm_regmap_write(camera,camera->regmap32,camera->cci_reg.reg.bcrm_addr + BCRM_IMG_WIDTH_32RW,camera->curr_binning_info->max_width);
-
-	if (ret < 0)
-		return ret;
-
-	ret = bcrm_regmap_write(camera,camera->regmap32,camera->cci_reg.reg.bcrm_addr + BCRM_IMG_HEIGHT_32RW,camera->curr_binning_info->max_height);
-
-	if (ret < 0)
-		return ret;
 
 	return 0;
 }
@@ -7228,12 +7284,15 @@ static int avt3_probe(struct i2c_client *client)
 	sensor->bcrm_write_handshake =
 		bcrm_get_write_handshake_availibility(client);
 
-	/* reading the Firmware Version register */
-	ret = regmap_bulk_read(sensor->regmap64,
-						   sensor->cci_reg.reg.bcrm_addr + BCRM_DEVICE_FIRMWARE_VERSION_64R,
-						   &sensor->cam_firmware_version.value, 1);
 
-	dev_info(&client->dev, "%s[%d]: Firmware version: %u.%u.%u.%u ret = %d\n",
+	dev_info(dev,"Found camera %s %s",sensor->cci_reg.reg.family_name,
+		 sensor->cci_reg.reg.model_name);
+
+	/* reading the Firmware Version register */
+	ret = bcrm_read64(sensor,BCRM_DEVICE_FIRMWARE_VERSION_64R,
+			  &sensor->cam_firmware_version.value);
+
+	dev_info(&client->dev, "%s[%d]: Firmware version: %u.%u.%u.%x ret = %d\n",
 			 __func__, __LINE__,
 			 sensor->cam_firmware_version.device_firmware.special_version,
 			 sensor->cam_firmware_version.device_firmware.major_version,
@@ -7278,13 +7337,11 @@ static int avt3_probe(struct i2c_client *client)
 	CLEAR(sensor->min_rect);
 	CLEAR(sensor->curr_rect);
 
-
-	ret = avt3_query_binning(sensor);
+	ret = avt3_get_sensor_capabilities(&sensor->sd);
 	if (ret)
 		goto entity_cleanup;
 
-
-	ret = avt3_get_sensor_capabilities(&sensor->sd);
+	ret = avt3_query_binning(sensor);
 	if (ret)
 		goto entity_cleanup;
 
