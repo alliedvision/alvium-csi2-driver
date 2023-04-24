@@ -199,7 +199,6 @@ struct avt_binning_setting {
 
 struct avt3_mode_info
 {
-	enum avt3_mode_id id;
 	u32 hact;
 	u32 htot;
 	u32 vact;
@@ -222,39 +221,6 @@ struct avt3_mode_info
 
 //TODO: Remove
 /* that table is for testing only */
-
-static const int avt3_framerates[] = {
-    [AVT3_05_FPS] = 5,
-	[AVT3_08_FPS] = 8,
-	[AVT3_10_FPS] = 10,
-	[AVT3_15_FPS] = 15,
-	[AVT3_20_FPS] = 20,
-	[AVT3_24_FPS] = 24,
-	[AVT3_25_FPS] = 25,
-	[AVT3_30_FPS] = 30,
-	[AVT3_50_FPS] = 50,
-	[AVT3_60_FPS] = 60,
-	[AVT3_75_FPS] = 75,
-	[AVT3_90_FPS] = 90,
-	[AVT3_100_FPS] = 100,
-	[AVT3_120_FPS] = 120,
-	[AVT3_150_FPS] = 150,
-	[AVT3_200_FPS] = 200,
-	[AVT3_250_FPS] = 250,
-	[AVT3_300_FPS] = 300,
-	[AVT3_500_FPS] = 500,
-	[AVT3_750_FPS] = 750,
-	[AVT3_1000_FPS] = 1000,
-	[AVT3_1200_FPS] = 1200,
-	[AVT3_1400_FPS] = 1400,
-	[AVT3_1500_FPS] = 1500,
-	[AVT3_1600_FPS] = 1600,
-	[AVT3_1650_FPS] = 1650,
-	[AVT3_1750_FPS] = 1750,
-	[AVT3_1800_FPS] = 1800,
-	[AVT3_2000_FPS] = 2000,
-	[AVT3_NUM_FRAMERATES] = -1, // dummy for framerate set by set_parm
-};
 
 static const struct avt_binning_setting avt_binning_settings[] = {
 	{
@@ -2666,7 +2632,6 @@ static void avt3_calc_compose(const struct avt3_dev * const camera,
 
 static int avt3_try_fmt_internal(struct v4l2_subdev *sd,
 				 struct v4l2_mbus_framefmt *fmt,
-				 enum avt3_frame_rate fr,
 				 const struct avt3_binning_info **new_binning)
 {
 	struct avt3_dev *sensor = to_avt3_dev(sd);
@@ -2677,20 +2642,20 @@ static int avt3_try_fmt_internal(struct v4l2_subdev *sd,
 
 	dev_info(&sensor->i2c_client->dev, "%s[%d]",
 			 __func__, __LINE__);
-	avt_dbg(&sensor->sd, "fmt->width %d, fmt->height %d, fmt->code 0x%04X, fr %d, "
+	avt_dbg(&sensor->sd, "fmt->width %d, fmt->height %d, fmt->code 0x%04X, "
 		"sensor->available_fmts_cnt %d, sensor->mbus_framefmt.code 0x%04X",
-			  fmt->width, fmt->height, fmt->code, fr, 
+			  fmt->width, fmt->height, fmt->code,
 			  sensor->available_fmts_cnt,
 			  sensor->mbus_framefmt.code);
 
 
 	for (i = 0; i < sensor->available_fmts_cnt; i++)
 	{
-		avt_dbg(&sensor->sd, "loop %d: fmt->width %d, fmt->height %d, fr %d, "
+		avt_dbg(&sensor->sd, "loop %d: fmt->width %d, fmt->height %d, "
 		 	"sensor->mbus_framefmt.code 0x%04X, "
 			"sensor->available_fmts[%d].mbus_code 0x%04X, "
 			"fmt->code 0x%04X",
-				  i, fmt->width, fmt->height, fr,
+				  i, fmt->width, fmt->height,
 				  sensor->mbus_framefmt.code,
 				  i,
 				  sensor->available_fmts[i].mbus_code,
@@ -2744,7 +2709,7 @@ static int avt3_pad_ops_set_fmt(struct v4l2_subdev *sd,
 	}
 
 	if (mbus_fmt->code != MEDIA_BUS_FMT_CUSTOM) {
-		ret = avt3_try_fmt_internal(sd, mbus_fmt,sensor->current_fr, &new_binning);
+		ret = avt3_try_fmt_internal(sd, mbus_fmt, &new_binning);
 		if (ret)
 			goto out;
 	}
@@ -4705,6 +4670,19 @@ static int capture_enum_framesizes(struct file *file, void *fh,
 
 ToDo: Min und Max verschiedne zurueckgeben!!
 */
+
+static void set_frameinterval(struct v4l2_fract *interval,const u64 framerate,const u64 factor)
+{
+	interval->denominator = (framerate * interval->numerator) / factor;
+
+	// If the denominator and minimal framerate is not zero, try to increase the numerator by 1000
+	while (interval->denominator == 0 && interval->numerator < factor)
+	{
+		interval->numerator *= 1000;
+		interval->denominator = (framerate * interval->numerator) / factor;
+	}
+}
+
 static int avt3_pad_ops_enum_frame_size(struct v4l2_subdev *sd,
 #if (LINUX_VERSION_CODE > KERNEL_VERSION(5, 14, 0))
 										struct v4l2_subdev_state *sd_state,
@@ -4777,10 +4755,8 @@ static int avt3_pad_ops_enum_frame_interval(
 	struct v4l2_subdev_frame_interval_enum *fie)
 {
 	struct avt3_dev *sensor = to_avt3_dev(sd);
-	//	struct i2c_client *client = sensor->i2c_client;
-	int i; //, j, count;
-	int f,idx;
-		   //	int ret = 0;
+	int i,ret;
+	u64 max_framerate;
 
 	if (fie->pad != 0)
 	{
@@ -4789,10 +4765,10 @@ static int avt3_pad_ops_enum_frame_interval(
 		return -EINVAL;
 	}
 
-	if (fie->index >= AVT3_NUM_FRAMERATES)
+	if (fie->index >= 1)
 	{
 		avt_info(sd, "fie->index >= AVT3_NUM_FRAMERATES fie->index %d, AVT3_NUM_FRAMERATES %d, fie->pad %d, fie->code 0x%04X, fie->width %d, fie->height %d",
-				 fie->index, AVT3_NUM_FRAMERATES, fie->pad, fie->code, fie->width, fie->height);
+				 fie->index, 1, fie->pad, fie->code, fie->width, fie->height);
 		return -EINVAL;
 	}
 		if (sensor->mbus_framefmt.code != fie->code)
@@ -4829,42 +4805,29 @@ static int avt3_pad_ops_enum_frame_interval(
 		return -EINVAL;
 	}
 
-#if 0
-	if (fie->width == 0 || fie->height == 0 || fie->code == 0)
-	{
-		dev_warn(&client->dev, "%s[%d]: Please assign pixel format, width and height.", __func__, __LINE__);
-		return -EINVAL;
-	}
-#endif
-	// TODO: set valid values for current mode
-	idx = 0;
-	for (f = 0;f < AVT3_NUM_FRAMERATES;f++)
-	{
-		if (avt3_framerates[f] != 0)
-		{
-			if (idx == fie->index)
-			{
-				fie->interval.numerator = 1000;
-				fie->interval.denominator = 1000 * avt3_framerates[f];
+	ret = bcrm_read64(sensor,BCRM_ACQUISITION_FRAME_RATE_MAX_64R,&max_framerate);
+
+	if (ret < 0)
+		return ret;
+
+	fie->interval.numerator = 1;
+	set_frameinterval(&fie->interval,max_framerate,1000000);
+
 				return 0;
 			}
-			idx++;
-		}
-	}
-
-	return -EINVAL;
-}
 
 static int avt3_video_ops_g_frame_interval(struct v4l2_subdev *sd,
 										   struct v4l2_subdev_frame_interval *fi)
 {
 	struct avt3_dev *sensor = to_avt3_dev(sd);
-	//	struct i2c_client *client = sensor->i2c_client;
+
+	if (sensor->avt_trigger_status.trigger_mode_enabled) {
+		return -EINVAL;
+	}
 
 	fi->interval = sensor->frame_interval;
-	avt_dbg(sd, "sensor->frame_interval.denom %u, sensor->frame_interval.num %u, sensor->current_fr %d (%d), fi->num %d fi->denom %u",
+	avt_dbg(sd, "sensor->frame_interval.denom %u, sensor->frame_interval.num %u, fi->num %d fi->denom %u",
 			sensor->frame_interval.denominator, sensor->frame_interval.numerator,
-			sensor->current_fr, AVT3_NUM_FRAMERATES,
 			fi->interval.numerator, fi->interval.denominator);
 	return 0;
 }
@@ -4872,7 +4835,7 @@ static int avt3_video_ops_g_frame_interval(struct v4l2_subdev *sd,
 static int avt3_video_ops_s_frame_interval(struct v4l2_subdev *sd,
 										   struct v4l2_subdev_frame_interval *fi)
 {
-	struct avt3_dev *sensor = to_avt3_dev(sd);
+	struct avt3_dev *camera = to_avt3_dev(sd);
 	int ret = 0;
 	const u64 factor = 1000000L;
 	u64 framerate_req,framerate_min,framerate_max;
@@ -4881,60 +4844,59 @@ static int avt3_video_ops_s_frame_interval(struct v4l2_subdev *sd,
 	avt_dbg(sd, "fie->num %d fie->denom %d",
 			fi->interval.numerator, fi->interval.denominator);
 
-	MUTEX_LOCK(&sensor->lock);
-	if (sensor->is_streaming)
+	MUTEX_LOCK(&camera->lock);
+	if (camera->is_streaming)
 	{
 		ret = -EBUSY;
 		goto out;
 	}
 
+	if (camera->avt_trigger_status.trigger_mode_enabled) {
+		ret = -EINVAL;
+		goto out;
+	}
 
-	ret = regmap_bulk_read(sensor->regmap64,
-   						sensor->cci_reg.reg.bcrm_addr + BCRM_ACQUISITION_FRAME_RATE_MIN_64R,
-                           &framerate_min, 1);
+	ret = bcrm_read64(camera,BCRM_ACQUISITION_FRAME_RATE_MIN_64R,
+			  &framerate_min);
 
 	if (ret < 0)
 	{
 		avt_err(sd, "regmap_read failed (%d)\n", ret);
-        // goto err_out;
+		return ret;
 	}
 
-	ret = regmap_bulk_read(sensor->regmap64,
-   						sensor->cci_reg.reg.bcrm_addr + BCRM_ACQUISITION_FRAME_RATE_MAX_64R,
-                           &framerate_max, 1);
+	ret = bcrm_read64(camera,BCRM_ACQUISITION_FRAME_RATE_MAX_64R,
+			  &framerate_max);
 
 	if (ret < 0)
 	{
 		avt_err(sd, "regmap_read failed (%d)\n", ret);
-        // goto err_out;
+		return ret;
 	}
 
-	if (fi->interval.numerator == 0)
-		fi->interval.numerator = 1;
-
+	if (fi->interval.numerator == 0 || fi->interval.denominator == 0) {
+		camera->framerate_auto = true;
+	}
+	else {
 	framerate_req = (fi->interval.denominator * factor) / fi->interval.numerator;
 	framerate_req = clamp(framerate_req,framerate_min,framerate_max);
 
-	fi->interval.denominator = (framerate_req * fi->interval.numerator) / factor;
+		set_frameinterval(&fi->interval,framerate_req,factor);
 
-    // If the denominator and minimal framerate is not zero, try to increase the numerator by 1000
-	while (fi->interval.denominator == 0 && framerate_min > 0 && fi->interval.numerator < factor)
-	{
-		fi->interval.numerator *= 1000;
-		fi->interval.denominator = (framerate_req * fi->interval.numerator) / factor;
+		camera->framerate_auto = false;
 	}
 
-	sensor->current_fr = AVT3_NUM_FRAMERATES;
-	sensor->frame_interval = fi->interval;
+
+	camera->frame_interval = fi->interval;
 
 	avt_dbg(sd, "set fie->num %d fie->denom %d",
 			fi->interval.numerator, fi->interval.denominator);
 
 out:
-	MUTEX_UNLOCK(&sensor->lock);
+	MUTEX_UNLOCK(&camera->lock);
 
-	avt_dbg(&sensor->sd, "- fie->num %d fie->denom %d --> idx sensor->current_fr %d",
-			fi->interval.numerator, fi->interval.denominator, sensor->current_fr);
+	avt_dbg(&camera->sd, "- fie->num %d fie->denom %d --> idx",
+			fi->interval.numerator, fi->interval.denominator);
 	return ret;
 }
 
@@ -5082,6 +5044,7 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 
 		u64 u64FrMin = 0;
 		u64 u64FrMax = 0;
+		u64 value64;
 
 
 
@@ -5144,30 +5107,6 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 		ct.value0 = sensor->hflip;
 		ret = avt3_ctrl_send(sensor->i2c_client, &ct);
 
-		/* 0 == manual, 2 == set continous auto exposure */
-		ret = bcrm_regmap_write(sensor, sensor->regmap8,
-					sensor->cci_reg.reg.bcrm_addr + BCRM_EXPOSURE_AUTO_8RW, sensor->exposure_mode);
-
-		if (ret < 0)
-		{
-			dev_err(&client->dev, "%s[%d]: BCRM_EXPOSURE_AUTO_8RW: bcrm_regmap_write failed (%d)\n",
-					__func__, __LINE__,
-					ret);
-			goto out;
-		}
-
-		if (sensor->exposure_mode == EMODE_MANUAL)
-		{
-			ret = bcrm_regmap_write64(sensor, sensor->regmap64,
-									  sensor->cci_reg.reg.bcrm_addr + BCRM_EXPOSURE_TIME_64RW, sensor->exposure_time);
-
-			if (ret < 0) {
-				dev_err(&client->dev, "%s[%d]: BCRM_EXPOSURE_TIME_64RW: i2c write failed (%d)\n",
-						__func__, __LINE__,
-						ret);
-				goto out;
-			}
-		}
 
 		ret = regmap_bulk_read(sensor->regmap64,
 							   sensor->cci_reg.reg.bcrm_addr + BCRM_ACQUISITION_FRAME_RATE_MIN_64R,
@@ -5192,16 +5131,17 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 		if (sensor->avt_trigger_status.trigger_mode_enabled)
 		{
 			ret = bcrm_regmap_write(sensor, sensor->regmap8,
-									sensor->cci_reg.reg.bcrm_addr + BCRM_ACQUISITION_FRAME_RATE_ENABLE_8RW, 0);
+						sensor->cci_reg.reg.bcrm_addr + BCRM_ACQUISITION_FRAME_RATE_ENABLE_8RW, 0);
 			ret = bcrm_regmap_write(sensor, sensor->regmap8,
-									sensor->cci_reg.reg.bcrm_addr + BCRM_FRAME_START_TRIGGER_MODE_8RW,
-									sensor->avt_trigger_status.trigger_mode_enabled);
+						sensor->cci_reg.reg.bcrm_addr + BCRM_FRAME_START_TRIGGER_MODE_8RW,
+						sensor->avt_trigger_status.trigger_mode_enabled);
 			ret = bcrm_regmap_write(sensor, sensor->regmap8,
-									sensor->cci_reg.reg.bcrm_addr + BCRM_FRAME_START_TRIGGER_SOURCE_8RW,
-									sensor->avt_trigger_status.trigger_source);
+						sensor->cci_reg.reg.bcrm_addr + BCRM_FRAME_START_TRIGGER_SOURCE_8RW,
+						sensor->avt_trigger_status.trigger_source);
 		}
 		else
 		{
+			u32 temp32;
 
 			/* Enable manual frame rate */
 			ret = bcrm_regmap_write(sensor, sensor->regmap8,
@@ -5214,9 +5154,11 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 				goto out;
 			}
 
+			temp32 = sensor->framerate_auto ? 0 : 1;
+
 			/* Enable manual frame rate */
 			ret = bcrm_regmap_write(sensor, sensor->regmap8,
-									sensor->cci_reg.reg.bcrm_addr + BCRM_ACQUISITION_FRAME_RATE_ENABLE_8RW, 1);
+						sensor->cci_reg.reg.bcrm_addr + BCRM_ACQUISITION_FRAME_RATE_ENABLE_8RW, temp32);
 			if (ret < 0)
 			{
 				dev_err(&client->dev, "%s[%d]: BCRM_ACQUISITION_FRAME_RATE_ENABLE_8RW: bcrm_regmap_write failed (%d)\n",
@@ -5224,64 +5166,34 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 						ret);
 				goto out;
 			}
+
+			if (!sensor->framerate_auto) {
+				dev_info(&client->dev, "%s[%d]: BCRM_ACQUISITION_FRAME_RATE: sensor->frame_interval.numerator %u, sensor->frame_interval.denominator %u\n",
+				 	__func__, __LINE__,
+				 	sensor->frame_interval.numerator, sensor->frame_interval.denominator);
+
+				/* Save new frame rate to camera register */
+				value64 = (((u64)sensor->frame_interval.denominator) * 1000000) / ((u64)sensor->frame_interval.numerator);
+
+				dev_info(&client->dev, "%s[%d]: BCRM_ACQUISITION_FRAME_RATE_64RW (min: %llu req: %llu max: %llu) uHz\n",
+					 __func__, __LINE__,
+					 u64FrMin, value64, u64FrMax);
+
+				vc.value64 = clamp(value64,u64FrMin,u64FrMax);
+
+				ret = bcrm_regmap_write64(sensor, sensor->regmap64,
+									  sensor->cci_reg.reg.bcrm_addr + BCRM_ACQUISITION_FRAME_RATE_64RW,
+									  vc.value64);
+				if (ret < 0)
+				{
+					dev_err(&client->dev, "%s[%d]: BCRM_ACQUISITION_FRAME_RATE_64RW: i2c write failed (%d)\n",
+						__func__, __LINE__,
+						ret);
+					goto out;
+				}
+			}
 		}
 
-		dev_info(&client->dev, "%s[%d]: BCRM_ACQUISITION_FRAME_RATE: sensor->frame_interval.numerator %u, sensor->frame_interval.denominator %u\n",
-				 __func__, __LINE__,
-				 sensor->frame_interval.numerator, sensor->frame_interval.denominator);
-
-		/* Save new frame rate to camera register */
-		vc.value64 = (((u64)sensor->frame_interval.denominator) * 1000000) / ((u64)sensor->frame_interval.numerator);
-
-		dev_info(&client->dev, "%s[%d]: BCRM_ACQUISITION_FRAME_RATE_64RW (min: %llu req: %llu max: %llu) uHz\n",
-				 __func__, __LINE__,
-				 u64FrMin, vc.value64, u64FrMax);
-
-#ifdef AUTO_ACQUISITION_FRAME_RATE
-		if (u64FrMin > vc.value64 || u64FrMax < vc.value64)
-		{
-			dev_err(&client->dev, "%s[%d]: BCRM_ACQUISITION_FRAME_RATE_64RW out of bounds (min: %llu req: %llu max: %llu) uHz\n",
-					__func__, __LINE__,
-					u64FrMin, vc.value64, u64FrMax);
-
-			ret = -EINVAL;
-			goto out;
-		}
-#else
-		if (u64FrMin > vc.value64)
-		{
-			dev_err(&client->dev, "%s[%d]: BCRM_ACQUISITION_FRAME_RATE_64RW out of bounds (min: %llu req: %llu max: %llu) uHz\n",
-					__func__, __LINE__,
-					u64FrMin, vc.value64, u64FrMax);
-
-			vc.value64 = u64FrMin;
-			//ret = -EINVAL;
-			//goto out;
-		}
-
-		if (u64FrMax < vc.value64)
-		{
-			dev_err(&client->dev, "%s[%d]: BCRM_ACQUISITION_FRAME_RATE_64RW out of bounds (min: %llu req: %llu max: %llu) uHz\n",
-					__func__, __LINE__,
-					u64FrMin, vc.value64, u64FrMax);
-
-			vc.value64 = u64FrMax;
-			//ret = -EINVAL;
-			//goto out;
-		}
-#endif
-		ret = bcrm_regmap_write64(sensor, sensor->regmap64,
-								  sensor->cci_reg.reg.bcrm_addr + BCRM_ACQUISITION_FRAME_RATE_64RW,
-								  vc.value64);
-		if (ret < 0)
-		{
-			dev_err(&client->dev, "%s[%d]: BCRM_ACQUISITION_FRAME_RATE_64RW: i2c write failed (%d)\n",
-					__func__, __LINE__,
-					ret);
-			goto out;
-			//} else {
-			// dev_info(&client->dev, "%s[%d]: BCRM_ACQUISITION_FRAME_RATE_64RW set to %12llu\n", __func__, __LINE__, vc.value64);
-		}
 
 		if (debug >= 2)
 			bcrm_dump(client);
@@ -7356,10 +7268,7 @@ static int avt3_probe(struct i2c_client *client)
 	}
 
 	sensor->sd.ctrl_handler = &sensor->v4l2_ctrl_hdl;
-
-	sensor->current_fr = AVT3_DEFAULT_FPS;
-	sensor->frame_interval.numerator = 1000;
-	sensor->frame_interval.denominator = 1000 * avt3_framerates[sensor->current_fr];
+	sensor->framerate_auto = true;
 	sensor->gain = AVT3_DEFAULT_GAIN;
 	sensor->exposure_time = AVT3_DEFAULT_EXPOSURETIME;
 	sensor->exposure_mode = EMODE_MANUAL;

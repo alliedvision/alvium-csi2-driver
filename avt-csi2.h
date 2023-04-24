@@ -53,72 +53,6 @@ enum avt_mode {
 	AVT_GENCP_MODE,
 };
 
-enum avt3_frame_rate
-{
-	AVT3_02_FPS = 0,
-	AVT3_05_FPS,
-	AVT3_08_FPS,
-	AVT3_10_FPS,
-	AVT3_11_FPS,
-	AVT3_12_FPS,
-	AVT3_13_FPS,
-	AVT3_14_FPS,
-	AVT3_15_FPS,
-	AVT3_20_FPS,
-	AVT3_24_FPS,
-	AVT3_25_FPS,
-	AVT3_30_FPS,
-	AVT3_40_FPS,
-	AVT3_45_FPS,
-	AVT3_50_FPS,
-	AVT3_60_FPS,
-	AVT3_75_FPS,
-	AVT3_90_FPS,
-	AVT3_100_FPS,
-	AVT3_120_FPS,
-	AVT3_150_FPS,
-	AVT3_200_FPS,
-	AVT3_250_FPS,
-	AVT3_300_FPS,
-	AVT3_500_FPS,
-	AVT3_750_FPS,
-	AVT3_1000_FPS,
-	AVT3_1200_FPS,
-	AVT3_1400_FPS,
-	AVT3_1500_FPS,
-	AVT3_1600_FPS,
-	AVT3_1650_FPS,
-	AVT3_1750_FPS,
-	AVT3_1800_FPS,
-	AVT3_2000_FPS,
-	AVT3_NUM_FRAMERATES,
-};
-
-enum avt3_mode_id
-{
-	AVT3_MODE_FF_32_16 = 0,
-//	AVT3_MODE_FF_32_32,
-	AVT3_MODE_FF_64_32,
-//	AVT3_MODE_FF_64_64,
-//	AVT3_MODE_FF_96_32,
-	AVT3_MODE_FF_128_32,
-	AVT3_MODE_FF_128_64,
-	AVT3_MODE_FF_176_64,
-	AVT3_MODE_QCIF_176_144,
-	AVT3_MODE_QVGA_320_240,
-	AVT3_MODE_VGA_640_480,
-	AVT3_MODE_NTSC_720_480,
-	AVT3_MODE_PAL_720_576,
-//	AVT3_MODE_XGA_1024_768,
-	AVT3_MODE_720P_1280_720,
-	AVT3_MODE_1080P_1920_1080,
-	AVT3_MODE_QSXGA_2592_1944,
-	AVT3_MODE_UHD_3840_2160,
-	AVT3_MODE_UHD2_4096_3672,
-	AVT3_MODE_5376_3672,
-	AVT3_NUM_MODES,
-};
-
 //#define AVT_RESET_DELAY1			(2000000)
 //#define AVT_RESET_DELAY2			(2500000)
 
@@ -560,7 +494,6 @@ struct avt3_dev
 	uint32_t avt_min_clk;
 	uint32_t avt_max_clk;
 
-	enum avt3_frame_rate current_fr;
 	struct v4l2_fract frame_interval;
 
 	union cci_reg cci_reg;
@@ -603,6 +536,8 @@ struct avt3_dev
 	const struct avt3_binning_info *curr_binning_info;
 
 	struct v4l2_rect sensor_rect;
+
+	bool framerate_auto;
 };
 
 struct avt_ctrl {
