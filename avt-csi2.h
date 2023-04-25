@@ -552,6 +552,30 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.flags			= V4L2_CTRL_FLAG_VOLATILE
 			 		| V4L2_CTRL_FLAG_READ_ONLY,
 	},
+	{
+		.id			= V4L2_CID_EXPOSURE_ACTIVE_LINE_MODE,
+		.attr			= { "Exposure Active Line Mode", 18 },
+		.reg_offset		= BCRM_EXPOSURE_ACTIVE_LINE_MODE_8RW,
+		.reg_size		= AV_CAM_REG_SIZE,
+		.data_size		= AV_CAM_DATA_SIZE_8,
+		.type			= V4L2_CTRL_TYPE_BOOLEAN,
+	},
+	{
+		.id			= V4L2_CID_EXPOSURE_ACTIVE_LINE_SELECTOR,
+		.attr			= { "Exposure Active Line Selector",18 },
+		.reg_offset		= BCRM_EXPOSURE_ACTIVE_LINE_SELECTOR_8RW,
+		.reg_size		= AV_CAM_REG_SIZE,
+		.data_size		= AV_CAM_DATA_SIZE_8,
+		.min_value		= 0,
+		.max_value		= 1,
+		.step_value		= 1,
+		.type			= V4L2_CTRL_TYPE_INTEGER,
+	},
+	{
+		.id			= V4L2_CID_EXPOSURE_ACTIVE_INVERT,
+		.attr			= { "Exposure Active Invert",18 },
+		.type			= V4L2_CTRL_TYPE_BOOLEAN,
+	},
 };
 
 #define AVT_MAX_CTRLS (ARRAY_SIZE(avt_ctrl_mappings))
