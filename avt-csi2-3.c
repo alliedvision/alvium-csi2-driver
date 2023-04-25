@@ -4125,6 +4125,67 @@ static void avt3_ctrl_changed(struct avt3_dev *camera,
 
 }
 
+static int write_ctrl_value(struct avt3_dev *camera,struct v4l2_ctrl *ctrl,
+		      const struct avt_ctrl_mapping * const ctrl_mapping)
+{
+	const u16 reg = ctrl_mapping->reg_offset;
+	const u8 data_size = ctrl_mapping->data_size;
+	struct regmap * const ctrl_regmap
+		= avt3_get_regmap_by_size(camera,data_size);
+	const u16 addr = get_bcrm_addr(camera,reg);
+	s64 temp;
+	int ret = 0;
+
+	if (ctrl_mapping->data_size == AV_CAM_DATA_SIZE_64)
+	{
+		temp = *ctrl->p_new.p_s64;
+		avt3_ctrl_to_reg(ctrl->id,&temp);
+
+		if (ctrl_mapping->type == V4L2_CTRL_TYPE_BUTTON)
+		{
+			ret = bcrm_regmap_write64(camera, ctrl_regmap,
+					    addr, 1);
+		}
+		else
+		{
+
+			ret = bcrm_regmap_write64(camera, ctrl_regmap,
+					    addr, temp);
+		}
+	}
+	else
+	{
+		temp = ctrl->val;
+		avt3_ctrl_to_reg(ctrl->id,&temp);
+
+		if (ctrl_mapping->type == V4L2_CTRL_TYPE_BUTTON)
+		{
+			ret = bcrm_regmap_write(camera, ctrl_regmap,
+					  addr, 1);
+		}
+		else
+		{
+			ret = bcrm_regmap_write(camera, ctrl_regmap,
+					  addr, temp);
+		}
+	}
+
+	if (ret < 0)
+		return ret;
+
+	if (ctrl_mapping->avt_flags & AVT_CTRL_FLAG_READ_BACK) {
+		ret =  avt3_update_ctrl_value(camera,ctrl,
+					     reg,data_size);
+		if (ret < 0)
+			dev_err(&camera->i2c_client->dev,
+				"Control read back failed with %d",
+				ret);
+	}
+
+
+	return ret;
+}
+
 static int avt3_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 {
 	struct avt3_dev *sensor = container_of(ctrl->handler, struct avt3_dev, v4l2_ctrl_hdl);
@@ -4145,60 +4206,57 @@ static int avt3_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 		avt_info(&sensor->sd, "ctrl->id 0x%08X, sensor->power_count %d", ctrl->id, sensor->power_count);
 	}
 
+	if (ctrl->id == V4L2_CID_EXPOSURE_ACTIVE_LINE_MODE)
+	{
+		struct v4l2_ctrl *sel_ctrl,*invert_ctrl;
+		u8 output_line_shift,invert,active = ctrl->val;
+		u32 line_config;
+		const u16 line_config_addr
+			= get_bcrm_addr(sensor,BCRM_LINE_CONFIGURATION_32RW);
+
+		sel_ctrl = avt3_ctrl_find(sensor,
+					  V4L2_CID_EXPOSURE_ACTIVE_LINE_SELECTOR);
+
+		if (sel_ctrl == NULL) {
+			return -EINVAL;
+		}
+
+		output_line_shift = sel_ctrl->val * 8;
+
+		invert_ctrl = avt3_ctrl_find(sensor,
+					     V4L2_CID_EXPOSURE_ACTIVE_INVERT);
+
+		if (invert_ctrl == NULL) {
+			return -EINVAL;
+		}
+
+		invert = invert_ctrl->val ? 2 : 0;
+
+		line_config = (active ? (1 | invert ) : 0) << output_line_shift;
+
+		ret = bcrm_regmap_write(sensor,sensor->regmap32,
+				  	line_config_addr,line_config);
+
+		if (ret < 0)
+			return ret;
+
+		__v4l2_ctrl_grab(sel_ctrl,active);
+		__v4l2_ctrl_grab(invert_ctrl,active);
+	}
+
 	if (ctrl->priv != NULL)
 	{
 		const struct avt_ctrl_mapping * const ctrl_mapping = ctrl->priv;
-		const u16 reg = ctrl_mapping->reg_offset;
-		const u8 data_size = ctrl_mapping->data_size;
-		struct regmap * const ctrl_regmap
-			= avt3_get_regmap_by_size(sensor,data_size);
-		const u16 addr = get_bcrm_addr(sensor,reg);
-		s64 temp;
+
+
 		dev_info(&client->dev, "%s[%d]: Write custom ctrl %s (%x)\n",
 			 __func__, __LINE__, ctrl_mapping->attr.name, ctrl->id);
 
-		if (ctrl_mapping->data_size == AV_CAM_DATA_SIZE_64)
-		{
-			temp = *ctrl->p_new.p_s64;
-			avt3_ctrl_to_reg(ctrl->id,&temp);
-
-			if (ctrl_mapping->type == V4L2_CTRL_TYPE_BUTTON)
-			{
-				bcrm_regmap_write64(sensor, ctrl_regmap,
-						    addr, 1);
-			}
-			else
-			{
-
-				bcrm_regmap_write64(sensor, ctrl_regmap,
-						    addr, temp);
-			}
-		}
-		else
-		{
-			temp = ctrl->val;
-			avt3_ctrl_to_reg(ctrl->id,&temp);
-
-			if (ctrl_mapping->type == V4L2_CTRL_TYPE_BUTTON)
-			{
-				bcrm_regmap_write(sensor, ctrl_regmap,
-						  addr, 1);
-			}
-			else
-			{
-				bcrm_regmap_write(sensor, ctrl_regmap,
-						  addr, temp);
-			}
+		if (ctrl_mapping->data_size != 0
+		    && ctrl_mapping->reg_size != 0) {
+			ret = write_ctrl_value(sensor,ctrl,ctrl_mapping);
 		}
 
-		if (ctrl_mapping->avt_flags & AVT_CTRL_FLAG_READ_BACK) {
-			ret =  avt3_update_ctrl_value(sensor,ctrl,
-						      reg,data_size);
-			if (ret < 0)
-				dev_err(&sensor->i2c_client->dev,
-					"Control read back failed with %d",
-					ret);
-		}
 
 		avt3_ctrl_changed(sensor,ctrl);
 	}
