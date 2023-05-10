@@ -3856,6 +3856,7 @@ static void avt3_ctrl_to_reg(const u32 cid,s64 * value)
 		else
 			*value = 2;
 		break;
+	case V4L2_CID_AUTO_WHITE_BALANCE:
 	case V4L2_CID_AUTOGAIN:
 		if (*value)
 			*value = 2;
@@ -3879,6 +3880,7 @@ static void avt3_ctrl_from_reg(const u32 cid,s64 * value)
 		else
 			*value = V4L2_EXPOSURE_MANUAL;
 		break;
+	case V4L2_CID_AUTO_WHITE_BALANCE:
 	case V4L2_CID_AUTOGAIN:
 		if (*value)
 			*value = 1;
