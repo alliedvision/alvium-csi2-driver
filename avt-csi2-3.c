@@ -2821,7 +2821,6 @@ static int avt3_pad_ops_set_fmt(struct v4l2_subdev *sd,
 		}
 
 		ret = avt_update_exposure_limits(sd);
-		MUTEX_UNLOCK(&sensor->lock);
 	}
 
 out:
