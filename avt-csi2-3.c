@@ -5090,11 +5090,6 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 				sensor->mbus_framefmt.code,
 				sensor->hflip, sensor->vflip);
 
-
-		ct.id = V4L2_AV_CSI2_PIXELFORMAT_W;
-		ct.value0 = sensor->mbus_framefmt.code;
-		ret = avt3_ctrl_send(sensor->i2c_client, &ct);
-
 		ret = bcrm_regmap_write(sensor,sensor->regmap8,
 					sensor->cci_reg.reg.bcrm_addr + BCRM_BINNING_SETTING_8RW,binning_info->sel);
 
