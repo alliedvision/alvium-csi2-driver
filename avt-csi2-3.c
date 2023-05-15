@@ -4635,48 +4635,54 @@ static int avt3_pad_ops_enum_frame_size(struct v4l2_subdev *sd,
 										struct v4l2_subdev_frame_size_enum *fse)
 {
 	struct avt3_dev *sensor = to_avt3_dev(sd);
-	//	struct i2c_client *client = sensor->i2c_client;
+	const struct v4l2_rect *min = &sensor->min_rect;
+	const struct v4l2_rect *max = &sensor->sensor_rect;
+	struct avt3_binning_info *binning_info;
+	struct v4l2_rect binning_rect,scaled_crop = sensor->curr_rect;
+	size_t max_frame_size;
 
-	if (fse->which == V4L2_SUBDEV_FORMAT_TRY)
-		avt_dbg(sd, "fse->index %d, fse->which %s", fse->index,
-				fse->which == V4L2_SUBDEV_FORMAT_TRY ? "V4L2_SUBDEV_FORMAT_TRY" : "V4L2_SUBDEV_FORMAT_ACTIVE");
+	avt_dbg(sd, "fse->index %d, fse->which %s", fse->index,
+		fse->which == V4L2_SUBDEV_FORMAT_TRY ? "V4L2_SUBDEV_FORMAT_TRY" : "V4L2_SUBDEV_FORMAT_ACTIVE");
 
-	if (fse->pad != 0 && fse->which == V4L2_SUBDEV_FORMAT_TRY)
+	if (fse->pad != 0)
 	{
-		avt_info(sd, "se->which == V4L2_SUBDEV_FORMAT_TRY and no pad availble.");
+		avt_warn(sd, "Requested pad %d not supported",fse->pad);
 		return -EINVAL;
 	}
 
-#ifndef ENABLE_STEPWISE_IMAGE_SIZE
-	if (fse->index >= AVT3_NUM_MODES)
+#ifdef ENABLE_STEPWISE_IMAGE_SIZE
+	max_frame_size = sensor->binning_info_cnt[sensor->curr_binning_type];
+
+	if (fse->index >= max_frame_size)
 	{
-		dev_warn(&client->dev, "%s[%d]: fse->index(%d) >= AVT3_NUM_MODES(%d).",
-				 __func__, __LINE__, fse->index, AVT3_NUM_MODES);
+		avt_dbg(&sensor->sd, "fse->index(%d) >= %lu.",
+			 fse->index, max_frame_size);
 		return -EINVAL;
 	}
 
-	if (avt3_mode_data[fse->index].hact > sensor->max_rect.width ||
-		avt3_mode_data[fse->index].vact > sensor->max_rect.height)
-	{
-		return -EINVAL;
-	}
+	binning_info
+		= &sensor->binning_infos[sensor->curr_binning_type][fse->index];
 
-	fse->min_width = avt3_mode_data[0].vact;
-	fse->max_width = avt3_mode_data[fse->index].hact;
-	fse->min_height = avt3_mode_data[0].vact;
-	fse->max_height = avt3_mode_data[fse->index].vact;
 
-//	v4l2_dbg(2, debug, sd, "%s[%d]: fse->index %d, fse->min_width %d, fse->max_width %d, fse->min_height %d, fse->max_height %d",
-//			 __func__, __LINE__, fse->index,
-//		 fse->min_width, fse->max_width, fse->min_height, fse->max_height);
+	binning_rect.width = binning_info->max_width;
+	binning_rect.height =  binning_info->max_height;
 
-//		dev_info(&client->dev, "%s[%d]: fse->index %d, fse->min_width %d, fse->max_width %d, fse->min_height %d, fse->max_height %d",
-//			__func__, __LINE__, fse->index,
-//			fse->min_width, fse->max_width, fse->min_height, fse->max_height);
+	v4l2_rect_scale(&scaled_crop,max,&binning_rect);
+
+	v4l_bound_align_image(&scaled_crop.width,min->width,
+			      binning_rect.width,3,
+			      &scaled_crop.height,min->height,
+			      binning_rect.height,3,0);
+
+
+	fse->min_width = scaled_crop.width;
+	fse->max_width = scaled_crop.width;
+	fse->min_height = scaled_crop.height;
+	fse->max_height = scaled_crop.height;
 #else
 	if (fse->index >= 1)
 	{
-		avt_info(&sensor->sd, "fse->index(%d) >= 1.", fse->index);
+		avt_dbg(&sensor->sd, "fse->index(%d) >= 1.", fse->index);
 		return -EINVAL;
 	}
 	fse->min_width = sensor->min_rect.width;   // avt3_mode_data[0].vact;
