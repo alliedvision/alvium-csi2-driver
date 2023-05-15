@@ -290,6 +290,9 @@ static void avt3_soft_reset(struct avt3_dev *sensor);
 static void avt3_hard_reset(struct avt3_dev *sensor);
 static void avt3_dphy_reset(struct avt3_dev *sensor, bool bResetPhy);
 
+static void avt3_ctrl_changed(struct avt3_dev *camera,
+			      const struct v4l2_ctrl * const ctrl);
+static struct v4l2_ctrl* avt3_ctrl_find(struct avt3_dev *camera,u32 id);
 static int avt3_ctrl_send(struct i2c_client *client,
 						  struct avt_ctrl *vc);
 static inline struct avt3_dev *to_avt3_dev(struct v4l2_subdev *sd)
@@ -2687,6 +2690,60 @@ static int avt3_try_fmt_internal(struct v4l2_subdev *sd,
 	return 0;
 }
 
+static int avt_update_exposure_limits(struct v4l2_subdev *sd) {
+	struct avt3_dev *sensor = to_avt3_dev(sd);
+	int ret;
+	u64 exp_min, exp_max, exp_inc;
+
+	ret = bcrm_read64(sensor, BCRM_EXPOSURE_TIME_MIN_64R, &exp_min);
+	if(ret < 0) {
+		avt_err(sd, "Failed to read minimum exposure: %d", ret);
+		goto err;
+	}
+
+	ret = bcrm_read64(sensor, BCRM_EXPOSURE_TIME_MAX_64R, &exp_max);
+	if(ret < 0) {
+		avt_err(sd, "Failed to read maximum exposure: %d", ret);
+		goto err;
+	}
+
+	ret = bcrm_read64(sensor, BCRM_EXPOSURE_TIME_INC_64R, &exp_inc);
+	if(ret < 0) {
+		avt_err(sd, "Failed to read exposure increment: %d", ret);
+		goto err;
+	}
+
+	{
+		struct v4l2_ctrl * exp_ctrl = avt3_ctrl_find(sensor, V4L2_CID_EXPOSURE);
+		if(exp_ctrl != NULL) {
+			__v4l2_ctrl_modify_range(exp_ctrl, exp_min, exp_max, exp_inc, exp_ctrl->default_value);
+		}
+	}
+
+	{
+		struct v4l2_ctrl* exp_abs_ctrl = avt3_ctrl_find(sensor, V4L2_CID_EXPOSURE_ABSOLUTE);
+		if(exp_abs_ctrl != NULL) {
+			__v4l2_ctrl_modify_range(exp_abs_ctrl, exp_min / 100, exp_max / 100, exp_inc / 100, exp_abs_ctrl->default_value);
+		}
+	}
+
+	{
+		struct v4l2_ctrl *exp_auto_min_ctrl = avt3_ctrl_find(sensor, V4L2_CID_EXPOSURE_AUTO_MIN);
+		struct v4l2_ctrl *exp_auto_max_ctrl = avt3_ctrl_find(sensor, V4L2_CID_EXPOSURE_AUTO_MAX);
+
+		if(exp_auto_min_ctrl != NULL && exp_auto_max_ctrl != NULL) {
+			__v4l2_ctrl_modify_range(exp_auto_min_ctrl, exp_min, exp_max, exp_inc, exp_min);
+			__v4l2_ctrl_modify_range(exp_auto_max_ctrl, exp_min, exp_max, exp_inc, exp_max);
+			__v4l2_ctrl_s_ctrl_int64(exp_auto_min_ctrl, exp_min);
+			__v4l2_ctrl_s_ctrl_int64(exp_auto_max_ctrl, exp_max);
+		}
+	}
+
+err:
+	return ret;
+}
+
+
 static int avt3_pad_ops_set_fmt(struct v4l2_subdev *sd,
 				struct v4l2_subdev_state *sd_state,
 				struct v4l2_subdev_format *format)
@@ -2695,6 +2752,7 @@ static int avt3_pad_ops_set_fmt(struct v4l2_subdev *sd,
 	const struct avt3_binning_info *new_binning = NULL;
 	struct v4l2_mbus_framefmt *mbus_fmt = &format->format;
 	struct v4l2_mbus_framefmt *fmt;
+	bool pending_fmt_change = false;
 
 	int ret;
 
@@ -2730,8 +2788,10 @@ static int avt3_pad_ops_set_fmt(struct v4l2_subdev *sd,
 			sensor->curr_binning_info = new_binning;
 			sensor->pending_mode_change = true;
 		}
-		if (mbus_fmt->code != sensor->mbus_framefmt.code)
-			sensor->pending_fmt_change = true;
+
+		if (mbus_fmt->code != sensor->mbus_framefmt.code) {
+			pending_fmt_change = true;
+		}
 	}
 
 
@@ -2748,6 +2808,21 @@ static int avt3_pad_ops_set_fmt(struct v4l2_subdev *sd,
 	}
 
 	*fmt = *mbus_fmt;
+
+	if(pending_fmt_change) {
+		struct avt_ctrl ct;
+		ct.id = V4L2_AV_CSI2_PIXELFORMAT_W;
+		ct.value0 = sensor->mbus_framefmt.code;
+		ret = avt3_ctrl_send(sensor->i2c_client, &ct);
+
+		if(ret < 0) {
+			avt_err(sd, "Failed setting pixel format in camera: %d", ret);
+			goto out;
+		}
+
+		ret = avt_update_exposure_limits(sd);
+	}
+
 out:
 	MUTEX_UNLOCK(&sensor->lock);
 
@@ -5021,11 +5096,6 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 				sensor->min_rect.width, sensor->min_rect.height,
 				sensor->mbus_framefmt.code,
 				sensor->hflip, sensor->vflip);
-
-
-		ct.id = V4L2_AV_CSI2_PIXELFORMAT_W;
-		ct.value0 = sensor->mbus_framefmt.code;
-		ret = avt3_ctrl_send(sensor->i2c_client, &ct);
 
 		ret = bcrm_regmap_write(sensor,sensor->regmap8,
 					sensor->cci_reg.reg.bcrm_addr + BCRM_BINNING_SETTING_8RW,binning_info->sel);
