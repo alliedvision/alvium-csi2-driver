@@ -290,6 +290,9 @@ static void avt3_soft_reset(struct avt3_dev *sensor);
 static void avt3_hard_reset(struct avt3_dev *sensor);
 static void avt3_dphy_reset(struct avt3_dev *sensor, bool bResetPhy);
 
+static void avt3_ctrl_changed(struct avt3_dev *camera,
+			      const struct v4l2_ctrl * const ctrl);
+static struct v4l2_ctrl* avt3_ctrl_find(struct avt3_dev *camera,u32 id);
 static int avt3_ctrl_send(struct i2c_client *client,
 						  struct avt_ctrl *vc);
 static inline struct avt3_dev *to_avt3_dev(struct v4l2_subdev *sd)
@@ -2687,6 +2690,60 @@ static int avt3_try_fmt_internal(struct v4l2_subdev *sd,
 	return 0;
 }
 
+static int avt_update_exposure_limits(struct v4l2_subdev *sd) {
+	struct avt3_dev *sensor = to_avt3_dev(sd);
+	int ret;
+	u64 exp_min, exp_max, exp_inc;
+
+	ret = bcrm_read64(sensor, BCRM_EXPOSURE_TIME_MIN_64R, &exp_min);
+	if(ret < 0) {
+		avt_err(sd, "Failed to read minimum exposure: %d", ret);
+		goto err;
+	}
+
+	ret = bcrm_read64(sensor, BCRM_EXPOSURE_TIME_MAX_64R, &exp_max);
+	if(ret < 0) {
+		avt_err(sd, "Failed to read maximum exposure: %d", ret);
+		goto err;
+	}
+
+	ret = bcrm_read64(sensor, BCRM_EXPOSURE_TIME_INC_64R, &exp_inc);
+	if(ret < 0) {
+		avt_err(sd, "Failed to read exposure increment: %d", ret);
+		goto err;
+	}
+
+	{
+		struct v4l2_ctrl * exp_ctrl = avt3_ctrl_find(sensor, V4L2_CID_EXPOSURE);
+		if(exp_ctrl != NULL) {
+			__v4l2_ctrl_modify_range(exp_ctrl, exp_min, exp_max, exp_inc, exp_ctrl->default_value);
+		}
+	}
+
+	{
+		struct v4l2_ctrl* exp_abs_ctrl = avt3_ctrl_find(sensor, V4L2_CID_EXPOSURE_ABSOLUTE);
+		if(exp_abs_ctrl != NULL) {
+			__v4l2_ctrl_modify_range(exp_abs_ctrl, exp_min / 100, exp_max / 100, exp_inc / 100, exp_abs_ctrl->default_value);
+		}
+	}
+
+	{
+		struct v4l2_ctrl *exp_auto_min_ctrl = avt3_ctrl_find(sensor, V4L2_CID_EXPOSURE_AUTO_MIN);
+		struct v4l2_ctrl *exp_auto_max_ctrl = avt3_ctrl_find(sensor, V4L2_CID_EXPOSURE_AUTO_MAX);
+
+		if(exp_auto_min_ctrl != NULL && exp_auto_max_ctrl != NULL) {
+			__v4l2_ctrl_modify_range(exp_auto_min_ctrl, exp_min, exp_max, exp_inc, exp_min);
+			__v4l2_ctrl_modify_range(exp_auto_max_ctrl, exp_min, exp_max, exp_inc, exp_max);
+			__v4l2_ctrl_s_ctrl_int64(exp_auto_min_ctrl, exp_min);
+			__v4l2_ctrl_s_ctrl_int64(exp_auto_max_ctrl, exp_max);
+		}
+	}
+
+err:
+	return ret;
+}
+
+
 static int avt3_pad_ops_set_fmt(struct v4l2_subdev *sd,
 				struct v4l2_subdev_state *sd_state,
 				struct v4l2_subdev_format *format)
@@ -2763,6 +2820,7 @@ static int avt3_pad_ops_set_fmt(struct v4l2_subdev *sd,
 			goto out;
 		}
 
+		ret = avt_update_exposure_limits(sd);
 		MUTEX_UNLOCK(&sensor->lock);
 	}
 
