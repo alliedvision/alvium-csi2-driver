@@ -2695,6 +2695,7 @@ static int avt3_pad_ops_set_fmt(struct v4l2_subdev *sd,
 	const struct avt3_binning_info *new_binning = NULL;
 	struct v4l2_mbus_framefmt *mbus_fmt = &format->format;
 	struct v4l2_mbus_framefmt *fmt;
+	bool pending_fmt_change = false;
 
 	int ret;
 
@@ -2730,8 +2731,10 @@ static int avt3_pad_ops_set_fmt(struct v4l2_subdev *sd,
 			sensor->curr_binning_info = new_binning;
 			sensor->pending_mode_change = true;
 		}
-		if (mbus_fmt->code != sensor->mbus_framefmt.code)
-			sensor->pending_fmt_change = true;
+
+		if (mbus_fmt->code != sensor->mbus_framefmt.code) {
+			pending_fmt_change = true;
+		}
 	}
 
 
@@ -2748,6 +2751,21 @@ static int avt3_pad_ops_set_fmt(struct v4l2_subdev *sd,
 	}
 
 	*fmt = *mbus_fmt;
+
+	if(pending_fmt_change) {
+		struct avt_ctrl ct;
+		ct.id = V4L2_AV_CSI2_PIXELFORMAT_W;
+		ct.value0 = sensor->mbus_framefmt.code;
+		ret = avt3_ctrl_send(sensor->i2c_client, &ct);
+
+		if(ret < 0) {
+			avt_err(sd, "Failed setting pixel format in camera: %d", ret);
+			goto out;
+		}
+
+		MUTEX_UNLOCK(&sensor->lock);
+	}
+
 out:
 	MUTEX_UNLOCK(&sensor->lock);
 

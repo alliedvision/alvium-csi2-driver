@@ -611,7 +611,6 @@ struct avt3_dev
 	bool bcrm_write_handshake;
 
 	struct v4l2_mbus_framefmt fmt;
-	bool pending_fmt_change;
 	bool pending_mode_change;
 	int open_refcnt;
 	bool is_streaming;
