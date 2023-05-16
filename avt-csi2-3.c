@@ -5440,6 +5440,11 @@ long avt3_core_ops_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 			dev_err(&client->dev, "%s[%d]: i2c write failed (%d), bytes written = %d\n",
 					__func__, __LINE__, ret, i2c_reg->num_bytes);
 		}
+		else
+		{
+			// regmap_bulk_write returns 0 on success, but VIDIOC_W_I2C is expected to return number of bytes written
+			ret = i2c_reg->num_bytes + AV_CAM_REG_SIZE;
+		}
 
 		if (i2c_reg->register_address == GENCP_CHANGEMODE_8W)
 		{
