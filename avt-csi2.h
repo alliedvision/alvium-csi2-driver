@@ -215,7 +215,8 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.reg_size		= AV_CAM_REG_SIZE,
 		.data_size		= AV_CAM_DATA_SIZE_64,
 		.type			= V4L2_CTRL_TYPE_INTEGER64,
-		.flags			= 0,
+		.flags			= V4L2_CTRL_FLAG_VOLATILE
+			 		| V4L2_CTRL_FLAG_EXECUTE_ON_WRITE,
 	},
 
 	{
