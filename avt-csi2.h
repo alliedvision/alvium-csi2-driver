@@ -87,17 +87,15 @@ struct avt_ctrl_mapping {
 #define AV_ATTR_REVERSE_Y		{"Reverse Y",			1}
 #define AV_ATTR_INTENSITY_AUTO		{"Intensity Auto",		2}
 #define AV_ATTR_BRIGHTNESS		{"Brightness",			3}
-/* Red & Blue balance features are enabled by default since it doesn't have
- * option in BCRM FEATURE REGISTER
- */
-#define AV_ATTR_RED_BALANCE		{"Red Balance",			3}
-#define AV_ATTR_BLUE_BALANCE		{"Blue Balance",		3}
+
 #define AV_ATTR_GAIN			{"Gain",			4}
 #define AV_ATTR_GAMMA			{"Gamma",			5}
 #define AV_ATTR_CONTRAST		{"Contrast",			6}
 #define AV_ATTR_SATURATION		{"Saturation",			7}
 #define AV_ATTR_HUE			{"Hue",				8}
 #define AV_ATTR_WHITEBALANCE		{"White Balance",		9}
+#define AV_ATTR_RED_BALANCE		{"Red Balance",			9}
+#define AV_ATTR_BLUE_BALANCE		{"Blue Balance",		9}
 #define AV_ATTR_SHARPNESS		{"Sharpness",			10}
 #define AV_ATTR_EXPOSURE_AUTO		{"Exposure Auto",		11}
 #define AV_ATTR_EXPOSURE_AUTO_MIN	{"Exposure Auto Min",		11}
@@ -105,9 +103,7 @@ struct avt_ctrl_mapping {
 #define AV_ATTR_AUTOGAIN		{"Auto Gain",			12}
 #define AV_ATTR_GAIN_AUTO_MIN		{"Gain Auto Min",		12}
 #define AV_ATTR_GAIN_AUTO_MAX		{"Gain Auto Max",		12}
-#define AV_ATTR_EXPOSURE		{"Exposure",			13}
-#define AV_ATTR_EXPOSURE_ABS		{"Exposure Absolute",		13}
-#define AV_ATTR_WHITEBALANCE_AUTO	{"Auto White Balance",		14}
+#define AV_ATTR_WHITEBALANCE_AUTO	{"Auto White Balance",		13}
 #define AV_ATTR_LINK_FREQ		{"MIPI CSI-2 Link Frequency",	15}
 
 
@@ -115,6 +111,9 @@ struct avt_ctrl_mapping {
 #define AV_ATTR_TRIGGER_ACTIVATION	{"Trigger Activation",		17}
 #define AV_ATTR_TRIGGER_SOURCE		{"Trigger Source",		17}
 #define AV_ATTR_TRIGGER_SOFTWARE	{"Trigger Software",    	17}
+
+#define AV_ATTR_EXPOSURE		{"Exposure",			-1}
+#define AV_ATTR_EXPOSURE_ABS		{"Exposure Absolute",		-1}
 
 #define AV_ATTR_BINNING_MODE		{"Binning Mode",		-1}
 #define AV_ATTR_BINNING_SETTING		{"Binning Setting",		-1}
@@ -216,7 +215,8 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.reg_size		= AV_CAM_REG_SIZE,
 		.data_size		= AV_CAM_DATA_SIZE_64,
 		.type			= V4L2_CTRL_TYPE_INTEGER64,
-		.flags			= 0,
+		.flags			= V4L2_CTRL_FLAG_VOLATILE
+			 		| V4L2_CTRL_FLAG_EXECUTE_ON_WRITE,
 	},
 
 	{
@@ -545,8 +545,8 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.reg_offset		= BCRM_DEVICE_TEMPERATURE_32R,
 		.reg_size		= AV_CAM_REG_SIZE,
 		.data_size		= AV_CAM_DATA_SIZE_32,
-		.min_value		= 0,
-		.max_value		= INT_MAX,
+		.min_value		= -1000,
+		.max_value		= 2000,
 		.step_value		= 1,
 		.type			= V4L2_CTRL_TYPE_INTEGER,
 		.flags			= V4L2_CTRL_FLAG_VOLATILE
@@ -612,7 +612,6 @@ struct avt3_dev
 	bool bcrm_write_handshake;
 
 	struct v4l2_mbus_framefmt fmt;
-	bool pending_fmt_change;
 	bool pending_mode_change;
 	int open_refcnt;
 	bool is_streaming;

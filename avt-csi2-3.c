@@ -290,6 +290,9 @@ static void avt3_soft_reset(struct avt3_dev *sensor);
 static void avt3_hard_reset(struct avt3_dev *sensor);
 static void avt3_dphy_reset(struct avt3_dev *sensor, bool bResetPhy);
 
+static void avt3_ctrl_changed(struct avt3_dev *camera,
+			      const struct v4l2_ctrl * const ctrl);
+static struct v4l2_ctrl* avt3_ctrl_find(struct avt3_dev *camera,u32 id);
 static int avt3_ctrl_send(struct i2c_client *client,
 						  struct avt_ctrl *vc);
 static inline struct avt3_dev *to_avt3_dev(struct v4l2_subdev *sd)
@@ -2687,6 +2690,60 @@ static int avt3_try_fmt_internal(struct v4l2_subdev *sd,
 	return 0;
 }
 
+static int avt_update_exposure_limits(struct v4l2_subdev *sd) {
+	struct avt3_dev *sensor = to_avt3_dev(sd);
+	int ret;
+	u64 exp_min, exp_max, exp_inc;
+
+	ret = bcrm_read64(sensor, BCRM_EXPOSURE_TIME_MIN_64R, &exp_min);
+	if(ret < 0) {
+		avt_err(sd, "Failed to read minimum exposure: %d", ret);
+		goto err;
+	}
+
+	ret = bcrm_read64(sensor, BCRM_EXPOSURE_TIME_MAX_64R, &exp_max);
+	if(ret < 0) {
+		avt_err(sd, "Failed to read maximum exposure: %d", ret);
+		goto err;
+	}
+
+	ret = bcrm_read64(sensor, BCRM_EXPOSURE_TIME_INC_64R, &exp_inc);
+	if(ret < 0) {
+		avt_err(sd, "Failed to read exposure increment: %d", ret);
+		goto err;
+	}
+
+	{
+		struct v4l2_ctrl * exp_ctrl = avt3_ctrl_find(sensor, V4L2_CID_EXPOSURE);
+		if(exp_ctrl != NULL) {
+			__v4l2_ctrl_modify_range(exp_ctrl, exp_min, exp_max, exp_inc, exp_ctrl->default_value);
+		}
+	}
+
+	{
+		struct v4l2_ctrl* exp_abs_ctrl = avt3_ctrl_find(sensor, V4L2_CID_EXPOSURE_ABSOLUTE);
+		if(exp_abs_ctrl != NULL) {
+			__v4l2_ctrl_modify_range(exp_abs_ctrl, exp_min / 100, exp_max / 100, exp_inc / 100, exp_abs_ctrl->default_value);
+		}
+	}
+
+	{
+		struct v4l2_ctrl *exp_auto_min_ctrl = avt3_ctrl_find(sensor, V4L2_CID_EXPOSURE_AUTO_MIN);
+		struct v4l2_ctrl *exp_auto_max_ctrl = avt3_ctrl_find(sensor, V4L2_CID_EXPOSURE_AUTO_MAX);
+
+		if(exp_auto_min_ctrl != NULL && exp_auto_max_ctrl != NULL) {
+			__v4l2_ctrl_modify_range(exp_auto_min_ctrl, exp_min, exp_max, exp_inc, exp_min);
+			__v4l2_ctrl_modify_range(exp_auto_max_ctrl, exp_min, exp_max, exp_inc, exp_max);
+			__v4l2_ctrl_s_ctrl_int64(exp_auto_min_ctrl, exp_min);
+			__v4l2_ctrl_s_ctrl_int64(exp_auto_max_ctrl, exp_max);
+		}
+	}
+
+err:
+	return ret;
+}
+
+
 static int avt3_pad_ops_set_fmt(struct v4l2_subdev *sd,
 				struct v4l2_subdev_state *sd_state,
 				struct v4l2_subdev_format *format)
@@ -2695,6 +2752,7 @@ static int avt3_pad_ops_set_fmt(struct v4l2_subdev *sd,
 	const struct avt3_binning_info *new_binning = NULL;
 	struct v4l2_mbus_framefmt *mbus_fmt = &format->format;
 	struct v4l2_mbus_framefmt *fmt;
+	bool pending_fmt_change = false;
 
 	int ret;
 
@@ -2730,8 +2788,10 @@ static int avt3_pad_ops_set_fmt(struct v4l2_subdev *sd,
 			sensor->curr_binning_info = new_binning;
 			sensor->pending_mode_change = true;
 		}
-		if (mbus_fmt->code != sensor->mbus_framefmt.code)
-			sensor->pending_fmt_change = true;
+
+		if (mbus_fmt->code != sensor->mbus_framefmt.code) {
+			pending_fmt_change = true;
+		}
 	}
 
 
@@ -2748,6 +2808,21 @@ static int avt3_pad_ops_set_fmt(struct v4l2_subdev *sd,
 	}
 
 	*fmt = *mbus_fmt;
+
+	if(pending_fmt_change) {
+		struct avt_ctrl ct;
+		ct.id = V4L2_AV_CSI2_PIXELFORMAT_W;
+		ct.value0 = sensor->mbus_framefmt.code;
+		ret = avt3_ctrl_send(sensor->i2c_client, &ct);
+
+		if(ret < 0) {
+			avt_err(sd, "Failed setting pixel format in camera: %d", ret);
+			goto out;
+		}
+
+		ret = avt_update_exposure_limits(sd);
+	}
+
 out:
 	MUTEX_UNLOCK(&sensor->lock);
 
@@ -3856,6 +3931,7 @@ static void avt3_ctrl_to_reg(const u32 cid,s64 * value)
 		else
 			*value = 2;
 		break;
+	case V4L2_CID_AUTO_WHITE_BALANCE:
 	case V4L2_CID_AUTOGAIN:
 		if (*value)
 			*value = 2;
@@ -3879,6 +3955,7 @@ static void avt3_ctrl_from_reg(const u32 cid,s64 * value)
 		else
 			*value = V4L2_EXPOSURE_MANUAL;
 		break;
+	case V4L2_CID_AUTO_WHITE_BALANCE:
 	case V4L2_CID_AUTOGAIN:
 		if (*value)
 			*value = 1;
@@ -4633,48 +4710,54 @@ static int avt3_pad_ops_enum_frame_size(struct v4l2_subdev *sd,
 										struct v4l2_subdev_frame_size_enum *fse)
 {
 	struct avt3_dev *sensor = to_avt3_dev(sd);
-	//	struct i2c_client *client = sensor->i2c_client;
+	const struct v4l2_rect *min = &sensor->min_rect;
+	const struct v4l2_rect *max = &sensor->sensor_rect;
+	struct avt3_binning_info *binning_info;
+	struct v4l2_rect binning_rect,scaled_crop = sensor->curr_rect;
+	size_t max_frame_size;
 
-	if (fse->which == V4L2_SUBDEV_FORMAT_TRY)
-		avt_dbg(sd, "fse->index %d, fse->which %s", fse->index,
-				fse->which == V4L2_SUBDEV_FORMAT_TRY ? "V4L2_SUBDEV_FORMAT_TRY" : "V4L2_SUBDEV_FORMAT_ACTIVE");
+	avt_dbg(sd, "fse->index %d, fse->which %s", fse->index,
+		fse->which == V4L2_SUBDEV_FORMAT_TRY ? "V4L2_SUBDEV_FORMAT_TRY" : "V4L2_SUBDEV_FORMAT_ACTIVE");
 
-	if (fse->pad != 0 && fse->which == V4L2_SUBDEV_FORMAT_TRY)
+	if (fse->pad != 0)
 	{
-		avt_info(sd, "se->which == V4L2_SUBDEV_FORMAT_TRY and no pad availble.");
+		avt_warn(sd, "Requested pad %d not supported",fse->pad);
 		return -EINVAL;
 	}
 
-#ifndef ENABLE_STEPWISE_IMAGE_SIZE
-	if (fse->index >= AVT3_NUM_MODES)
+#ifdef ENABLE_STEPWISE_IMAGE_SIZE
+	max_frame_size = sensor->binning_info_cnt[sensor->curr_binning_type];
+
+	if (fse->index >= max_frame_size)
 	{
-		dev_warn(&client->dev, "%s[%d]: fse->index(%d) >= AVT3_NUM_MODES(%d).",
-				 __func__, __LINE__, fse->index, AVT3_NUM_MODES);
+		avt_dbg(&sensor->sd, "fse->index(%d) >= %lu.",
+			 fse->index, max_frame_size);
 		return -EINVAL;
 	}
 
-	if (avt3_mode_data[fse->index].hact > sensor->max_rect.width ||
-		avt3_mode_data[fse->index].vact > sensor->max_rect.height)
-	{
-		return -EINVAL;
-	}
+	binning_info
+		= &sensor->binning_infos[sensor->curr_binning_type][fse->index];
 
-	fse->min_width = avt3_mode_data[0].vact;
-	fse->max_width = avt3_mode_data[fse->index].hact;
-	fse->min_height = avt3_mode_data[0].vact;
-	fse->max_height = avt3_mode_data[fse->index].vact;
 
-//	v4l2_dbg(2, debug, sd, "%s[%d]: fse->index %d, fse->min_width %d, fse->max_width %d, fse->min_height %d, fse->max_height %d",
-//			 __func__, __LINE__, fse->index,
-//		 fse->min_width, fse->max_width, fse->min_height, fse->max_height);
+	binning_rect.width = binning_info->max_width;
+	binning_rect.height =  binning_info->max_height;
 
-//		dev_info(&client->dev, "%s[%d]: fse->index %d, fse->min_width %d, fse->max_width %d, fse->min_height %d, fse->max_height %d",
-//			__func__, __LINE__, fse->index,
-//			fse->min_width, fse->max_width, fse->min_height, fse->max_height);
+	v4l2_rect_scale(&scaled_crop,max,&binning_rect);
+
+	v4l_bound_align_image(&scaled_crop.width,min->width,
+			      binning_rect.width,3,
+			      &scaled_crop.height,min->height,
+			      binning_rect.height,3,0);
+
+
+	fse->min_width = scaled_crop.width;
+	fse->max_width = scaled_crop.width;
+	fse->min_height = scaled_crop.height;
+	fse->max_height = scaled_crop.height;
 #else
 	if (fse->index >= 1)
 	{
-		avt_info(&sensor->sd, "fse->index(%d) >= 1.", fse->index);
+		avt_dbg(&sensor->sd, "fse->index(%d) >= 1.", fse->index);
 		return -EINVAL;
 	}
 	fse->min_width = sensor->min_rect.width;   // avt3_mode_data[0].vact;
@@ -5013,11 +5096,6 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 				sensor->min_rect.width, sensor->min_rect.height,
 				sensor->mbus_framefmt.code,
 				sensor->hflip, sensor->vflip);
-
-
-		ct.id = V4L2_AV_CSI2_PIXELFORMAT_W;
-		ct.value0 = sensor->mbus_framefmt.code;
-		ret = avt3_ctrl_send(sensor->i2c_client, &ct);
 
 		ret = bcrm_regmap_write(sensor,sensor->regmap8,
 					sensor->cci_reg.reg.bcrm_addr + BCRM_BINNING_SETTING_8RW,binning_info->sel);
@@ -5361,6 +5439,11 @@ long avt3_core_ops_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 		{
 			dev_err(&client->dev, "%s[%d]: i2c write failed (%d), bytes written = %d\n",
 					__func__, __LINE__, ret, i2c_reg->num_bytes);
+		}
+		else
+		{
+			// regmap_bulk_write returns 0 on success, but VIDIOC_W_I2C is expected to return number of bytes written
+			ret = i2c_reg->num_bytes + AV_CAM_REG_SIZE;
 		}
 
 		if (i2c_reg->register_address == GENCP_CHANGEMODE_8W)
