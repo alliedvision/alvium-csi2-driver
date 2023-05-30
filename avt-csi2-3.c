@@ -2809,7 +2809,7 @@ static int avt3_pad_ops_set_fmt(struct v4l2_subdev *sd,
 
 	*fmt = *mbus_fmt;
 
-	if(pending_fmt_change) {
+	if(pending_fmt_change && mbus_fmt->code != MEDIA_BUS_FMT_CUSTOM) {
 		struct avt_ctrl ct;
 		ct.id = V4L2_AV_CSI2_PIXELFORMAT_W;
 		ct.value0 = sensor->mbus_framefmt.code;
