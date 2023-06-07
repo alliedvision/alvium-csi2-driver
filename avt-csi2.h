@@ -12,7 +12,7 @@
 #define STR(x) STR_HELPER(x)
 
 /* Driver release version */
-#define DRV_VER_MAJOR           3
+#define DRV_VER_MAJOR           1
 #define DRV_VER_MINOR           0
 #define DRV_VER_PATCH           0
 #define DRV_VER_BUILD           0
