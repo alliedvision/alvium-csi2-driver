@@ -80,6 +80,10 @@ static int debug = 0;
 module_param(debug, int, 0644); /* S_IRUGO */
 MODULE_PARM_DESC(debug, "Debug level (0-2)");
 
+static int add_wait_time_ms = 2000;
+module_param(add_wait_time_ms, int, 0600);
+
+
 #define AVT_DBG_LVL 2
 
 #define avt_dbg(sd, fmt, args...)                       \
@@ -286,6 +290,7 @@ static int bcrm_regmap_write(struct avt3_dev *sensor,
 							 unsigned int reg,
 							 unsigned int val);
 
+static int avt3_detect(struct i2c_client *client);
 static void avt3_soft_reset(struct avt3_dev *sensor);
 static void avt3_hard_reset(struct avt3_dev *sensor);
 static void avt3_dphy_reset(struct avt3_dev *sensor, bool bResetPhy);
@@ -2441,17 +2446,119 @@ static void avt3_hard_reset(struct avt3_dev *sensor)
 	MUTEX_UNLOCK(&sensor->lock);
 }
 
+static const int heartbeat_default = 0x80;
+
+static int heartbeat_write_default(struct avt3_dev *sensor) {
+	int ret = regmap_write(sensor->regmap8, cci_cmd_tbl[HEARTBEAT].address, heartbeat_default);
+	if(ret != 0) {
+		avt_err(&sensor->sd, "Heartbeat write failed (regmap_write returned %d)", ret);
+		return -1;
+	}
+	return 0;
+}
+
+static int heartbeat_read(struct avt3_dev *sensor, int *heartbeat) {
+	int ret = regmap_read(sensor->regmap8, cci_cmd_tbl[HEARTBEAT].address, heartbeat);
+	if(ret != 0) {
+		avt_err(&sensor->sd, "Heartbeat read failed (regmap_read returned %d)", ret);
+		return -1;
+	}
+	return 0;
+}
+
+static int heartbeat_supported(struct avt3_dev *sensor) {
+	unsigned int heartbeat;
+
+	int ret = heartbeat_write_default(sensor);
+	if(ret != 0) {
+		avt_err(&sensor->sd, "Heartbeat support detection failed (heartbeat_write returned %d)", ret);
+		return ret;
+	}
+
+	ret = heartbeat_read(sensor, &heartbeat);
+	if(ret != 0) {
+		avt_err(&sensor->sd, "Heartbeat support detection failed (heartbeat_read returned %d)", ret);
+		return -1;
+	}
+
+	return heartbeat != 0;
+}
+
+static int wait_camera_available(struct avt3_dev *sensor, bool use_heartbeat) {
+	static const unsigned long max_time_ms = 10000;
+	static const unsigned long delay_ms = 400;
+	u64 const start_jiffies = get_jiffies_64();
+	bool device_available = false;
+	u64 duration_ms = 0;
+
+	avt_info(&sensor->sd, "Waiting for camera to respond to I2C transfers...");
+	do
+	{
+		usleep_range(delay_ms*1000, (delay_ms+1)*1000);
+		device_available = avt3_detect(sensor->i2c_client) == 0;
+		duration_ms = jiffies_to_msecs(get_jiffies_64() - start_jiffies);
+	} while((duration_ms < max_time_ms) && !device_available);
+
+	avt_dbg(&sensor->sd, "Camera is responding again");
+
+	if(!device_available) {
+		return -1;
+	}
+
+	if(!use_heartbeat) {
+		avt_info(&sensor->sd, "Heartbeat NOT supported, waiting %dms before continuing", add_wait_time_ms);
+		usleep_range(add_wait_time_ms*1000, (add_wait_time_ms+1)*1000);
+		avt_info(&sensor->sd, "Done waiting, let's hope for the best...");
+
+	} else {
+		int heartbeat, ret;
+		avt_info(&sensor->sd, "Heartbeat supported, waiting for heartbeat to become active");
+
+		ret = heartbeat_write_default(sensor);
+		if(ret != 0) {
+			avt_err(&sensor->sd, "Heartbeat write failed (regmap_write returned %d)", ret);
+			return ret;
+		}
+
+		do
+		{
+			usleep_range(delay_ms*1000, (delay_ms+1)*1000);
+			heartbeat_read(sensor, &heartbeat);
+			if(ret < 0) {
+				return -1;
+			}
+			duration_ms = jiffies_to_msecs(get_jiffies_64() - start_jiffies);
+		} while((duration_ms < max_time_ms) && ((heartbeat == 0) || (heartbeat == heartbeat_default)));
+
+		if(heartbeat == 0) {
+			avt_err(&sensor->sd, "Camera not reconnected (heartbeat timeout)");
+			return -1;
+		}
+
+		avt_info(&sensor->sd, "Heartbeat active");
+	}
+
+	return 0;
+}
+
 static void avt3_soft_reset(struct avt3_dev *sensor)
 {
 	// todo: needs to be adapted on sequencing and heartbeet GenCP
 
 	struct i2c_client *client = sensor->i2c_client;
 	int ret;
+	int heartbeat;
 
 	dev_info(&client->dev, "%s[%d]",
 			 __func__, __LINE__);
 
 	MUTEX_LOCK(&sensor->lock);
+
+	heartbeat = heartbeat_supported(sensor);
+	if(heartbeat < 0) {
+		avt_err(&sensor->sd, "Heartbeat detection failed");
+		goto out;
+	}
 
 	ret = regmap_write(sensor->regmap8, cci_cmd_tbl[SOFT_RESET].address, 1);
 
@@ -2459,6 +2566,13 @@ static void avt3_soft_reset(struct avt3_dev *sensor)
 	{
 		dev_err(&client->dev, "%s[%d]: avt3_soft_reset request by calling regmap_write failed (%d)\n",
 				__func__, __LINE__, ret);
+		goto out;
+	}
+
+	ret = wait_camera_available(sensor, heartbeat == 1);
+
+	if(ret != 0) {
+		avt_err(&sensor->sd, "Camera failed to come back online");
 		goto out;
 	}
 
