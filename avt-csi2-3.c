@@ -296,7 +296,7 @@ static int bcrm_regmap_write(struct avt3_dev *sensor,
 							 unsigned int val);
 
 static int avt3_detect(struct i2c_client *client);
-static void avt3_reset(struct avt3_dev *sensor, enum avt_reset_type reset_type);
+static int avt3_reset(struct avt3_dev *sensor, enum avt_reset_type reset_type);
 static void avt3_dphy_reset(struct avt3_dev *sensor, bool bResetPhy);
 
 static void avt3_ctrl_changed(struct avt3_dev *camera,
@@ -304,6 +304,7 @@ static void avt3_ctrl_changed(struct avt3_dev *camera,
 static struct v4l2_ctrl* avt3_ctrl_find(struct avt3_dev *camera,u32 id);
 static int avt3_ctrl_send(struct i2c_client *client,
 						  struct avt_ctrl *vc);
+static int avt3_get_sensor_capabilities(struct v4l2_subdev *sd);
 static inline struct avt3_dev *to_avt3_dev(struct v4l2_subdev *sd)
 {
 	return container_of(sd, struct avt3_dev, sd);
@@ -1486,6 +1487,9 @@ static ssize_t softreset_store(struct device *dev,
 
 	if (value > 0) {
 		avt3_reset(sensor, RESET_TYPE_SOFT);
+
+		/* Re-read and configure MIPI configuration */
+		avt3_get_sensor_capabilities(&sensor->sd);
 	}
 
 	return count;
@@ -1760,6 +1764,9 @@ static ssize_t hardreset_store(struct device *dev,
 
 	if (value > 0) {
 		avt3_reset(sensor, RESET_TYPE_HARD);
+
+		/* Re-read and configure MIPI configuration */
+		avt3_get_sensor_capabilities(&sensor->sd);
 	}
 
 	return count;
@@ -2537,7 +2544,7 @@ static int wait_camera_available(struct avt3_dev *sensor, bool use_heartbeat) {
 	return 0;
 }
 
-static void avt3_reset(struct avt3_dev *sensor, enum avt_reset_type reset_type)
+static int avt3_reset(struct avt3_dev *sensor, enum avt_reset_type reset_type)
 {
 	struct i2c_client *client = sensor->i2c_client;
 	int ret;
@@ -2551,6 +2558,7 @@ static void avt3_reset(struct avt3_dev *sensor, enum avt_reset_type reset_type)
 	heartbeat = heartbeat_supported(sensor);
 	if(heartbeat < 0) {
 		avt_err(&sensor->sd, "Heartbeat detection failed");
+		ret = -1;
 		goto out;
 	}
 
@@ -2583,10 +2591,9 @@ static void avt3_reset(struct avt3_dev *sensor, enum avt_reset_type reset_type)
 		sensor->pending_softreset_request = 0;
 	}
 
-	// ToDo: setup MIPI-Lanes and Clock again!
-
 out:
 	MUTEX_UNLOCK(&sensor->lock);
+	return ret;
 }
 
 static void avt3_dphy_reset(struct avt3_dev *sensor, bool bResetPhy)
@@ -6985,17 +6992,6 @@ static int avt3_detect(struct i2c_client *client)
 	return 0;
 }
 
-/*******************************************************************
- *  avt_csi2_probe                                                 *
- *******************************************************************
- *                                                                 *
- *******************************************************************
- *                                                                 *
- *******************************************************************
- *                                                                 *
- *******************************************************************
- *                                                                 *
- ******************************************************************/
 
 static int avt3_probe(struct i2c_client *client)
 {
@@ -7307,8 +7303,18 @@ static int avt3_probe(struct i2c_client *client)
 
 	mutex_init(&sensor->lock);
 
-	/////////////////////////////////////////////////////
-	/* TODO: check for compatible HW */
+	{
+		enum avt_reset_type const reset_type = sensor->force_reset_on_init ? RESET_TYPE_HARD : RESET_TYPE_SOFT;
+		if(reset_type == RESET_TYPE_HARD) {
+			avt_info(&sensor->sd, "Hard reset requested by device tree");
+		}
+
+		ret = avt3_reset(sensor, reset_type);
+		if(ret < 0) {
+			avt_err(&sensor->sd, "Camera reset failed");
+			goto fwnode_cleanup;
+		}
+	}
 
 	ret = read_cci_registers(client);
 
