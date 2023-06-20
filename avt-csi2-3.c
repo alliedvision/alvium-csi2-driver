@@ -193,6 +193,11 @@ enum avt_binning_type {
 	DIGITAL,
 };
 
+enum avt_reset_type {
+	RESET_TYPE_SOFT,
+	RESET_TYPE_HARD
+};
+
 struct avt_binning_setting {
 	int inq;
 	u8 sel;
@@ -291,8 +296,7 @@ static int bcrm_regmap_write(struct avt3_dev *sensor,
 							 unsigned int val);
 
 static int avt3_detect(struct i2c_client *client);
-static void avt3_soft_reset(struct avt3_dev *sensor);
-static void avt3_hard_reset(struct avt3_dev *sensor);
+static void avt3_reset(struct avt3_dev *sensor, enum avt_reset_type reset_type);
 static void avt3_dphy_reset(struct avt3_dev *sensor, bool bResetPhy);
 
 static void avt3_ctrl_changed(struct avt3_dev *camera,
@@ -1472,18 +1476,18 @@ static ssize_t softreset_store(struct device *dev,
 {
 	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
 	ssize_t ret;
+	int value;
 
-	//	MUTEX_LOCK(&sensor->lock);
-	ret = kstrtoint(buf, 10, &sensor->pending_softreset_request);
+	ret = kstrtoint(buf, 10, &value);
 	if (ret < 0)
 	{
-		MUTEX_UNLOCK(&sensor->lock);
 		return ret;
 	}
 
-	if (sensor->pending_softreset_request > 0)
-		avt3_soft_reset(sensor);
-	//	MUTEX_UNLOCK(&sensor->lock);
+	if (value > 0) {
+		avt3_reset(sensor, RESET_TYPE_SOFT);
+	}
+
 	return count;
 }
 
@@ -1746,20 +1750,18 @@ static ssize_t hardreset_store(struct device *dev,
 {
 	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
 	ssize_t ret;
+	int value;
 
-	// MUTEX_LOCK(&sensor->lock);
-	ret = kstrtoint(buf, 10, &sensor->pending_hardtreset_request);
+	ret = kstrtoint(buf, 10, &value);
 	if (ret < 0)
 	{
-		// MUTEX_UNLOCK(&sensor->lock);
 		return ret;
 	}
 
-	if (sensor->pending_hardtreset_request > 0)
-		avt3_hard_reset(sensor);
+	if (value > 0) {
+		avt3_reset(sensor, RESET_TYPE_HARD);
+	}
 
-	sensor->pending_hardtreset_request = 0;
-	// MUTEX_UNLOCK(&sensor->lock);
 	return count;
 }
 
@@ -2405,12 +2407,10 @@ avt3_find_mode(struct avt3_dev *sensor, enum avt3_frame_rate fr,
 
 /* hard reset depends on gpio-pins, needs to be completed on
    suitable board instead of imx8mp-evk */
-static void avt3_hard_reset(struct avt3_dev *sensor)
+static int perform_hard_reset(struct avt3_dev *sensor)
 {
 	dev_info(&sensor->i2c_client->dev, "%s[%d]",
 			 __func__, __LINE__);
-
-	MUTEX_LOCK(&sensor->lock);
 
 	if (!sensor->reset_gpio)
 	{
@@ -2418,7 +2418,7 @@ static void avt3_hard_reset(struct avt3_dev *sensor)
 				 __func__, __LINE__);
 		sensor->pending_hardtreset_request = 0;
 
-		return;
+		return -1;
 	}
 
 	dev_info(&sensor->i2c_client->dev, "%s[%d]: - request hard reset by triggering reset gpio",
@@ -2439,11 +2439,7 @@ static void avt3_hard_reset(struct avt3_dev *sensor)
 	//	gpiod_set_value_cansleep(sensor->reset_gpio, 0);
 	usleep_range(20000, 25000);
 
-	sensor->pending_hardtreset_request = 0;
-
-	// ToDo: setup MIPI-Lanes and Clock again!
-
-	MUTEX_UNLOCK(&sensor->lock);
+	return 0;
 }
 
 static const int heartbeat_default = 0x80;
@@ -2541,10 +2537,8 @@ static int wait_camera_available(struct avt3_dev *sensor, bool use_heartbeat) {
 	return 0;
 }
 
-static void avt3_soft_reset(struct avt3_dev *sensor)
+static void avt3_reset(struct avt3_dev *sensor, enum avt_reset_type reset_type)
 {
-	// todo: needs to be adapted on sequencing and heartbeet GenCP
-
 	struct i2c_client *client = sensor->i2c_client;
 	int ret;
 	int heartbeat;
@@ -2560,13 +2554,20 @@ static void avt3_soft_reset(struct avt3_dev *sensor)
 		goto out;
 	}
 
-	ret = regmap_write(sensor->regmap8, cci_cmd_tbl[SOFT_RESET].address, 1);
-
-	if (ret < 0)
-	{
-		dev_err(&client->dev, "%s[%d]: avt3_soft_reset request by calling regmap_write failed (%d)\n",
-				__func__, __LINE__, ret);
-		goto out;
+	if(reset_type == RESET_TYPE_HARD) {
+		sensor->pending_hardtreset_request = 1;
+		ret = perform_hard_reset(sensor);
+		if (ret < 0) {
+			dev_err(&client->dev, "perform_hard_reset request failed (%d)\n", ret);
+			goto out;
+		}
+	} else {
+		sensor->pending_softreset_request = 1;
+		ret = regmap_write(sensor->regmap8, cci_cmd_tbl[SOFT_RESET].address, 1);
+		if (ret < 0) {
+			dev_err(&client->dev, "avt3_soft_reset request by calling regmap_write failed (%d)\n", ret);
+			goto out;
+		}
 	}
 
 	ret = wait_camera_available(sensor, heartbeat == 1);
@@ -2576,7 +2577,11 @@ static void avt3_soft_reset(struct avt3_dev *sensor)
 		goto out;
 	}
 
-	sensor->pending_softreset_request = 0;
+	if(reset_type == RESET_TYPE_HARD) {
+		sensor->pending_hardtreset_request = 0;
+	} else {
+		sensor->pending_softreset_request = 0;
+	}
 
 	// ToDo: setup MIPI-Lanes and Clock again!
 
