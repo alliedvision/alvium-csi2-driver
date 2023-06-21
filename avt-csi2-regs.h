@@ -180,12 +180,9 @@
 
 enum CCI_REG_INFO {
 	CCI_REGISTER_LAYOUT_VERSION = 0,
-	RESERVED4BIT,
 	DEVICE_CAPABILITIES,
 	GCPRM_ADDRESS,
-	RESERVED2BIT,
 	BCRM_ADDRESS,
-	RESERVED2BIT_2,
 	DEVICE_GUID,
 	MANUFACTURER_NAME,
 	MODEL_NAME,
@@ -200,7 +197,6 @@ enum CCI_REG_INFO {
 	SOFT_RESET,
 	HEARTBEAT,
 	CAM_I2C_ADDRESS,
-	MAX_CMD = HEARTBEAT
 };
 
 struct cci_cmd {
@@ -209,26 +205,25 @@ struct cci_cmd {
 	__u32 byte_count;
 };
 
-static struct cci_cmd cci_cmd_tbl[MAX_CMD] = {
-	/* command index		address */
-	{ CCI_REGISTER_LAYOUT_VERSION,	0x0000, 4 },
-	{ DEVICE_CAPABILITIES,		0x0008, 8 },
-	{ GCPRM_ADDRESS,		0x0010, 2 },
-	{ BCRM_ADDRESS,			0x0014, 2 },
-	{ DEVICE_GUID,			0x0018, 64 },
-	{ MANUFACTURER_NAME,		0x0058, 64 },
-	{ MODEL_NAME,			0x0098, 64 },
-	{ FAMILY_NAME,			0x00D8, 64 },
-	{ DEVICE_VERSION,		0x0118, 64 },
-	{ MANUFACTURER_INFO,		0x0158, 64 },
-	{ SERIAL_NUMBER,		0x0198, 64 },
-	{ USER_DEFINED_NAME,		0x01D8, 64 },
-	{ CHECKSUM,			0x0218, 4 },
-	{ CHANGE_MODE,			0x021C, 1 },
-	{ CURRENT_MODE,			0x021D, 1 },
-	{ SOFT_RESET,			0x021E, 1 },
-	{ HEARTBEAT,			0x021F, 1 },
-	{ CAM_I2C_ADDRESS,		0x0220, 1 },
+static struct cci_cmd cci_cmd_tbl[] = {
+	[CCI_REGISTER_LAYOUT_VERSION] = { CCI_REGISTER_LAYOUT_VERSION, 0x0000,  4 },
+	[DEVICE_CAPABILITIES]         = { DEVICE_CAPABILITIES,         0x0008,  8 },
+	[GCPRM_ADDRESS]               = { GCPRM_ADDRESS,               0x0010,  2 },
+	[BCRM_ADDRESS]                = { BCRM_ADDRESS,                0x0014,  2 },
+	[DEVICE_GUID]                 = { DEVICE_GUID,                 0x0018, 64 },
+	[MANUFACTURER_NAME]           = { MANUFACTURER_NAME,           0x0058, 64 },
+	[MODEL_NAME]                  = { MODEL_NAME,                  0x0098, 64 },
+	[FAMILY_NAME]                 = { FAMILY_NAME,                 0x00D8, 64 },
+	[DEVICE_VERSION]              = { DEVICE_VERSION,              0x0118, 64 },
+	[MANUFACTURER_INFO]           = { MANUFACTURER_INFO,           0x0158, 64 },
+	[SERIAL_NUMBER]               = { SERIAL_NUMBER,               0x0198, 64 },
+	[USER_DEFINED_NAME]           = { USER_DEFINED_NAME,           0x01D8, 64 },
+	[CHECKSUM]                    = { CHECKSUM,                    0x0218,  4 },
+	[CHANGE_MODE]                 = { CHANGE_MODE,                 0x021C,  1 },
+	[CURRENT_MODE]                = { CURRENT_MODE,                0x021D,  1 },
+	[SOFT_RESET]                  = { SOFT_RESET,                  0x021E,  1 },
+	[HEARTBEAT]                   = { HEARTBEAT,                   0x021F,  1 },
+	[CAM_I2C_ADDRESS]             = { CAM_I2C_ADDRESS,             0x0220,  1 },
 };
 
 enum CCI_CAPS_STRING_ENCODING {
