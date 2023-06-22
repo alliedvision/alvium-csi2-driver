@@ -184,6 +184,9 @@ struct avt_val64
 #define MEDIA_BUS_FMT_CUSTOM        		0x5002
 #endif
 
+#define AVT_BINNING_MODE_FLAG_AVERAGE 		0b01
+#define AVT_BINNING_MODE_FLAG_SUM 		0b01
+
 enum avt_binning_type {
 	NONE = -1,
 	DIGITAL,
@@ -221,8 +224,8 @@ struct avt3_mode_info
 
 
 static const long binning_modes_enabled[AVT_BINNING_TYPE_CNT] = {
-	[DIGITAL] = 0b11,
-	[SENSOR] = 0b10,
+	[DIGITAL] = AVT_BINNING_MODE_FLAG_AVERAGE | AVT_BINNING_MODE_FLAG_SUM,
+	[SENSOR] = AVT_BINNING_MODE_FLAG_SUM,
 };
 
 static const char * binning_type_str[AVT_BINNING_TYPE_CNT] = {
