@@ -187,6 +187,7 @@ struct avt_val64
 enum avt_binning_type {
 	NONE = -1,
 	DIGITAL,
+	SENSOR,
 };
 
 struct avt_binning_setting {
@@ -219,8 +220,15 @@ struct avt3_mode_info
 //
 
 
-//TODO: Remove
-/* that table is for testing only */
+static const long binning_modes_enabled[AVT_BINNING_TYPE_CNT] = {
+	[DIGITAL] = 0b11,
+	[SENSOR] = 0b10,
+};
+
+static const char * binning_type_str[AVT_BINNING_TYPE_CNT] = {
+	[DIGITAL] = "Digital",
+	[SENSOR] = "Sensor",
+};
 
 static const struct avt_binning_setting avt_binning_settings[] = {
 	{
@@ -271,6 +279,18 @@ static const struct avt_binning_setting avt_binning_settings[] = {
 		.vfact = 8,
 		.hfact = 8,
 		.type = DIGITAL,
+	}, {
+		.inq = 7,
+		.sel = 8,
+		.vfact = 2,
+		.hfact = 2,
+		.type = SENSOR,
+	}, {
+		.inq = 8,
+		.sel = 9,
+		.vfact = 4,
+		.hfact = 4,
+		.type = SENSOR,
 	},
 };
 
@@ -308,6 +328,7 @@ static struct avt3_dev *client_to_avt3_dev(const struct i2c_client *client)
 // static int avt3_set_mipi_clock(struct v4l2_subdev *sd);
 
 #define DUMP_BCRM_REG8(CLIENT, BCRM_REG) dump_bcrm_reg(CLIENT, (BCRM_REG), (#BCRM_REG), AV_CAM_DATA_SIZE_8)
+#define DUMP_BCRM_REG16(CLIENT, BCRM_REG) dump_bcrm_reg(CLIENT, (BCRM_REG), (#BCRM_REG), AV_CAM_DATA_SIZE_16)
 #define DUMP_BCRM_REG32(CLIENT, BCRM_REG) dump_bcrm_reg(CLIENT, (BCRM_REG), (#BCRM_REG), AV_CAM_DATA_SIZE_32)
 #define DUMP_BCRM_REG64(CLIENT, BCRM_REG) dump_bcrm_reg(CLIENT, (BCRM_REG), (#BCRM_REG), AV_CAM_DATA_SIZE_64)
 
@@ -476,6 +497,8 @@ static void bcrm_dump(struct i2c_client *client)
 	DUMP_BCRM_REG64(client, BCRM_EXPOSURE_AUTO_MIN_64RW);
 	DUMP_BCRM_REG64(client, BCRM_EXPOSURE_AUTO_MAX_64RW);
 
+	DUMP_BCRM_REG16(client, BCRM_BINNING_INQ_16R);
+	DUMP_BCRM_REG16(client, BCRM_BINNING_INQ_16R);
 }
 
 static void dump_bcrm_reg(struct i2c_client *client, u16 nOffset, const char *pRegName, int regsize)
@@ -550,7 +573,7 @@ static inline int bcrm_read8(struct avt3_dev *camera,u16 reg,u8 *val)
 static inline int bcrm_read16(struct avt3_dev *camera,u16 reg,u16 *val)
 {
 	const u16 bcrm_addr = get_bcrm_addr(camera,reg);
-	return regmap_bulk_read(camera->regmap8,bcrm_addr,val,1);
+	return regmap_bulk_read(camera->regmap16,bcrm_addr,val,1);
 }
 
 static inline int bcrm_read32(struct avt3_dev *camera,u16 reg,u32 *val)
@@ -2582,13 +2605,14 @@ static void avt3_calc_compose(const struct avt3_dev * const camera,
 	const struct v4l2_rect * const max = &camera->sensor_rect;
 	const bool x_changed = *width != camera->mbus_framefmt.width;
 	const bool y_changed = *height != camera->mbus_framefmt.height;
+	const bool type_changed = type != camera->curr_binning_info->type;
 	const struct avt3_binning_info *best;
 	struct v4l2_rect scaled_crop = *crop;
 	struct v4l2_rect binning_rect = {0};
 
 	best = camera->curr_binning_info;
 
-	if (x_changed || y_changed) {
+	if (x_changed || y_changed || type_changed) {
 		u32 min_error = U32_MAX;
 		int i;
 
@@ -2598,10 +2622,10 @@ static void avt3_calc_compose(const struct avt3_dev * const camera,
 			const u32 s_height = camera->curr_rect.height / cur->hfact;
 			u32 error = 0;
 
-			if (x_changed)
+			if (x_changed || type_changed)
 				error += abs(s_width - *width);
 
-			if (y_changed)
+			if (y_changed || type_changed)
 				error += abs(s_height - *height);
 
 			if (error > min_error)
@@ -2614,8 +2638,8 @@ static void avt3_calc_compose(const struct avt3_dev * const camera,
 		}
 	}
 
-	dev_info(&camera->i2c_client->dev,"Selected binning %dx%d\n",
-		 best->vfact,best->hfact);
+	dev_info(&camera->i2c_client->dev,"Selected binning %dx%d type: %s\n",
+		 best->vfact,best->hfact,binning_type_str[type]);
 
 	binning_rect.width = best->max_width;
 	binning_rect.height = best->max_height;
@@ -4098,6 +4122,11 @@ static void avt3_update_sw_ctrl_state(struct avt3_dev *camera)
 	}
 }
 
+static const struct v4l2_event avt3_source_change_event = {
+	.type = V4L2_EVENT_SOURCE_CHANGE,
+	.u.src_change.changes = V4L2_EVENT_SRC_CH_RESOLUTION,
+};
+
 static void avt3_ctrl_changed(struct avt3_dev *camera,
 			      const struct v4l2_ctrl * const ctrl)
 {
@@ -4196,6 +4225,46 @@ static void avt3_ctrl_changed(struct avt3_dev *camera,
 
 		break;
 	}
+	case AVT_CID_BINNING_SELECTOR: {
+		const struct avt3_binning_info *info;
+		struct v4l2_ctrl *binning_mode_ctrl;
+		u32 width = camera->mbus_framefmt.width;
+		u32 height = camera->mbus_framefmt.height;
+
+		camera->curr_binning_type = ctrl->val;
+
+		avt3_calc_compose(camera, &camera->curr_rect, &width, &height,
+				  &info);
+
+		camera->curr_binning_info = info;
+
+		if (camera->mbus_framefmt.width != width
+		    || camera->mbus_framefmt.height != height) {
+
+			camera->mbus_framefmt.width = width;
+			camera->mbus_framefmt.height = height;
+
+			v4l2_subdev_notify_event(&camera->sd,
+						 &avt3_source_change_event);
+		}
+
+		binning_mode_ctrl = avt3_ctrl_find(camera,V4L2_CID_BINNING_MODE);
+		if (binning_mode_ctrl != NULL)
+		{
+			const long modes_enabled = binning_modes_enabled[ctrl->val];
+			const u32 new_mode = find_first_bit(&modes_enabled,sizeof(modes_enabled));
+
+			__v4l2_ctrl_s_ctrl(binning_mode_ctrl,new_mode);
+
+			__v4l2_ctrl_modify_range(binning_mode_ctrl,
+						 binning_mode_ctrl->minimum,
+						 binning_mode_ctrl->maximum,
+						 ~modes_enabled,
+						 new_mode);
+		}
+
+	}
+		break;
 	default:
 		break;
 	}
@@ -6327,17 +6396,25 @@ error_out:
 static int avt3_query_binning(struct avt3_dev *camera)
 {
 	int ret,i,j;
+	int type_idx[AVT_BINNING_TYPE_CNT];
 	u16 binning_inq;
 	u32 width_inc,height_inc;
 	const struct v4l2_rect *sensor_rect = &camera->sensor_rect;
 
-	ret = bcrm_read8(camera,BCRM_BINNING_INQ_16R,(u8*)&binning_inq);
-
-	dev_info(&camera->i2c_client->dev,"Binning inq %u\n",binning_inq);
+	ret = bcrm_read16(camera,BCRM_BINNING_INQ_16R,&binning_inq);
 
 	if (ret < 0)
 		return ret;
 
+	// In the firmware version without sensor binning the byteorder of the
+	// inquiry register is swapped.
+	// If the digital binning fields are zero and the bits outside the
+	// allowed range are set, then the byteorder will be swapped.
+	if ((binning_inq & 0x7f) == 0 && (binning_inq & 0xffe) != 0) {
+		__swab16s(&binning_inq);
+	}
+
+	dev_dbg(&camera->i2c_client->dev,"Binning inq 0x%x\n",binning_inq);
 
 	ret = bcrm_read32(camera,BCRM_IMG_WIDTH_INC_32R,&width_inc);
 
@@ -6372,7 +6449,7 @@ static int avt3_query_binning(struct avt3_dev *camera)
 			sizeof(struct avt3_binning_info),GFP_KERNEL);
 	}
 
-	j = 0;
+	memset(type_idx,0,sizeof(type_idx[0]) * AVT_BINNING_TYPE_CNT);
 	for (i = 0;i < avt_binning_setting_cnt;i++) {
 		const struct avt_binning_setting *setting = &avt_binning_settings[i];
 		if (setting->inq == -1 || binning_inq & (1<<setting->inq)) {
@@ -6390,20 +6467,39 @@ static int avt3_query_binning(struct avt3_dev *camera)
 					      &info.max_height,0,
 					      info.max_height,3,0);
 
-			dev_info(&camera->i2c_client->dev,
-				"Binning setting %dx%d: width %u height %u\n",
-				 setting->hfact,setting->vfact,
-				 info.max_width,info.max_height);
 
 			if (setting->type == NONE) {
 				int l;
-				for (l = 0;l < AVT_BINNING_TYPE_CNT;l++)
-					camera->binning_infos[l][j] = info;
-			}
-			else
-				camera->binning_infos[setting->type][j] = info;
+				for (l = 0; l < AVT_BINNING_TYPE_CNT; l++) {
+					const int idx = type_idx[l]++;
 
-			j++;
+					dev_dbg(&camera->i2c_client->dev,
+						"Binning setting %dx%d: width %u "
+						"height %u type: %s\n",
+						setting->hfact,setting->vfact,
+						info.max_width,info.max_height,
+						binning_type_str[l]);
+
+					info.type = l;
+					camera->binning_infos[l][idx] = info;
+				}
+			} else {
+				const u32 type = setting->type;
+				const int idx = type_idx[type]++;
+
+
+				dev_dbg(&camera->i2c_client->dev,
+					"Binning setting %dx%d: width %u "
+					"height %u type: %s\n",
+					setting->hfact,setting->vfact,
+					info.max_width,info.max_height,
+					binning_type_str[type]);
+
+				info.type = type;
+				camera->binning_infos[type][idx] = info;
+			}
+
+
 		}
 	}
 
