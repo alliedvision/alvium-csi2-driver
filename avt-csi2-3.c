@@ -80,6 +80,10 @@ static int debug = 0;
 module_param(debug, int, 0644); /* S_IRUGO */
 MODULE_PARM_DESC(debug, "Debug level (0-2)");
 
+static int add_wait_time_ms = 2000;
+module_param(add_wait_time_ms, int, 0600);
+
+
 #define AVT_DBG_LVL 2
 
 #define avt_dbg(sd, fmt, args...)                       \
@@ -184,9 +188,18 @@ struct avt_val64
 #define MEDIA_BUS_FMT_CUSTOM        		0x5002
 #endif
 
+#define AVT_BINNING_MODE_FLAG_AVERAGE 		0b01
+#define AVT_BINNING_MODE_FLAG_SUM 		0b01
+
 enum avt_binning_type {
 	NONE = -1,
 	DIGITAL,
+	SENSOR,
+};
+
+enum avt_reset_type {
+	RESET_TYPE_SOFT,
+	RESET_TYPE_HARD
 };
 
 struct avt_binning_setting {
@@ -219,8 +232,15 @@ struct avt3_mode_info
 //
 
 
-//TODO: Remove
-/* that table is for testing only */
+static const long binning_modes_enabled[AVT_BINNING_TYPE_CNT] = {
+	[DIGITAL] = AVT_BINNING_MODE_FLAG_AVERAGE | AVT_BINNING_MODE_FLAG_SUM,
+	[SENSOR] = AVT_BINNING_MODE_FLAG_SUM,
+};
+
+static const char * binning_type_str[AVT_BINNING_TYPE_CNT] = {
+	[DIGITAL] = "Digital",
+	[SENSOR] = "Sensor",
+};
 
 static const struct avt_binning_setting avt_binning_settings[] = {
 	{
@@ -271,6 +291,18 @@ static const struct avt_binning_setting avt_binning_settings[] = {
 		.vfact = 8,
 		.hfact = 8,
 		.type = DIGITAL,
+	}, {
+		.inq = 7,
+		.sel = 8,
+		.vfact = 2,
+		.hfact = 2,
+		.type = SENSOR,
+	}, {
+		.inq = 8,
+		.sel = 9,
+		.vfact = 4,
+		.hfact = 4,
+		.type = SENSOR,
 	},
 };
 
@@ -286,8 +318,8 @@ static int bcrm_regmap_write(struct avt3_dev *sensor,
 							 unsigned int reg,
 							 unsigned int val);
 
-static void avt3_soft_reset(struct avt3_dev *sensor);
-static void avt3_hard_reset(struct avt3_dev *sensor);
+static int avt3_detect(struct i2c_client *client);
+static int avt3_reset(struct avt3_dev *sensor, enum avt_reset_type reset_type);
 static void avt3_dphy_reset(struct avt3_dev *sensor, bool bResetPhy);
 
 static void avt3_ctrl_changed(struct avt3_dev *camera,
@@ -295,6 +327,7 @@ static void avt3_ctrl_changed(struct avt3_dev *camera,
 static struct v4l2_ctrl* avt3_ctrl_find(struct avt3_dev *camera,u32 id);
 static int avt3_ctrl_send(struct i2c_client *client,
 						  struct avt_ctrl *vc);
+static int avt3_get_sensor_capabilities(struct v4l2_subdev *sd);
 static inline struct avt3_dev *to_avt3_dev(struct v4l2_subdev *sd)
 {
 	return container_of(sd, struct avt3_dev, sd);
@@ -308,6 +341,7 @@ static struct avt3_dev *client_to_avt3_dev(const struct i2c_client *client)
 // static int avt3_set_mipi_clock(struct v4l2_subdev *sd);
 
 #define DUMP_BCRM_REG8(CLIENT, BCRM_REG) dump_bcrm_reg(CLIENT, (BCRM_REG), (#BCRM_REG), AV_CAM_DATA_SIZE_8)
+#define DUMP_BCRM_REG16(CLIENT, BCRM_REG) dump_bcrm_reg(CLIENT, (BCRM_REG), (#BCRM_REG), AV_CAM_DATA_SIZE_16)
 #define DUMP_BCRM_REG32(CLIENT, BCRM_REG) dump_bcrm_reg(CLIENT, (BCRM_REG), (#BCRM_REG), AV_CAM_DATA_SIZE_32)
 #define DUMP_BCRM_REG64(CLIENT, BCRM_REG) dump_bcrm_reg(CLIENT, (BCRM_REG), (#BCRM_REG), AV_CAM_DATA_SIZE_64)
 
@@ -476,6 +510,8 @@ static void bcrm_dump(struct i2c_client *client)
 	DUMP_BCRM_REG64(client, BCRM_EXPOSURE_AUTO_MIN_64RW);
 	DUMP_BCRM_REG64(client, BCRM_EXPOSURE_AUTO_MAX_64RW);
 
+	DUMP_BCRM_REG16(client, BCRM_BINNING_INQ_16R);
+	DUMP_BCRM_REG16(client, BCRM_BINNING_INQ_16R);
 }
 
 static void dump_bcrm_reg(struct i2c_client *client, u16 nOffset, const char *pRegName, int regsize)
@@ -550,7 +586,7 @@ static inline int bcrm_read8(struct avt3_dev *camera,u16 reg,u8 *val)
 static inline int bcrm_read16(struct avt3_dev *camera,u16 reg,u16 *val)
 {
 	const u16 bcrm_addr = get_bcrm_addr(camera,reg);
-	return regmap_bulk_read(camera->regmap8,bcrm_addr,val,1);
+	return regmap_bulk_read(camera->regmap16,bcrm_addr,val,1);
 }
 
 static inline int bcrm_read32(struct avt3_dev *camera,u16 reg,u32 *val)
@@ -1467,18 +1503,21 @@ static ssize_t softreset_store(struct device *dev,
 {
 	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
 	ssize_t ret;
+	int value;
 
-	//	MUTEX_LOCK(&sensor->lock);
-	ret = kstrtoint(buf, 10, &sensor->pending_softreset_request);
+	ret = kstrtoint(buf, 10, &value);
 	if (ret < 0)
 	{
-		MUTEX_UNLOCK(&sensor->lock);
 		return ret;
 	}
 
-	if (sensor->pending_softreset_request > 0)
-		avt3_soft_reset(sensor);
-	//	MUTEX_UNLOCK(&sensor->lock);
+	if (value > 0) {
+		avt3_reset(sensor, RESET_TYPE_SOFT);
+
+		/* Re-read and configure MIPI configuration */
+		avt3_get_sensor_capabilities(&sensor->sd);
+	}
+
 	return count;
 }
 
@@ -1741,20 +1780,21 @@ static ssize_t hardreset_store(struct device *dev,
 {
 	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
 	ssize_t ret;
+	int value;
 
-	// MUTEX_LOCK(&sensor->lock);
-	ret = kstrtoint(buf, 10, &sensor->pending_hardtreset_request);
+	ret = kstrtoint(buf, 10, &value);
 	if (ret < 0)
 	{
-		// MUTEX_UNLOCK(&sensor->lock);
 		return ret;
 	}
 
-	if (sensor->pending_hardtreset_request > 0)
-		avt3_hard_reset(sensor);
+	if (value > 0) {
+		avt3_reset(sensor, RESET_TYPE_HARD);
 
-	sensor->pending_hardtreset_request = 0;
-	// MUTEX_UNLOCK(&sensor->lock);
+		/* Re-read and configure MIPI configuration */
+		avt3_get_sensor_capabilities(&sensor->sd);
+	}
+
 	return count;
 }
 
@@ -2400,12 +2440,10 @@ avt3_find_mode(struct avt3_dev *sensor, enum avt3_frame_rate fr,
 
 /* hard reset depends on gpio-pins, needs to be completed on
    suitable board instead of imx8mp-evk */
-static void avt3_hard_reset(struct avt3_dev *sensor)
+static int perform_hard_reset(struct avt3_dev *sensor)
 {
 	dev_info(&sensor->i2c_client->dev, "%s[%d]",
 			 __func__, __LINE__);
-
-	MUTEX_LOCK(&sensor->lock);
 
 	if (!sensor->reset_gpio)
 	{
@@ -2413,7 +2451,7 @@ static void avt3_hard_reset(struct avt3_dev *sensor)
 				 __func__, __LINE__);
 		sensor->pending_hardtreset_request = 0;
 
-		return;
+		return -1;
 	}
 
 	dev_info(&sensor->i2c_client->dev, "%s[%d]: - request hard reset by triggering reset gpio",
@@ -2434,40 +2472,154 @@ static void avt3_hard_reset(struct avt3_dev *sensor)
 	//	gpiod_set_value_cansleep(sensor->reset_gpio, 0);
 	usleep_range(20000, 25000);
 
-	sensor->pending_hardtreset_request = 0;
-
-	// ToDo: setup MIPI-Lanes and Clock again!
-
-	MUTEX_UNLOCK(&sensor->lock);
+	return 0;
 }
 
-static void avt3_soft_reset(struct avt3_dev *sensor)
-{
-	// todo: needs to be adapted on sequencing and heartbeet GenCP
+static const int heartbeat_default = 0x80;
 
+static int heartbeat_write_default(struct avt3_dev *sensor) {
+	int ret = regmap_write(sensor->regmap8, cci_cmd_tbl[HEARTBEAT].address, heartbeat_default);
+	if(ret != 0) {
+		avt_err(&sensor->sd, "Heartbeat write failed (regmap_write returned %d)", ret);
+		return -1;
+	}
+	return 0;
+}
+
+static int heartbeat_read(struct avt3_dev *sensor, int *heartbeat) {
+	int ret = regmap_read(sensor->regmap8, cci_cmd_tbl[HEARTBEAT].address, heartbeat);
+	if(ret != 0) {
+		avt_err(&sensor->sd, "Heartbeat read failed (regmap_read returned %d)", ret);
+		return -1;
+	}
+	return 0;
+}
+
+static int heartbeat_supported(struct avt3_dev *sensor) {
+	unsigned int heartbeat;
+
+	int ret = heartbeat_write_default(sensor);
+	if(ret != 0) {
+		avt_err(&sensor->sd, "Heartbeat support detection failed (heartbeat_write returned %d)", ret);
+		return ret;
+	}
+
+	ret = heartbeat_read(sensor, &heartbeat);
+	if(ret != 0) {
+		avt_err(&sensor->sd, "Heartbeat support detection failed (heartbeat_read returned %d)", ret);
+		return -1;
+	}
+
+	return heartbeat != 0;
+}
+
+static int wait_camera_available(struct avt3_dev *sensor, bool use_heartbeat) {
+	static const unsigned long max_time_ms = 10000;
+	static const unsigned long delay_ms = 400;
+	u64 const start_jiffies = get_jiffies_64();
+	bool device_available = false;
+	u64 duration_ms = 0;
+
+	avt_info(&sensor->sd, "Waiting for camera to respond to I2C transfers...");
+	do
+	{
+		usleep_range(delay_ms*1000, (delay_ms+1)*1000);
+		device_available = avt3_detect(sensor->i2c_client) == 0;
+		duration_ms = jiffies_to_msecs(get_jiffies_64() - start_jiffies);
+	} while((duration_ms < max_time_ms) && !device_available);
+
+	avt_dbg(&sensor->sd, "Camera is responding again");
+
+	if(!device_available) {
+		return -1;
+	}
+
+	if(!use_heartbeat) {
+		avt_info(&sensor->sd, "Heartbeat NOT supported, waiting %dms before continuing", add_wait_time_ms);
+		usleep_range(add_wait_time_ms*1000, (add_wait_time_ms+1)*1000);
+		avt_info(&sensor->sd, "Done waiting, let's hope for the best...");
+
+	} else {
+		int heartbeat, ret;
+		avt_info(&sensor->sd, "Heartbeat supported, waiting for heartbeat to become active");
+
+		ret = heartbeat_write_default(sensor);
+		if(ret != 0) {
+			avt_err(&sensor->sd, "Heartbeat write failed (regmap_write returned %d)", ret);
+			return ret;
+		}
+
+		do
+		{
+			usleep_range(delay_ms*1000, (delay_ms+1)*1000);
+			heartbeat_read(sensor, &heartbeat);
+			if(ret < 0) {
+				return -1;
+			}
+			duration_ms = jiffies_to_msecs(get_jiffies_64() - start_jiffies);
+		} while((duration_ms < max_time_ms) && ((heartbeat == 0) || (heartbeat == heartbeat_default)));
+
+		if(heartbeat == 0) {
+			avt_err(&sensor->sd, "Camera not reconnected (heartbeat timeout)");
+			return -1;
+		}
+
+		avt_info(&sensor->sd, "Heartbeat active");
+	}
+
+	return 0;
+}
+
+static int avt3_reset(struct avt3_dev *sensor, enum avt_reset_type reset_type)
+{
 	struct i2c_client *client = sensor->i2c_client;
 	int ret;
+	int heartbeat;
 
 	dev_info(&client->dev, "%s[%d]",
 			 __func__, __LINE__);
 
 	MUTEX_LOCK(&sensor->lock);
 
-	ret = regmap_write(sensor->regmap8, cci_cmd_tbl[SOFT_RESET].address, 1);
-
-	if (ret < 0)
-	{
-		dev_err(&client->dev, "%s[%d]: avt3_soft_reset request by calling regmap_write failed (%d)\n",
-				__func__, __LINE__, ret);
+	heartbeat = heartbeat_supported(sensor);
+	if(heartbeat < 0) {
+		avt_err(&sensor->sd, "Heartbeat detection failed");
+		ret = -1;
 		goto out;
 	}
 
-	sensor->pending_softreset_request = 0;
+	if(reset_type == RESET_TYPE_HARD) {
+		sensor->pending_hardtreset_request = 1;
+		ret = perform_hard_reset(sensor);
+		if (ret < 0) {
+			dev_err(&client->dev, "perform_hard_reset request failed (%d)\n", ret);
+			goto out;
+		}
+	} else {
+		sensor->pending_softreset_request = 1;
+		ret = regmap_write(sensor->regmap8, cci_cmd_tbl[SOFT_RESET].address, 1);
+		if (ret < 0) {
+			dev_err(&client->dev, "avt3_soft_reset request by calling regmap_write failed (%d)\n", ret);
+			goto out;
+		}
+	}
 
-	// ToDo: setup MIPI-Lanes and Clock again!
+	ret = wait_camera_available(sensor, heartbeat == 1);
+
+	if(ret != 0) {
+		avt_err(&sensor->sd, "Camera failed to come back online");
+		goto out;
+	}
+
+	if(reset_type == RESET_TYPE_HARD) {
+		sensor->pending_hardtreset_request = 0;
+	} else {
+		sensor->pending_softreset_request = 0;
+	}
 
 out:
 	MUTEX_UNLOCK(&sensor->lock);
+	return ret;
 }
 
 static void avt3_dphy_reset(struct avt3_dev *sensor, bool bResetPhy)
@@ -2582,13 +2734,14 @@ static void avt3_calc_compose(const struct avt3_dev * const camera,
 	const struct v4l2_rect * const max = &camera->sensor_rect;
 	const bool x_changed = *width != camera->mbus_framefmt.width;
 	const bool y_changed = *height != camera->mbus_framefmt.height;
+	const bool type_changed = type != camera->curr_binning_info->type;
 	const struct avt3_binning_info *best;
 	struct v4l2_rect scaled_crop = *crop;
 	struct v4l2_rect binning_rect = {0};
 
 	best = camera->curr_binning_info;
 
-	if (x_changed || y_changed) {
+	if (x_changed || y_changed || type_changed) {
 		u32 min_error = U32_MAX;
 		int i;
 
@@ -2598,10 +2751,10 @@ static void avt3_calc_compose(const struct avt3_dev * const camera,
 			const u32 s_height = camera->curr_rect.height / cur->hfact;
 			u32 error = 0;
 
-			if (x_changed)
+			if (x_changed || type_changed)
 				error += abs(s_width - *width);
 
-			if (y_changed)
+			if (y_changed || type_changed)
 				error += abs(s_height - *height);
 
 			if (error > min_error)
@@ -2614,8 +2767,8 @@ static void avt3_calc_compose(const struct avt3_dev * const camera,
 		}
 	}
 
-	dev_info(&camera->i2c_client->dev,"Selected binning %dx%d\n",
-		 best->vfact,best->hfact);
+	dev_info(&camera->i2c_client->dev,"Selected binning %dx%d type: %s\n",
+		 best->vfact,best->hfact,binning_type_str[type]);
 
 	binning_rect.width = best->max_width;
 	binning_rect.height = best->max_height;
@@ -2809,7 +2962,7 @@ static int avt3_pad_ops_set_fmt(struct v4l2_subdev *sd,
 
 	*fmt = *mbus_fmt;
 
-	if(pending_fmt_change) {
+	if(pending_fmt_change && mbus_fmt->code != MEDIA_BUS_FMT_CUSTOM) {
 		struct avt_ctrl ct;
 		ct.id = V4L2_AV_CSI2_PIXELFORMAT_W;
 		ct.value0 = sensor->mbus_framefmt.code;
@@ -4098,6 +4251,11 @@ static void avt3_update_sw_ctrl_state(struct avt3_dev *camera)
 	}
 }
 
+static const struct v4l2_event avt3_source_change_event = {
+	.type = V4L2_EVENT_SOURCE_CHANGE,
+	.u.src_change.changes = V4L2_EVENT_SRC_CH_RESOLUTION,
+};
+
 static void avt3_ctrl_changed(struct avt3_dev *camera,
 			      const struct v4l2_ctrl * const ctrl)
 {
@@ -4196,6 +4354,46 @@ static void avt3_ctrl_changed(struct avt3_dev *camera,
 
 		break;
 	}
+	case AVT_CID_BINNING_SELECTOR: {
+		const struct avt3_binning_info *info;
+		struct v4l2_ctrl *binning_mode_ctrl;
+		u32 width = camera->mbus_framefmt.width;
+		u32 height = camera->mbus_framefmt.height;
+
+		camera->curr_binning_type = ctrl->val;
+
+		avt3_calc_compose(camera, &camera->curr_rect, &width, &height,
+				  &info);
+
+		camera->curr_binning_info = info;
+
+		if (camera->mbus_framefmt.width != width
+		    || camera->mbus_framefmt.height != height) {
+
+			camera->mbus_framefmt.width = width;
+			camera->mbus_framefmt.height = height;
+
+			v4l2_subdev_notify_event(&camera->sd,
+						 &avt3_source_change_event);
+		}
+
+		binning_mode_ctrl = avt3_ctrl_find(camera,V4L2_CID_BINNING_MODE);
+		if (binning_mode_ctrl != NULL)
+		{
+			const long modes_enabled = binning_modes_enabled[ctrl->val];
+			const u32 new_mode = find_first_bit(&modes_enabled,sizeof(modes_enabled));
+
+			__v4l2_ctrl_s_ctrl(binning_mode_ctrl,new_mode);
+
+			__v4l2_ctrl_modify_range(binning_mode_ctrl,
+						 binning_mode_ctrl->minimum,
+						 binning_mode_ctrl->maximum,
+						 ~modes_enabled,
+						 new_mode);
+		}
+
+	}
+		break;
 	default:
 		break;
 	}
@@ -6327,17 +6525,25 @@ error_out:
 static int avt3_query_binning(struct avt3_dev *camera)
 {
 	int ret,i,j;
+	int type_idx[AVT_BINNING_TYPE_CNT];
 	u16 binning_inq;
 	u32 width_inc,height_inc;
 	const struct v4l2_rect *sensor_rect = &camera->sensor_rect;
 
-	ret = bcrm_read8(camera,BCRM_BINNING_INQ_16R,(u8*)&binning_inq);
-
-	dev_info(&camera->i2c_client->dev,"Binning inq %u\n",binning_inq);
+	ret = bcrm_read16(camera,BCRM_BINNING_INQ_16R,&binning_inq);
 
 	if (ret < 0)
 		return ret;
 
+	// In the firmware version without sensor binning the byteorder of the
+	// inquiry register is swapped.
+	// If the digital binning fields are zero and the bits outside the
+	// allowed range are set, then the byteorder will be swapped.
+	if ((binning_inq & 0x7f) == 0 && (binning_inq & 0xffe) != 0) {
+		__swab16s(&binning_inq);
+	}
+
+	dev_dbg(&camera->i2c_client->dev,"Binning inq 0x%x\n",binning_inq);
 
 	ret = bcrm_read32(camera,BCRM_IMG_WIDTH_INC_32R,&width_inc);
 
@@ -6372,7 +6578,7 @@ static int avt3_query_binning(struct avt3_dev *camera)
 			sizeof(struct avt3_binning_info),GFP_KERNEL);
 	}
 
-	j = 0;
+	memset(type_idx,0,sizeof(type_idx[0]) * AVT_BINNING_TYPE_CNT);
 	for (i = 0;i < avt_binning_setting_cnt;i++) {
 		const struct avt_binning_setting *setting = &avt_binning_settings[i];
 		if (setting->inq == -1 || binning_inq & (1<<setting->inq)) {
@@ -6390,20 +6596,39 @@ static int avt3_query_binning(struct avt3_dev *camera)
 					      &info.max_height,0,
 					      info.max_height,3,0);
 
-			dev_info(&camera->i2c_client->dev,
-				"Binning setting %dx%d: width %u height %u\n",
-				 setting->hfact,setting->vfact,
-				 info.max_width,info.max_height);
 
 			if (setting->type == NONE) {
 				int l;
-				for (l = 0;l < AVT_BINNING_TYPE_CNT;l++)
-					camera->binning_infos[l][j] = info;
-			}
-			else
-				camera->binning_infos[setting->type][j] = info;
+				for (l = 0; l < AVT_BINNING_TYPE_CNT; l++) {
+					const int idx = type_idx[l]++;
 
-			j++;
+					dev_dbg(&camera->i2c_client->dev,
+						"Binning setting %dx%d: width %u "
+						"height %u type: %s\n",
+						setting->hfact,setting->vfact,
+						info.max_width,info.max_height,
+						binning_type_str[l]);
+
+					info.type = l;
+					camera->binning_infos[l][idx] = info;
+				}
+			} else {
+				const u32 type = setting->type;
+				const int idx = type_idx[type]++;
+
+
+				dev_dbg(&camera->i2c_client->dev,
+					"Binning setting %dx%d: width %u "
+					"height %u type: %s\n",
+					setting->hfact,setting->vfact,
+					info.max_width,info.max_height,
+					binning_type_str[type]);
+
+				info.type = type;
+				camera->binning_infos[type][idx] = info;
+			}
+
+
 		}
 	}
 
@@ -6866,17 +7091,6 @@ static int avt3_detect(struct i2c_client *client)
 	return 0;
 }
 
-/*******************************************************************
- *  avt_csi2_probe                                                 *
- *******************************************************************
- *                                                                 *
- *******************************************************************
- *                                                                 *
- *******************************************************************
- *                                                                 *
- *******************************************************************
- *                                                                 *
- ******************************************************************/
 
 static int avt3_probe(struct i2c_client *client)
 {
@@ -7188,8 +7402,18 @@ static int avt3_probe(struct i2c_client *client)
 
 	mutex_init(&sensor->lock);
 
-	/////////////////////////////////////////////////////
-	/* TODO: check for compatible HW */
+	{
+		enum avt_reset_type const reset_type = sensor->force_reset_on_init ? RESET_TYPE_HARD : RESET_TYPE_SOFT;
+		if(reset_type == RESET_TYPE_HARD) {
+			avt_info(&sensor->sd, "Hard reset requested by device tree");
+		}
+
+		ret = avt3_reset(sensor, reset_type);
+		if(ret < 0) {
+			avt_err(&sensor->sd, "Camera reset failed");
+			goto fwnode_cleanup;
+		}
+	}
 
 	ret = read_cci_registers(client);
 

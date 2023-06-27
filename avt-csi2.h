@@ -12,7 +12,7 @@
 #define STR(x) STR_HELPER(x)
 
 /* Driver release version */
-#define DRV_VER_MAJOR           3
+#define DRV_VER_MAJOR           1
 #define DRV_VER_MINOR           0
 #define DRV_VER_PATCH           0
 #define DRV_VER_BUILD           0
@@ -158,6 +158,9 @@ struct avt_ctrl_mapping {
 
 #define AVT_CID_ACQUISITION_STATUS 	(V4L2_CID_CAMERA_CLASS_BASE+57)
 
+#define AVT_CID_BINNING_SELECTOR 	(V4L2_CID_CAMERA_CLASS_BASE+58)
+
+
 static const char * const v4l2_triggeractivation_menu[] = {
 	"Rising Edge",
 	"Falling Edge",
@@ -176,6 +179,11 @@ static const char * const v4l2_triggersource_menu[] = {
 static const char *  const v4l2_binning_mode_menu[] = {
 	"Average",
 	"Sum"
+};
+
+static const char *  const v4l2_binning_selector_menu[] = {
+	"Digital",
+	"Sensor"
 };
 
 const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
@@ -318,7 +326,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.reg_size		= AV_CAM_REG_SIZE,
 		.data_size		= AV_CAM_DATA_SIZE_64,
 		.type			= V4L2_CTRL_TYPE_INTEGER64,
-		.flags			= 0,
+		.flags			= V4L2_CTRL_FLAG_VOLATILE | V4L2_CTRL_FLAG_EXECUTE_ON_WRITE,
 	},
 	{
 		.id			= V4L2_CID_BLUE_BALANCE,
@@ -330,7 +338,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.reg_size		= AV_CAM_REG_SIZE,
 		.data_size		= AV_CAM_DATA_SIZE_64,
 		.type			= V4L2_CTRL_TYPE_INTEGER64,
-		.flags			= 0,
+		.flags			= V4L2_CTRL_FLAG_VOLATILE | V4L2_CTRL_FLAG_EXECUTE_ON_WRITE,
 	},
 	{
 		.id			= V4L2_CID_GAMMA,
@@ -576,6 +584,17 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.attr			= { "Exposure Active Invert",18 },
 		.type			= V4L2_CTRL_TYPE_BOOLEAN,
 	},
+	{
+		.id			= AVT_CID_BINNING_SELECTOR,
+		.attr			= { "Binning Selector",18 },
+		.type			= V4L2_CTRL_TYPE_MENU,
+		.qmenu			= v4l2_binning_selector_menu,
+		.flags			= 0,
+		.min_value 		= 0,
+		.max_value 		= 1,
+		.avt_flags		= AVT_CTRL_FLAG_STREAM_DISABLED,
+	},
+
 };
 
 #define AVT_MAX_CTRLS (ARRAY_SIZE(avt_ctrl_mappings))
@@ -585,7 +604,7 @@ enum avt_exposure_mode {
 	EMODE_AUTO = 2,
 };
 
-#define AVT_BINNING_TYPE_CNT 	1
+#define AVT_BINNING_TYPE_CNT 	2
 
 struct avt3_binning_info {
     	u32 sel;
@@ -593,6 +612,7 @@ struct avt3_binning_info {
 	u32 vfact;
 	u32 max_width;
 	u32 max_height;
+	u32 type;
 };
 
 struct avt3_dev
