@@ -4471,7 +4471,7 @@ static int avt3_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 	/* ignore if sensor is in sleep mode */
 	if (sensor->power_count == 0)
 	{
-		avt_info(&sensor->sd, "ToDo: Sensor is in sleep mode. Maybe it is better to ignore ctrl->id 0x%08X, sensor->power_count %d",
+		avt_dbg(&sensor->sd, "ToDo: Sensor is in sleep mode. Maybe it is better to ignore ctrl->id 0x%08X, sensor->power_count %d",
 				 ctrl->id, sensor->power_count);
 		// return -EINVAL;
 	}
