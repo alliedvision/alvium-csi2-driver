@@ -9,9 +9,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 ## Compatibility
 This release is compatible with:
+- i.MX 8M Plus EVK with i.MX Yocto Project BSP Rev. 5.15.72-2.2.0
+- Xilinx ZCU106 with Xilinx Yocto 2023.1
 - Alvium MIPI CSI-2 cameras with firmware 11.1 or higher
 
 ## Getting started
-For getting started please use one of the reference image manifest repositories:
-- i.MX 8M Plus EVK: [alvium-manifest-imx8mpevk](https://github.com/alliedvision/alvium-manifest-imx8mpevk)
-
+For getting started use the Allied Vision Alvium Yocto Layer: [meta-alvium-avt](https://github.com/alliedvision/meta-alvium-avt)
