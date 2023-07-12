@@ -715,6 +715,8 @@ struct avt3_dev
 	struct v4l2_rect sensor_rect;
 
 	bool framerate_auto;
+
+	atomic_t  bcrm_wrhs_enabled;
 };
 
 struct avt_ctrl {
