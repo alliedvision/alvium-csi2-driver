@@ -189,7 +189,7 @@ struct avt_val64
 #endif
 
 #define AVT_BINNING_MODE_FLAG_AVERAGE 		0b01
-#define AVT_BINNING_MODE_FLAG_SUM 		0b01
+#define AVT_BINNING_MODE_FLAG_SUM 		0b10
 
 enum avt_binning_type {
 	NONE = -1,
@@ -6986,10 +6986,12 @@ static void bcrm_wrhs_work_func(struct work_struct *work)
 
 	do
 	{
+		//TODO: Must we check the return value here ?
 		ret = regmap_read(sensor->regmap8, sensor->cci_reg.reg.bcrm_addr + BCRM_WRITE_HANDSHAKE_8RW, &handshake_val);
 
 		if (handshake_val & BCRM_HANDSHAKE_STATUS_MASK)
 		{
+			//TODO: Must we check the return value here ?
 			ret = regmap_write(sensor->regmap8, sensor->cci_reg.reg.bcrm_addr + BCRM_WRITE_HANDSHAKE_8RW, handshake_val & ~BCRM_HANDSHAKE_STATUS_MASK); /* reset only handshake status */
 
 			complete(&sensor->bcrm_wrhs_completion);

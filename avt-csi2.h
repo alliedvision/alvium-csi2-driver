@@ -586,7 +586,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	},
 	{
 		.id			= AVT_CID_BINNING_SELECTOR,
-		.attr			= { "Binning Selector",18 },
+		.attr			= { "Binning Selector", -1 },
 		.type			= V4L2_CTRL_TYPE_MENU,
 		.qmenu			= v4l2_binning_selector_menu,
 		.flags			= 0,
