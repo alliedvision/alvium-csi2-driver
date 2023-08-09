@@ -322,11 +322,9 @@ static int avt3_detect(struct i2c_client *client);
 static int avt3_reset(struct avt3_dev *sensor, enum avt_reset_type reset_type);
 static void avt3_dphy_reset(struct avt3_dev *sensor, bool bResetPhy);
 
-static void avt3_ctrl_changed(struct avt3_dev *camera,
-			      const struct v4l2_ctrl * const ctrl);
+static void avt3_ctrl_changed(struct avt3_dev *camera, const struct v4l2_ctrl * const ctrl);
 static struct v4l2_ctrl* avt3_ctrl_find(struct avt3_dev *camera,u32 id);
-static int avt3_ctrl_send(struct i2c_client *client,
-						  struct avt_ctrl *vc);
+static int avt3_ctrl_write(struct i2c_client *client, enum avt_ctrl ctrl_id, __u32 value);
 static int avt3_get_sensor_capabilities(struct v4l2_subdev *sd);
 static inline struct avt3_dev *to_avt3_dev(struct v4l2_subdev *sd)
 {
@@ -2126,9 +2124,9 @@ static int avt3_init_avail_formats(struct v4l2_subdev *sd)
 
   #define add_format_gen(avail_field_name, mbus_code, mipi_fmt, colorspace, fourcc, bayer_pattern) \
     if(sensor->avail_mipi_reg.avail_mipi.avail_field_name && !sensor->ignore_avail_mipi_reg.avail_mipi.avail_field_name) { \
-      adev_info(&client->dev, "add " #mbus_code "/" #fourcc "/" #mipi_fmt " to list of available formats %d - %d:%d", bayer_pattern, \
+      adev_info(&client->dev, "add MEDIA_BUS_FMT_" #mbus_code "/V4L2_PIX_FMT_" #fourcc "/MIPI_CSI2_DT_" #mipi_fmt " to list of available formats %d - %d:%d", bayer_pattern, \
                 sensor->avail_mipi_reg.avail_mipi.avail_field_name, sensor->ignore_avail_mipi_reg.avail_mipi.avail_field_name); \
-      add_format_unconditional(mbus_code, mipi_fmt, colorspace, fourcc, bayer_pattern); \
+      add_format_unconditional(MEDIA_BUS_FMT_ ## mbus_code, MIPI_CSI2_DT_ ## mipi_fmt, colorspace, V4L2_PIX_FMT_ ## fourcc, bayer_pattern); \
     }
 
   #define add_format_srgb(avail_field_name, mbus_code, mipi_fmt, fourcc) \
@@ -2140,47 +2138,47 @@ static int avt3_init_avail_formats(struct v4l2_subdev *sd)
     }
 
   // YUV formats
-  add_format_srgb(yuv422_8_avail,  MEDIA_BUS_FMT_UYVY8_2X8,   MIPI_CSI2_DT_YUV422_8B, V4L2_PIX_FMT_UYVY);
-  add_format_srgb(yuv422_8_avail,  MEDIA_BUS_FMT_UYVY8_1X16,  MIPI_CSI2_DT_YUV422_8B, V4L2_PIX_FMT_UYVY);
-  add_format_srgb(yuv422_8_avail,  MEDIA_BUS_FMT_YUYV8_1X16,  MIPI_CSI2_DT_YUV422_8B, V4L2_PIX_FMT_YUV422P);
-  add_format_srgb(yuv422_8_avail,  MEDIA_BUS_FMT_YUYV8_2X8,   MIPI_CSI2_DT_YUV422_8B, V4L2_PIX_FMT_YUYV);
-  add_format_srgb(yuv422_8_avail,  MEDIA_BUS_FMT_VYUY8_2X8,   MIPI_CSI2_DT_YUV422_8B, V4L2_PIX_FMT_VYUY);
+  add_format_srgb(yuv422_8_avail,  UYVY8_2X8,   YUV422_8B, UYVY);
+  add_format_srgb(yuv422_8_avail,  UYVY8_1X16,  YUV422_8B, UYVY);
+  add_format_srgb(yuv422_8_avail,  YUYV8_1X16,  YUV422_8B, YUV422P);
+  add_format_srgb(yuv422_8_avail,  YUYV8_2X8,   YUV422_8B, YUYV);
+  add_format_srgb(yuv422_8_avail,  VYUY8_2X8,   YUV422_8B, VYUY);
 
-  add_format_srgb(yuv422_10_avail, MEDIA_BUS_FMT_YUYV10_1X20, MIPI_CSI2_DT_YUV422_8B, V4L2_PIX_FMT_YUV410);
+  add_format_srgb(yuv422_10_avail, YUYV10_1X20, YUV422_8B, YUV410);
 
   // RGB formats
-  add_format_srgb(rgb888_avail,    MEDIA_BUS_FMT_RGB888_1X24, MIPI_CSI2_DT_RGB888,    V4L2_PIX_FMT_RGB24);
-  add_format_srgb(rgb888_avail,    MEDIA_BUS_FMT_RBG888_1X24, MIPI_CSI2_DT_RGB888,    V4L2_PIX_FMT_RGB24);
-  add_format_srgb(rgb888_avail,    MEDIA_BUS_FMT_BGR888_1X24, MIPI_CSI2_DT_RGB888,    V4L2_PIX_FMT_RGB24);
-  add_format_srgb(rgb888_avail,    MEDIA_BUS_FMT_RGB888_3X8,  MIPI_CSI2_DT_RGB888,    V4L2_PIX_FMT_RGB24);
+  add_format_srgb(rgb888_avail,    RGB888_1X24, RGB888,    RGB24);
+  add_format_srgb(rgb888_avail,    RBG888_1X24, RGB888,    RGB24);
+  add_format_srgb(rgb888_avail,    BGR888_1X24, RGB888,    RGB24);
+  add_format_srgb(rgb888_avail,    RGB888_3X8,  RGB888,    RGB24);
 
   // 8 bit raw formats (mono / bayer)
-  add_format_raw(monochrome_avail, raw8_avail,  MEDIA_BUS_FMT_Y8_1X8,       MIPI_CSI2_DT_RAW8,  V4L2_PIX_FMT_GREY,    monochrome);
-  add_format_raw(bayer_GR_avail,   raw8_avail,  MEDIA_BUS_FMT_SGRBG8_1X8,   MIPI_CSI2_DT_RAW8,  V4L2_PIX_FMT_SGRBG8,  bayer_gr);
-  add_format_raw(bayer_RG_avail,   raw8_avail,  MEDIA_BUS_FMT_SRGGB8_1X8,   MIPI_CSI2_DT_RAW8,  V4L2_PIX_FMT_SRGGB8,  bayer_rg);
-  add_format_raw(bayer_BG_avail,   raw8_avail,  MEDIA_BUS_FMT_SBGGR8_1X8,   MIPI_CSI2_DT_RAW8,  V4L2_PIX_FMT_SBGGR8,  bayer_bg);
-  add_format_raw(bayer_GB_avail,   raw8_avail,  MEDIA_BUS_FMT_SGBRG8_1X8,   MIPI_CSI2_DT_RAW8,  V4L2_PIX_FMT_SGBRG8,  bayer_gb);
+  add_format_raw(monochrome_avail, raw8_avail,  Y8_1X8,       RAW8,  GREY,    monochrome);
+  add_format_raw(bayer_GR_avail,   raw8_avail,  SGRBG8_1X8,   RAW8,  SGRBG8,  bayer_gr);
+  add_format_raw(bayer_RG_avail,   raw8_avail,  SRGGB8_1X8,   RAW8,  SRGGB8,  bayer_rg);
+  add_format_raw(bayer_BG_avail,   raw8_avail,  SBGGR8_1X8,   RAW8,  SBGGR8,  bayer_bg);
+  add_format_raw(bayer_GB_avail,   raw8_avail,  SGBRG8_1X8,   RAW8,  SGBRG8,  bayer_gb);
 
   // 10 bit raw formats (mono / bayer)
-  add_format_raw(monochrome_avail, raw10_avail, MEDIA_BUS_FMT_Y10_1X10,     MIPI_CSI2_DT_RAW10, V4L2_PIX_FMT_Y10,     monochrome);
-  add_format_raw(bayer_GR_avail,   raw10_avail, MEDIA_BUS_FMT_SGRBG10_1X10, MIPI_CSI2_DT_RAW10, V4L2_PIX_FMT_SGRBG10, bayer_gr);
-  add_format_raw(bayer_RG_avail,   raw10_avail, MEDIA_BUS_FMT_SRGGB10_1X10, MIPI_CSI2_DT_RAW10, V4L2_PIX_FMT_SRGGB10, bayer_rg);
-  add_format_raw(bayer_BG_avail,   raw10_avail, MEDIA_BUS_FMT_SBGGR10_1X10, MIPI_CSI2_DT_RAW10, V4L2_PIX_FMT_SGRBG10, bayer_bg);
-  add_format_raw(bayer_GB_avail,   raw10_avail, MEDIA_BUS_FMT_SGBRG10_1X10, MIPI_CSI2_DT_RAW10, V4L2_PIX_FMT_SGBRG10, bayer_gb);
+  add_format_raw(monochrome_avail, raw10_avail, Y10_1X10,     RAW10, Y10,     monochrome);
+  add_format_raw(bayer_GR_avail,   raw10_avail, SGRBG10_1X10, RAW10, SGRBG10, bayer_gr);
+  add_format_raw(bayer_RG_avail,   raw10_avail, SRGGB10_1X10, RAW10, SRGGB10, bayer_rg);
+  add_format_raw(bayer_BG_avail,   raw10_avail, SBGGR10_1X10, RAW10, SGRBG10, bayer_bg);
+  add_format_raw(bayer_GB_avail,   raw10_avail, SGBRG10_1X10, RAW10, SGBRG10, bayer_gb);
 
   // 12 bit raw formats (mono / bayer)
-  add_format_raw(monochrome_avail, raw12_avail, MEDIA_BUS_FMT_Y12_1X12,     MIPI_CSI2_DT_RAW12, V4L2_PIX_FMT_Y12,     monochrome);
-  add_format_raw(bayer_GR_avail,   raw12_avail, MEDIA_BUS_FMT_SGRBG12_1X12, MIPI_CSI2_DT_RAW12, V4L2_PIX_FMT_SGRBG12, bayer_gr);
-  add_format_raw(bayer_RG_avail,   raw12_avail, MEDIA_BUS_FMT_SRGGB12_1X12, MIPI_CSI2_DT_RAW12, V4L2_PIX_FMT_SRGGB12, bayer_rg);
-  add_format_raw(bayer_BG_avail,   raw12_avail, MEDIA_BUS_FMT_SBGGR12_1X12, MIPI_CSI2_DT_RAW12, V4L2_PIX_FMT_SGRBG12, bayer_bg);
-  add_format_raw(bayer_GB_avail,   raw12_avail, MEDIA_BUS_FMT_SGBRG12_1X12, MIPI_CSI2_DT_RAW12, V4L2_PIX_FMT_SGBRG12, bayer_gb);
+  add_format_raw(monochrome_avail, raw12_avail, Y12_1X12,     RAW12, Y12,     monochrome);
+  add_format_raw(bayer_GR_avail,   raw12_avail, SGRBG12_1X12, RAW12, SGRBG12, bayer_gr);
+  add_format_raw(bayer_RG_avail,   raw12_avail, SRGGB12_1X12, RAW12, SRGGB12, bayer_rg);
+  add_format_raw(bayer_BG_avail,   raw12_avail, SBGGR12_1X12, RAW12, SGRBG12, bayer_bg);
+  add_format_raw(bayer_GB_avail,   raw12_avail, SGBRG12_1X12, RAW12, SGBRG12, bayer_gb);
 
   // 14 bit raw formats (mono / bayer)
-  add_format_raw(monochrome_avail, raw14_avail, MEDIA_BUS_FMT_Y14_1X14,     MIPI_CSI2_DT_RAW14, V4L2_PIX_FMT_Y14,     monochrome);
-  add_format_raw(bayer_GR_avail,   raw14_avail, MEDIA_BUS_FMT_SGRBG14_1X14, MIPI_CSI2_DT_RAW14, V4L2_PIX_FMT_SGRBG14, bayer_gr);
-  add_format_raw(bayer_RG_avail,   raw14_avail, MEDIA_BUS_FMT_SRGGB14_1X14, MIPI_CSI2_DT_RAW14, V4L2_PIX_FMT_SRGGB14, bayer_rg);
-  add_format_raw(bayer_BG_avail,   raw14_avail, MEDIA_BUS_FMT_SBGGR14_1X14, MIPI_CSI2_DT_RAW14, V4L2_PIX_FMT_SGRBG14, bayer_bg);
-  add_format_raw(bayer_GB_avail,   raw14_avail, MEDIA_BUS_FMT_SGBRG14_1X14, MIPI_CSI2_DT_RAW14, V4L2_PIX_FMT_SGBRG14, bayer_gb);
+  add_format_raw(monochrome_avail, raw14_avail, Y14_1X14,     RAW14, Y14,     monochrome);
+  add_format_raw(bayer_GR_avail,   raw14_avail, SGRBG14_1X14, RAW14, SGRBG14, bayer_gr);
+  add_format_raw(bayer_RG_avail,   raw14_avail, SRGGB14_1X14, RAW14, SRGGB14, bayer_rg);
+  add_format_raw(bayer_BG_avail,   raw14_avail, SBGGR14_1X14, RAW14, SGRBG14, bayer_bg);
+  add_format_raw(bayer_GB_avail,   raw14_avail, SGBRG14_1X14, RAW14, SGBRG14, bayer_gb);
 
   // GenICam
 	add_format_unconditional(MEDIA_BUS_FMT_CUSTOM, 0x31, V4L2_COLORSPACE_DEFAULT, V4L2_PIX_FMT_CUSTOM, bayer_ignore);
@@ -2747,10 +2745,7 @@ static int avt3_pad_ops_set_fmt(struct v4l2_subdev *sd,
 	*fmt = *mbus_fmt;
 
 	if(pending_fmt_change && mbus_fmt->code != MEDIA_BUS_FMT_CUSTOM) {
-		struct avt_ctrl ct;
-		ct.id = V4L2_AV_CSI2_PIXELFORMAT_W;
-		ct.value0 = sensor->mbus_framefmt.code;
-		ret = avt3_ctrl_send(sensor->i2c_client, &ct);
+		ret = avt3_ctrl_write(sensor->i2c_client, V4L2_AV_CSI2_PIXELFORMAT, sensor->mbus_framefmt.code);
 
 		if(ret < 0) {
 			avt_err(sd, "Failed setting pixel format in camera: %d", ret);
@@ -2766,7 +2761,7 @@ out:
 	return ret;
 }
 
-static int avt3_ctrl_send(struct i2c_client *client, struct avt_ctrl *vc)
+static int avt3_ctrl_write(struct i2c_client *client, enum avt_ctrl ctrl_id, __u32 value)
 {
 	struct avt3_dev *sensor = client_to_avt3_dev(client);
 	int ret = 0;
@@ -2774,96 +2769,88 @@ static int avt3_ctrl_send(struct i2c_client *client, struct avt_ctrl *vc)
 	int length = 0;
 	int fmtidx;
 
-	int r_wn = 0; /* write -> r_wn = 0, read -> r_wn = 1 */
 	__u8 bayer_temp = 0;
 
-	avt_dbg(&sensor->sd, "switch (vc->id) %x ", vc->id);
+	avt_dbg(&sensor->sd, "switch (ctrl_id) %x ", ctrl_id);
 
-	switch (vc->id)
+	switch (ctrl_id)
 	{
 
-	case V4L2_AV_CSI2_STREAMON_W: {
-		unsigned int	acquisition_state;
+	case V4L2_AV_CSI2_STREAMON:
+    {
+      unsigned int	acquisition_state;
 
-		ret = regmap_read(sensor->regmap8,
-						BCRM_ACQUISITION_STOP_8RW, &acquisition_state);
-		if (0 != acquisition_state) {
-			adev_info(&client->dev, 
-				"V4L2_AV_CSI2_STREAMON_W called but cam is streaming already. acquisition_state %d, sensor->is_streaming %d",
-				acquisition_state, sensor->is_streaming);
-			dump_stack();
-			return -EINVAL;
-		}
-	}
+      ret = regmap_read(sensor->regmap8,
+              BCRM_ACQUISITION_STOP_8RW, &acquisition_state);
+      if (0 != acquisition_state) {
+        adev_info(&client->dev, 
+          "V4L2_AV_CSI2_STREAMON called but cam is streaming already. acquisition_state %d, sensor->is_streaming %d",
+          acquisition_state, sensor->is_streaming);
+        dump_stack();
+        return -EINVAL;
+      }
+	  }
 
-		avt_dbg(&sensor->sd, "V4L2_AV_CSI2_STREAMON_W %d", vc->value0);
+		avt_dbg(&sensor->sd, "V4L2_AV_CSI2_STREAMON %d", value);
 		reg = BCRM_ACQUISITION_START_8RW;
 		length = AV_CAM_DATA_SIZE_8;
 		break;
 
-	case V4L2_AV_CSI2_STREAMOFF_W:
-		avt_dbg(&sensor->sd, "V4L2_AV_CSI2_STREAMOFF_W %d", vc->value0);
+	case V4L2_AV_CSI2_STREAMOFF:
+		avt_dbg(&sensor->sd, "V4L2_AV_CSI2_STREAMOFF %d", value);
 		reg = BCRM_ACQUISITION_STOP_8RW;
 		length = AV_CAM_DATA_SIZE_8;
 		break;
 
-	case V4L2_AV_CSI2_ABORT_W:
-		avt_dbg(&sensor->sd, "V4L2_AV_CSI2_ABORT_W ");
+	case V4L2_AV_CSI2_ABORT:
+		avt_dbg(&sensor->sd, "V4L2_AV_CSI2_ABORT %d", value);
 		reg = BCRM_ACQUISITION_ABORT_8RW;
 		length = AV_CAM_DATA_SIZE_8;
 		break;
 
-	case V4L2_AV_CSI2_WIDTH_W:
-		avt_dbg(&sensor->sd, "V4L2_AV_CSI2_WIDTH_W %d", vc->value0);
+	case V4L2_AV_CSI2_WIDTH:
+		avt_dbg(&sensor->sd, "V4L2_AV_CSI2_WIDTH %d", value);
 		reg = BCRM_IMG_WIDTH_32RW;
 		length = AV_CAM_DATA_SIZE_32;
 		break;
-	case V4L2_AV_CSI2_HEIGHT_W:
-		avt_dbg(&sensor->sd, "V4L2_AV_CSI2_HEIGHT_W %d", vc->value0);
+	case V4L2_AV_CSI2_HEIGHT:
+		avt_dbg(&sensor->sd, "V4L2_AV_CSI2_HEIGHT %d", value);
 		reg = BCRM_IMG_HEIGHT_32RW;
 		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 0;
 		break;
-	case V4L2_AV_CSI2_OFFSET_X_W:
-		avt_dbg(&sensor->sd, "V4L2_AV_CSI2_OFFSET_X_W %d", vc->value0);
+	case V4L2_AV_CSI2_OFFSET_X:
+		avt_dbg(&sensor->sd, "V4L2_AV_CSI2_OFFSET_X %d", value);
 		reg = BCRM_IMG_OFFSET_X_32RW;
 		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 0;
 		break;
-	case V4L2_AV_CSI2_OFFSET_Y_W:
-		avt_dbg(&sensor->sd, "V4L2_AV_CSI2_OFFSET_Y_W %d", vc->value0);
+	case V4L2_AV_CSI2_OFFSET_Y:
+		avt_dbg(&sensor->sd, "V4L2_AV_CSI2_OFFSET_Y %d", value);
 		reg = BCRM_IMG_OFFSET_Y_32RW;
 		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 0;
 		break;
-	case V4L2_AV_CSI2_HFLIP_W:
-		avt_dbg(&sensor->sd, "V4L2_AV_CSI2_HFLIP_W %d", vc->value0);
+	case V4L2_AV_CSI2_HFLIP:
+		avt_dbg(&sensor->sd, "V4L2_AV_CSI2_HFLIP %d", value);
 		reg = BCRM_IMG_REVERSE_X_8RW;
 		length = AV_CAM_DATA_SIZE_8;
-		r_wn = 0;
 		break;
-	case V4L2_AV_CSI2_VFLIP_W:
-		avt_dbg(&sensor->sd, "V4L2_AV_CSI2_VFLIP_W %d", vc->value0);
+	case V4L2_AV_CSI2_VFLIP:
+		avt_dbg(&sensor->sd, "V4L2_AV_CSI2_VFLIP %d", value);
 		reg = BCRM_IMG_REVERSE_Y_8RW;
 		length = AV_CAM_DATA_SIZE_8;
-		r_wn = 0;
 		break;
 
-	case V4L2_AV_CSI2_PIXELFORMAT_W:
-		avt_dbg(&sensor->sd, "V4L2_AV_CSI2_PIXELFORMAT_W %d 0x%04X", vc->value0, vc->value0);
+	case V4L2_AV_CSI2_PIXELFORMAT:
+		avt_dbg(&sensor->sd, "V4L2_AV_CSI2_PIXELFORMAT %d 0x%04X", value, value);
 		reg = BCRM_IMG_MIPI_DATA_FORMAT_32RW;
 		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 0;
-		avt_dbg(&sensor->sd, "switch (vc->id) %d V4L2_AV_CSI2_PIXELFORMAT_W %d 0x%04X",
-				vc->id, vc->value0, vc->value0);
 
-		fmtidx = lockup_media_bus_fmt(sensor, vc->value0);
+		fmtidx = lockup_media_bus_fmt(sensor, value);
 
 		if (fmtidx == -EINVAL || fmtidx >= sensor->available_fmts_cnt)
 		{
-			adev_info(&client->dev, "not supported by the host, lockup_media_bus_fmt returned fmtidx %d for V4L2_AV_CSI2_PIXELFORMAT_W %d 0x%04X",
+			adev_info(&client->dev, "not supported by the host, lockup_media_bus_fmt returned fmtidx %d for V4L2_AV_CSI2_PIXELFORMAT %d 0x%04X",
 					  fmtidx,
-					  vc->value0, vc->value0);
+					  value, value);
 			dump_stack();
 			return -EINVAL;
 		}
@@ -2877,176 +2864,14 @@ static int avt3_ctrl_send(struct i2c_client *client, struct avt_ctrl *vc)
 				  sensor->available_fmts[fmtidx].mipi_fmt,
 				  sensor->available_fmts[fmtidx].bayer_pattern);
 
-		vc->value0 = sensor->available_fmts[fmtidx].mipi_fmt;
+		value = sensor->available_fmts[fmtidx].mipi_fmt;
 		bayer_temp = sensor->available_fmts[fmtidx].bayer_pattern;
 		break;
 
-	case V4L2_AV_CSI2_WIDTH_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_WIDTH_R ", __func__, __LINE__);
-		reg = BCRM_IMG_WIDTH_32RW;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_WIDTH_MINVAL_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_WIDTH_MINVAL_R ", __func__, __LINE__);
-		reg = BCRM_IMG_WIDTH_MIN_32R;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_WIDTH_MAXVAL_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_WIDTH_MAXVAL_R ", __func__, __LINE__);
-		reg = BCRM_IMG_WIDTH_MAX_32R;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_WIDTH_INCVAL_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_WIDTH_INCVAL_R ", __func__, __LINE__);
-		reg = BCRM_IMG_WIDTH_INC_32R;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_HEIGHT_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_HEIGHT_R ", __func__, __LINE__);
-		reg = BCRM_IMG_HEIGHT_32RW;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_HEIGHT_MINVAL_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_HEIGHT_MINVAL_R ", __func__, __LINE__);
-		reg = BCRM_IMG_HEIGHT_MIN_32R;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_HEIGHT_MAXVAL_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_HEIGHT_MAXVAL_R ", __func__, __LINE__);
-		reg = BCRM_IMG_HEIGHT_MAX_32R;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_HEIGHT_INCVAL_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_HEIGHT_INCVAL_R ", __func__, __LINE__);
-		reg = BCRM_IMG_HEIGHT_INC_32R;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_OFFSET_X_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_OFFSET_X_R ", __func__, __LINE__);
-		reg = BCRM_IMG_OFFSET_X_32RW;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_OFFSET_X_MIN_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_OFFSET_X_MIN_R ", __func__, __LINE__);
-		reg = BCRM_IMG_OFFSET_X_MIN_32R;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_OFFSET_X_MAX_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_OFFSET_X_MAX_R ", __func__, __LINE__);
-		reg = BCRM_IMG_OFFSET_X_MAX_32R;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_OFFSET_X_INC_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_OFFSET_X_INC_R ", __func__, __LINE__);
-		reg = BCRM_IMG_OFFSET_X_INC_32R;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_OFFSET_Y_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_OFFSET_Y_R ", __func__, __LINE__);
-		reg = BCRM_IMG_OFFSET_Y_32RW;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_OFFSET_Y_MIN_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_OFFSET_Y_MIN_R ", __func__, __LINE__);
-		reg = BCRM_IMG_OFFSET_Y_MIN_32R;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_OFFSET_Y_MAX_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_OFFSET_Y_MAX_R ", __func__, __LINE__);
-		reg = BCRM_IMG_OFFSET_Y_MAX_32R;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_OFFSET_Y_INC_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_OFFSET_Y_INC_R ", __func__, __LINE__);
-		reg = BCRM_IMG_OFFSET_Y_INC_32R;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_SENSOR_WIDTH_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_SENSOR_WIDTH_R ", __func__, __LINE__);
-		reg = BCRM_SENSOR_WIDTH_32R;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_SENSOR_HEIGHT_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_SENSOR_HEIGHT_R ", __func__, __LINE__);
-		reg = BCRM_SENSOR_HEIGHT_32R;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_MAX_WIDTH_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_MAX_WIDTH_R ", __func__, __LINE__);
-		reg = BCRM_WIDTH_MAX_32R;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_MAX_HEIGHT_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_MAX_HEIGHT_R ", __func__, __LINE__);
-		reg = BCRM_HEIGHT_MAX_32R;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_PIXELFORMAT_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_PIXELFORMAT_R ", __func__, __LINE__);
-		reg = BCRM_IMG_MIPI_DATA_FORMAT_32RW;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_PAYLOADSIZE_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_PAYLOADSIZE_R ", __func__, __LINE__);
-		reg = BCRM_BUFFER_SIZE_32R;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_ACQ_STATUS_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_ACQ_STATUS_R ", __func__, __LINE__);
-		reg = BCRM_ACQUISITION_STATUS_8R;
-		length = AV_CAM_DATA_SIZE_8;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_HFLIP_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_HFLIP_R ", __func__, __LINE__);
-		reg = BCRM_IMG_REVERSE_X_8RW;
-		length = AV_CAM_DATA_SIZE_8;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_VFLIP_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_VFLIP_R ", __func__, __LINE__);
-		reg = BCRM_IMG_REVERSE_Y_8RW;
-		length = AV_CAM_DATA_SIZE_8;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_CURRENTMODE_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_CURRENTMODE_R ", __func__, __LINE__);
-		ret = regmap_read(sensor->regmap8,
-						  GENCP_CURRENTMODE_8R, &vc->value0);
-		if (ret < 0)
-		{
-			dev_err(&client->dev, "%s[%d]: Failed to get mode: regmap_read on GENCP_CURRENTMODE_8R failed (%d)\n",
-					__func__, __LINE__, ret);
-			return ret;
-		}
-		return ret;
+	case V4L2_AV_CSI2_CHANGEMODE:
+		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_CHANGEMODE ", __func__, __LINE__);
 
-	case V4L2_AV_CSI2_CHANGEMODE_W:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_CHANGEMODE_W ", __func__, __LINE__);
-
-		if (vc->value0 == 1)
+		if (value == 1)
 		{
 			ret = avt3_set_gencp(client);
 		}
@@ -3057,112 +2882,51 @@ static int avt3_ctrl_send(struct i2c_client *client, struct avt_ctrl *vc)
 		return ret;
 
 	default:
-		dev_err(&client->dev, "%s[%d]: unknown ctrl 0x%x\n", __func__, __LINE__, vc->id);
+		dev_err(&client->dev, "%s[%d]: unknown ctrl 0x%x\n", __func__, __LINE__, ctrl_id);
 		return -EINVAL;
 	}
 
-	if (r_wn)
-	{ /* read (r_wn=1) */
+  avt_dbg(&sensor->sd, "reg %x, length %d, vc->value0 0x%x\n", reg, length, value);
 
-		switch (length)
-		{
-		case AV_CAM_DATA_SIZE_8:
-			ret = regmap_read(sensor->regmap8,
-							  sensor->cci_reg.reg.bcrm_addr + reg, &vc->value0);
-			break;
-		case AV_CAM_DATA_SIZE_16:
-			ret = regmap_read(sensor->regmap16,
-							  sensor->cci_reg.reg.bcrm_addr + reg, &vc->value0);
-			break;
-		case AV_CAM_DATA_SIZE_32:
-			ret = regmap_read(sensor->regmap32,
-							  sensor->cci_reg.reg.bcrm_addr + reg, &vc->value0);
-			break;
-		case AV_CAM_DATA_SIZE_64:
-			ret = regmap_bulk_read(sensor->regmap64,
-								   sensor->cci_reg.reg.bcrm_addr + reg, &vc->value0, 1);
-			break;
-		default:
-			dev_err(&client->dev, "%s[%d]: unknown length %d\n", __func__, __LINE__, length);
-		}
+  switch (length)
+  {
+  case AV_CAM_DATA_SIZE_8:
+    ret = bcrm_regmap_write(sensor, sensor->regmap8,
+                sensor->cci_reg.reg.bcrm_addr + reg, value);
+    break;
+  case AV_CAM_DATA_SIZE_16:
+    ret = bcrm_regmap_write(sensor, sensor->regmap16,
+                sensor->cci_reg.reg.bcrm_addr + reg, value);
+    break;
+  case AV_CAM_DATA_SIZE_32:
+    ret = bcrm_regmap_write(sensor, sensor->regmap32,
+                sensor->cci_reg.reg.bcrm_addr + reg, value);
+    break;
+  default:
+    dev_err(&client->dev, "%s[%d]: unknown length %d\n", __func__, __LINE__, length);
+  }
 
-		if (ret < 0)
-		{
-			dev_err(&client->dev, "%s[%d]: regmap_read at 0x%04x failed with %d\n",
-					__func__, __LINE__, sensor->cci_reg.reg.bcrm_addr + reg, ret);
-			return ret;
-		}
+  if (ret < 0)
+  {
+    dev_err(&client->dev, "%s[%d]: bcrm_regmap_write failed\n",
+        __func__, __LINE__);
+    return ret;
+  }
 
-		if (vc->id == V4L2_AV_CSI2_PIXELFORMAT_R)
-		{
-			// TODO: Check correct mbus_format_value
-			vc->value0 = sensor->mbus_fmt_code;
-			dev_info(&client->dev,
-					 "%s[%d]: V4L2_AV_CSI2_PIXELFORMAT_R TODO: Check correct mbus_format_value "
-					 "vc->value0 0x%04X == sensor->mbus_fmt_code 0x%04X\n",
-					 __func__, __LINE__, vc->value0, sensor->mbus_fmt_code);
-		}
-		return 0;
-	}
-	else
-	{ /* write (r_wn=0) */
-		avt_dbg(&sensor->sd, "reg %x, length %d, vc->value0 0x%x\n", reg, length, vc->value0);
+  /* set pixelformat followed by set matching bayer format */
+  if (ctrl_id == V4L2_AV_CSI2_PIXELFORMAT && bayer_temp != bayer_ignore)
+  {
+    ret = set_bayer_format(client, bayer_temp);
+    if (ret < 0)
+    {
+      dev_err(&client->dev, "%s[%d]: bcrm_regmap_write failed, ret %d\n",
+          __func__, __LINE__, ret);
+      return ret;
+    }
+  }
 
-		switch (length)
-		{
-		case AV_CAM_DATA_SIZE_8:
-			ret = bcrm_regmap_write(sensor, sensor->regmap8,
-									sensor->cci_reg.reg.bcrm_addr + reg, vc->value0);
-			break;
-		case AV_CAM_DATA_SIZE_16:
-			ret = bcrm_regmap_write(sensor, sensor->regmap16,
-									sensor->cci_reg.reg.bcrm_addr + reg, vc->value0);
-			break;
-		case AV_CAM_DATA_SIZE_32:
-			ret = bcrm_regmap_write(sensor, sensor->regmap32,
-									sensor->cci_reg.reg.bcrm_addr + reg, vc->value0);
-			break;
-		case AV_CAM_DATA_SIZE_64:
-			ret = bcrm_regmap_write64(sensor, sensor->regmap64,
-									  sensor->cci_reg.reg.bcrm_addr + reg, vc->value64);
-			break;
-		default:
-			dev_err(&client->dev, "%s[%d]: unknown length %d\n", __func__, __LINE__, length);
-		}
-
-		if (ret < 0)
-		{
-			dev_err(&client->dev, "%s[%d]: bcrm_regmap_write failed\n",
-					__func__, __LINE__);
-			return ret;
-		}
-
-		/* set pixelformat followed by set matching bayer format */
-		if (vc->id == V4L2_AV_CSI2_PIXELFORMAT_W && bayer_temp != bayer_ignore)
-		{
-			ret = set_bayer_format(client, bayer_temp);
-			if (ret < 0)
-			{
-				dev_err(&client->dev, "%s[%d]: bcrm_regmap_write failed, ret %d\n",
-						__func__, __LINE__, ret);
-				return ret;
-			}
-		}
-
-		return 0;
-	}
+  return 0;
 }
-
-// V4L2_EXPOSURE_AUTO = 0,
-// V4L2_EXPOSURE_MANUAL = 1,
-// V4L2_EXPOSURE_SHUTTER_PRIORITY = 2,
-// V4L2_EXPOSURE_APERTURE_PRIORITY = 3
-
-//#define V4L2_CID_EXPOSURE		(V4L2_CID_BASE+17)
-//#define V4L2_CID_EXPOSURE_AUTO			(V4L2_CID_CAMERA_CLASS_BASE+1)
-//#define V4L2_CID_EXPOSURE_ABSOLUTE		(V4L2_CID_CAMERA_CLASS_BASE+2)
-//#define V4L2_CID_EXPOSURE_AUTO_PRIORITY		(V4L2_CID_CAMERA_CLASS_BASE+3)
-//#define V4L2_CID_AUTO_EXPOSURE_BIAS
 
 static int avt3_queryctrl(struct v4l2_subdev *sd,
 						  //		struct v4l2_queryctrl *qctrl,
@@ -5015,7 +4779,6 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 {
 	struct avt3_dev *sensor = to_avt3_dev(sd);
 	struct i2c_client *client = sensor->i2c_client;
-	struct avt_ctrl ct;
 	int ret = 0;
 
 	dev_info(&client->dev, "%s[%d]: enable %d, sensor->is_streaming %d\n"
@@ -5035,12 +4798,9 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 
 	MUTEX_LOCK(&sensor->lock);
 
-	CLEAR(ct);
 	if (!enable && sensor->is_streaming)
 	{
-		ct.id = V4L2_AV_CSI2_STREAMOFF_W;
-		ct.value0 = 1;
-		ret = avt3_ctrl_send(sensor->i2c_client, &ct);
+		ret = avt3_ctrl_write(sensor->i2c_client, V4L2_AV_CSI2_STREAMOFF, 1);
 		sensor->is_streaming = false;
 
 		// ToDo: eventually wait until cam has stopped streaming
@@ -5090,29 +4850,17 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 		}
 
 
-		ct.id = V4L2_AV_CSI2_WIDTH_W;
-		ct.value0 = crop_rect.width;
-		ret = avt3_ctrl_send(sensor->i2c_client, &ct);
+		ret = avt3_ctrl_write(sensor->i2c_client, V4L2_AV_CSI2_WIDTH, crop_rect.width);
 
-		ct.id = V4L2_AV_CSI2_OFFSET_X_W;
-		ct.value0 = crop_rect.left;
-		ret = avt3_ctrl_send(sensor->i2c_client, &ct);
+		ret = avt3_ctrl_write(sensor->i2c_client, V4L2_AV_CSI2_OFFSET_X, crop_rect.left);
 
-		ct.id = V4L2_AV_CSI2_HEIGHT_W;
-		ct.value0 = crop_rect.height;
-		ret = avt3_ctrl_send(sensor->i2c_client, &ct);
+		ret = avt3_ctrl_write(sensor->i2c_client, V4L2_AV_CSI2_HEIGHT, crop_rect.height);
 
-		ct.id = V4L2_AV_CSI2_OFFSET_Y_W;
-		ct.value0 = crop_rect.top;
-		ret = avt3_ctrl_send(sensor->i2c_client, &ct);
+		ret = avt3_ctrl_write(sensor->i2c_client, V4L2_AV_CSI2_OFFSET_Y, crop_rect.top);
 
-		ct.id = V4L2_AV_CSI2_VFLIP_W;
-		ct.value0 = sensor->vflip;
-		ret = avt3_ctrl_send(sensor->i2c_client, &ct);
+		ret = avt3_ctrl_write(sensor->i2c_client, V4L2_AV_CSI2_VFLIP, sensor->vflip);
 
-		ct.id = V4L2_AV_CSI2_HFLIP_W;
-		ct.value0 = sensor->hflip;
-		ret = avt3_ctrl_send(sensor->i2c_client, &ct);
+		ret = avt3_ctrl_write(sensor->i2c_client, V4L2_AV_CSI2_HFLIP, sensor->hflip);
 
 
 		ret = regmap_bulk_read(sensor->regmap64,
@@ -5206,9 +4954,7 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 			bcrm_dump(client);
 
 		/* start streaming */
-		ct.id = V4L2_AV_CSI2_STREAMON_W;
-		ct.value0 = 1;
-		ret = avt3_ctrl_send(client, &ct);
+		ret = avt3_ctrl_write(client, V4L2_AV_CSI2_STREAMON, 1);
 
 		// ToDo: probably it's better to check the status here. but this conflicts with the workaround for imx8mp delayed start
 		if (!ret)
