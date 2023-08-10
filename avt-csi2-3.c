@@ -189,7 +189,7 @@ struct avt_val64
 #endif
 
 #define AVT_BINNING_MODE_FLAG_AVERAGE 		0b01
-#define AVT_BINNING_MODE_FLAG_SUM 		0b01
+#define AVT_BINNING_MODE_FLAG_SUM 		0b10
 
 enum avt_binning_type {
 	NONE = -1,
@@ -802,20 +802,36 @@ err_out:
 	return ret;
 }
 
+static int read_current_mode(struct avt3_dev *camera)
+{
+	int ret;
+	uint current_mode;
+
+	ret = regmap_read(camera->regmap8, GENCP_CURRENTMODE_8R, &current_mode);
+
+	if (ret < 0)
+		return ret;
+
+	return current_mode;
+}
+
 static int avt3_set_bcrm(struct i2c_client *client)
 {
 	uint8_t mode = 0;
-	uint32_t current_mode = 0;
-
+	int current_mode = 0;
+	int elapsed = 0;
+	int const timeout = 5000;
+	int const delay = 50;
+	struct avt_ctrl ctrl;
 	int ret;
+
 	struct avt3_dev *sensor = client_to_avt3_dev(client);
 
-	ret = regmap_read(sensor->regmap8,
-					  GENCP_CURRENTMODE_8R, &current_mode);
-	if (ret < 0)
+	current_mode = read_current_mode(sensor);
+	if (current_mode < 0)
 	{
 		avt_err(&sensor->sd, "Failed to get mode: regmap_read on GENCP_CURRENTMODE_8R failed (%d)", ret);
-		return ret;
+		return current_mode;
 	}
 
 	if (AVT_BCRM_MODE == current_mode && current_mode != sensor->mode)
@@ -829,14 +845,47 @@ static int avt3_set_bcrm(struct i2c_client *client)
 	}
 
 	mode = AVT_BCRM_MODE;
-	ret = bcrm_regmap_write(sensor, sensor->regmap8,
-							GENCP_CHANGEMODE_8W, mode);
+	ret = regmap_write(sensor->regmap8, GENCP_CHANGEMODE_8W, mode);
 
 	if (ret < 0)
 	{
 		avt_err(&sensor->sd, "Failed to set BCRM mode: i2c write failed (%d)", ret);
 		return ret;
 	}
+
+	do
+	{
+		msleep(delay);
+
+		current_mode = read_current_mode(sensor);
+
+		if (current_mode < 0) {
+			avt_err(&sensor->sd,"Failed to read current mode!");
+			return current_mode;
+		}
+
+		if (current_mode == mode) {
+			break;
+		}
+
+		elapsed += delay;
+	} while (elapsed < timeout);
+
+	if (elapsed >= timeout) {
+		avt_err(&sensor->sd,"Waiting for mode change timeout!");
+		return -EIO;
+	}
+
+	ctrl.id = V4L2_AV_CSI2_PIXELFORMAT_W;
+	ctrl.value0 = sensor->mbus_framefmt.code;
+
+	ret = avt3_ctrl_send(sensor->i2c_client,&ctrl);
+
+	if (ret < 0) {
+		avt_err(&sensor->sd,"Failed to set pixelformat!");
+		return ret;
+	}
+
 	sensor->mode = AVT_BCRM_MODE;
 	return ret;
 }
@@ -2876,7 +2925,7 @@ static int avt_update_exposure_limits(struct v4l2_subdev *sd) {
 	{
 		struct v4l2_ctrl* exp_abs_ctrl = avt3_ctrl_find(sensor, V4L2_CID_EXPOSURE_ABSOLUTE);
 		if(exp_abs_ctrl != NULL) {
-			__v4l2_ctrl_modify_range(exp_abs_ctrl, exp_min / 100, exp_max / 100, exp_inc / 100, exp_abs_ctrl->default_value);
+			__v4l2_ctrl_modify_range(exp_abs_ctrl, exp_min / EXP_ABS, exp_max / EXP_ABS, exp_inc / EXP_ABS, exp_abs_ctrl->default_value);
 		}
 	}
 
@@ -2982,8 +3031,7 @@ out:
 	return ret;
 }
 
-static int avt3_ctrl_send(struct i2c_client *client,
-						  struct avt_ctrl *vc)
+static int avt3_ctrl_send(struct i2c_client *client, struct avt_ctrl *vc)
 {
 	struct avt3_dev *sensor = client_to_avt3_dev(client);
 	int ret = 0;
@@ -4413,7 +4461,11 @@ static int write_ctrl_value(struct avt3_dev *camera,struct v4l2_ctrl *ctrl,
 
 	if (ctrl_mapping->data_size == AV_CAM_DATA_SIZE_64)
 	{
-		temp = *ctrl->p_new.p_s64;
+		if (ctrl->type == V4L2_CTRL_TYPE_INTEGER64)
+			temp = *ctrl->p_new.p_s64;
+		else
+			temp = ctrl->val;
+
 		avt3_ctrl_to_reg(ctrl->id,&temp);
 
 		if (ctrl_mapping->type == V4L2_CTRL_TYPE_BUTTON)
@@ -4993,7 +5045,7 @@ static int avt3_pad_ops_enum_frame_interval(
 				 fie->index, 1, fie->pad, fie->code, fie->width, fie->height);
 		return -EINVAL;
 	}
-		if (sensor->mbus_framefmt.code != fie->code)
+	if (sensor->mbus_framefmt.code != fie->code)
 	{
 		avt_info(sd, "sensor->mbus_framefmt.code 0x%04X, fie->code 0x%04X",
 				 sensor->mbus_framefmt.code, fie->code);
@@ -5473,7 +5525,7 @@ int avt3_core_ops_g_register(struct v4l2_subdev *sd, struct v4l2_dbg_register *r
 			 __func__, __LINE__, reg->reg, reg->size);
 
 	if (reg->reg & ~0xffff)
-		return -EINVAL;
+			return -EINVAL;
 
 	if (reg->size != 1 && reg->size != 2 &&
 		reg->size != 4 && reg->size != 8)
@@ -5766,7 +5818,7 @@ static int avt3_subdev_internal_ops_close(struct v4l2_subdev *sd, struct v4l2_su
 	sensor->open_refcnt--;
 	return ret;
 }
-
+//TODO: Support multiple opens
 static int avt3_subdev_internal_ops_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	// called when userspace app calls 'open'
@@ -6775,36 +6827,88 @@ static const struct regmap_config alvium_reg64_config = {
 	.cache_type = REGCACHE_NONE,
 };
 
-static int bcrm_regmap_write64(struct avt3_dev *sensor,
-							   struct regmap *map,
-							   unsigned int reg,
-							   unsigned long long val)
+static int prepare_write_handshake(struct avt3_dev *camera)
 {
-
 	int ret;
+	u8 handshake_val;
+	u16 const handshake_addr =
+		camera->cci_reg.reg.bcrm_addr + BCRM_WRITE_HANDSHAKE_8RW;
 
-	u32 handshake_val = 0;
-
-	ret = regmap_read(sensor->regmap8, sensor->cci_reg.reg.bcrm_addr + BCRM_WRITE_HANDSHAKE_8RW, &handshake_val);
+	ret = bcrm_read8(camera,BCRM_WRITE_HANDSHAKE_8RW,&handshake_val);
 
 	if (ret < 0)
 	{
-		dev_err(&sensor->i2c_client->dev,"%s[%d]: Reading handshake value failed with: %d\n",__func__, __LINE__,ret);
+		dev_err(&camera->i2c_client->dev,
+			"%s[%d]: Reading handshake value failed with: %d\n",
+			__func__, __LINE__,ret);
 		return ret;
 	}
 
 	if ((handshake_val & BCRM_HANDSHAKE_STATUS_MASK) != 0)
 	{
-		dev_warn(&sensor->i2c_client->dev,"%s[%d]: Write handshake still in progress",__func__, __LINE__);
+		dev_warn(&camera->i2c_client->dev,
+			 "%s[%d]: Write handshake still in progress",
+			 __func__, __LINE__);
 	}
 
-	ret = regmap_write(sensor->regmap8, sensor->cci_reg.reg.bcrm_addr + BCRM_WRITE_HANDSHAKE_8RW, handshake_val & ~BCRM_HANDSHAKE_STATUS_MASK); /* reset only handshake status */
+	/* reset only handshake status */
+	ret = regmap_write(camera->regmap8,handshake_addr,
+			   handshake_val & ~BCRM_HANDSHAKE_STATUS_MASK);
 
 	if (ret < 0)
 	{
-		dev_err(&sensor->i2c_client->dev,"%s[%d]: Clearing handshake status failed with: %d\n",__func__, __LINE__,ret);
+		dev_err(&camera->i2c_client->dev,"%s[%d]: Clearing handshake status failed with: %d\n",__func__, __LINE__,ret);
 		return ret;
 	}
+
+
+	/* wait for bcrm handshake */
+	reinit_completion(&camera->bcrm_wrhs_completion);
+
+	if (!queue_work(camera->bcrm_wrhs_queue, &camera->bcrm_wrhs_work))
+	{
+		dev_err(&camera->i2c_client->dev,
+			"Write handshake already in progress!");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int wait_for_write_handshake(struct avt3_dev *camera)
+{
+	ulong ret;
+
+	ret = wait_for_completion_timeout(&camera->bcrm_wrhs_completion,
+					  msecs_to_jiffies(camera->bcrm_handshake_timeout_ms / 5));
+
+	// If wait_for_completion_timeout returns a positive value, then the handshake was successfully
+	// and ret contains the remaining time before the timeout would occur
+	if (ret > 0)
+	{
+		return 0;
+	}
+
+	atomic_set(&camera->bcrm_wrhs_enabled,0);
+	flush_work(&camera->bcrm_wrhs_work);
+
+	dev_err(&camera->i2c_client->dev,
+		"%s[%d]: Write handshake timeout\n",
+		__func__, __LINE__);
+
+	return -EIO;
+}
+
+static int bcrm_regmap_write64(struct avt3_dev *sensor,struct regmap *map,
+			       unsigned int reg,unsigned long long val)
+{
+	int ret;
+
+
+	ret = prepare_write_handshake(sensor);
+
+	if (ret < 0)
+		return ret;
 
 	ret = regmap_bulk_write(map, reg, &val, 1);
 
@@ -6824,25 +6928,7 @@ static int bcrm_regmap_write64(struct avt3_dev *sensor,
 		// duration_ms = (uint64_t)default_wait_time_ms;
 	}
 
-	/* wait for bcrm handshake */
-	reinit_completion(&sensor->bcrm_wrhs_completion);
-
-	queue_work(sensor->bcrm_wrhs_queue, &sensor->bcrm_wrhs_work);
-	//	dev_info(&sensor->i2c_client->dev, "%s[%d]: queue_work done\n", __func__, __LINE__);
-
-	ret = wait_for_completion_timeout(&sensor->bcrm_wrhs_completion,
-									  msecs_to_jiffies(sensor->bcrm_handshake_timeout_ms / 5));
-
-	// If wait_for_completion_timeout returns a positive value, then the handshake was successfully
-	// and ret contains the remaining time before the timeout would occur
-	if (ret > 0)
-	{
-		return 0;
-	}
-
-	dev_err(&sensor->i2c_client->dev,"%s[%d]: Write handshake timeout\n",__func__, __LINE__);
-
-	return -EIO;
+	return wait_for_write_handshake(sensor);
 }
 
 static int bcrm_regmap_write(struct avt3_dev *sensor,
@@ -6852,28 +6938,11 @@ static int bcrm_regmap_write(struct avt3_dev *sensor,
 {
 
 	int ret;
-	u32 handshake_val = 0;
 
-	ret = regmap_read(sensor->regmap8, sensor->cci_reg.reg.bcrm_addr + BCRM_WRITE_HANDSHAKE_8RW, &handshake_val);
-
-	if (ret < 0)
-	{
-		dev_err(&sensor->i2c_client->dev,"%s[%d]: Reading handshake value failed with: %d\n",__func__, __LINE__,ret);
-		return ret;
-	}
-
-	if ((handshake_val & BCRM_HANDSHAKE_STATUS_MASK) != 0)
-	{
-		dev_warn(&sensor->i2c_client->dev,"%s[%d]: Write handshake still in progress",__func__, __LINE__);
-	}
-
-	ret = regmap_write(sensor->regmap8, sensor->cci_reg.reg.bcrm_addr + BCRM_WRITE_HANDSHAKE_8RW, handshake_val & ~BCRM_HANDSHAKE_STATUS_MASK); /* reset only handshake status */
+	ret = prepare_write_handshake(sensor);
 
 	if (ret < 0)
-	{
-		dev_err(&sensor->i2c_client->dev,"%s[%d]: Clearing handshake status failed with: %d\n",__func__, __LINE__,ret);
 		return ret;
-	}
 
 	ret = regmap_write(map, reg, val);
 
@@ -6897,25 +6966,7 @@ static int bcrm_regmap_write(struct avt3_dev *sensor,
 		return ret;
 	}
 
-	/* wait for bcrm handshake */
-	reinit_completion(&sensor->bcrm_wrhs_completion);
-
-	queue_work(sensor->bcrm_wrhs_queue, &sensor->bcrm_wrhs_work);
-	//	dev_info(&sensor->i2c_client->dev, "%s[%d]: queue_work done\n", __func__, __LINE__);
-
-	ret = wait_for_completion_timeout(&sensor->bcrm_wrhs_completion,
-									  msecs_to_jiffies(sensor->bcrm_handshake_timeout_ms / 5));
-
-	// If wait_for_completion_timeout returns a positive value, then the handshake was successfully
-	// and ret contains the remaining time before the timeout would occur
-	if (ret > 0)
-	{
-		return 0;
-	}
-
-	dev_err(&sensor->i2c_client->dev,"%s[%d]: Write handshake timeout\n",__func__, __LINE__);
-
-	return -EIO;
+	return wait_for_write_handshake(sensor);
 }
 
 static void bcrm_wrhs_work_func(struct work_struct *work)
@@ -6928,130 +6979,35 @@ static void bcrm_wrhs_work_func(struct work_struct *work)
 	struct avt3_dev *sensor =
 		container_of(work, struct avt3_dev, bcrm_wrhs_work);
 
+	atomic_set(&sensor->bcrm_wrhs_enabled,1);
+
 	//	dev_info(&sensor->i2c_client->dev, "%s[%d]: workqueue_test: 0x%08X current->pid 0x%08x\n",
 	//  	__func__, __LINE__, (u32)work, current->pid );
 
 	do
 	{
+		//TODO: Must we check the return value here ?
 		ret = regmap_read(sensor->regmap8, sensor->cci_reg.reg.bcrm_addr + BCRM_WRITE_HANDSHAKE_8RW, &handshake_val);
 
 		if (handshake_val & BCRM_HANDSHAKE_STATUS_MASK)
 		{
+			//TODO: Must we check the return value here ?
 			ret = regmap_write(sensor->regmap8, sensor->cci_reg.reg.bcrm_addr + BCRM_WRITE_HANDSHAKE_8RW, handshake_val & ~BCRM_HANDSHAKE_STATUS_MASK); /* reset only handshake status */
+
+			complete(&sensor->bcrm_wrhs_completion);
+
+			dev_dbg(&sensor->i2c_client->dev, "%s[%d]: Handshake ok\n",
+				__func__, __LINE__);
+
 			break;
 		}
 		msleep(poll_interval_ms);
 		i++;
-	} while (i < 300 /*duration_ms <= timeout_ms*/);
+	} while (atomic_read(&sensor->bcrm_wrhs_enabled) != 0);
 
 	if (i == 300)
 		dev_info(&sensor->i2c_client->dev, "%s[%d]: 0x%08llx current->pid 0x%08x %d\n",
 				 __func__, __LINE__, (u64)work, current->pid, i);
-#if 0
-static uint64_t wait_for_bcrm_write_handshake(struct i2c_client *client, uint64_t timeout_ms)
-{
-	struct avt3_dev *sensor = client_to_avt3_dev(client);
-
-	static const int poll_interval_ms = 10;
-	static const int default_wait_time_ms = 50;
-	int ret = 0;
-	u8 buffer[3] = {0};
-	u32 handshake_val = 0;
-	bool handshake_valid = false;
-	struct timespec64 ts64start, ts64end;
-
-	uint64_t start_time_ms = 0;
-	uint64_t duration_ms = 0;
-
-	if (sensor->bcrm_write_handshake)
-	{
-		ktime_get_real_ts64(&ts64start);
-		start_time_ms = (ts64start.tv_sec * (uint64_t)1000) + (ts64start.tv_nsec / 1000000);
-
-		/* We need to poll the handshake register and wait until the camera has processed the data */
-		dev_dbg(&client->dev, "%s[%d]:  Wait for 'write done' bit (0x81) ...", __func__, __LINE__);
-		do
-		{
-			msleep(poll_interval_ms);
-			/* Read handshake register */
-			ret = regmap_read(sensor->regmap8, sensor->cci_reg.bcrm_addr +
-				BCRM_WRITE_HANDSHAKE_8RW, &handshake_val);
-
-			ktime_get_real_ts64(&ts64end);
-			duration_ms = ((ts64end.tv_sec * (uint64_t)1000) + (ts64end.tv_nsec / 1000000)) - start_time_ms;
-
-			if (ret >= 0)
-			{
-				/* Check, if handshake bit is set */
-				if ((handshake_val & 0x01) == 1)
-				{
-					/* Handshake set by camera. We should to reset it */
-					buffer[0] = (sensor->cci_reg.bcrm_addr + BCRM_WRITE_HANDSHAKE_8RW) >> 8;
-					buffer[1] = (sensor->cci_reg.bcrm_addr + BCRM_WRITE_HANDSHAKE_8RW) & 0xff;
-					buffer[2] = (handshake_val & 0xFE); /* Reset LSB (handshake bit)*/
-					ret = i2c_master_send(client, buffer, sizeof(buffer));
-
-					/* Since the camera needs a few ms for every write access to finish, we need to poll here too */
-					dev_dbg(&client->dev, "%s[%d]: Wait for reset of 'write done' bit (0x80) ...",
-					__func__, __LINE__);
-					do
-					{
-						msleep(poll_interval_ms);
-						/* We need to wait again until the bit is reset */
-						ret = regmap_read(sensor->regmap8, sensor->cci_reg.bcrm_addr +
-								BCRM_WRITE_HANDSHAKE_8RW, &handshake_val);
-
-						ktime_get_real_ts64(&ts64end);
-						duration_ms = ((ts64end.tv_sec * (uint64_t)1000) + (ts64end.tv_nsec / 1000000)) - start_time_ms;
-
-						if (ret >= 0)
-						{
-							if ((handshake_val & 0x01) == 0) /* Verify write */
-							{
-								handshake_valid = true;
-								dev_dbg(&client->dev, "%s[%d]: write_done bit reset after about %llu ms",
-									__func__, __LINE__, duration_ms);
-								break;
-							}
-						}
-						else
-						{
-							dev_err(&client->dev, "%s[%d]: Error while reading BCRM_WRITE_HANDSHAKE_8RW register.",
-							__func__, __LINE__);
-							break;
-						}
-					} while (duration_ms <= timeout_ms);
-
-					break;
-				}
-			}
-			else
-			{
-				dev_err(&client->dev, "%s[%d]: Error while reading BCRM_WRITE_HANDSHAKE_8RW register.",
-				__func__, __LINE__);
-				break;
-			}
-		} while (duration_ms <= timeout_ms);
-
-		if (!handshake_valid)
-		{
-			dev_warn(&client->dev, "%s[%d]: Write handshake timeout!", __func__, __LINE__);
-		}
-	}
-	else
-	{
-		dev_info(&client->dev, "%s[%d]: Handshake not supported. Use static sleep at least once as fallback %lld", __func__, __LINE__, timeout_ms);
-		/* Handshake not supported. Use static sleep at least once as fallback */
-		msleep(default_wait_time_ms);
-		duration_ms = (uint64_t)default_wait_time_ms;
-	}
-
-	return duration_ms;
-#endif
-
-	complete(&sensor->bcrm_wrhs_completion);
-
-	return;
 }
 
 
@@ -7493,6 +7449,7 @@ static int avt3_probe(struct i2c_client *client)
 
 	dev_info(&client->dev, "%s[%d]: INIT_WORK(&sensor->bcrm_wrhs_work, bcrm_wrhs_work_func);\n", __func__, __LINE__);
 	INIT_WORK(&sensor->bcrm_wrhs_work, bcrm_wrhs_work_func);
+	atomic_set(&sensor->bcrm_wrhs_enabled,0);
 
 	CLEAR(sensor->max_rect);
 	CLEAR(sensor->min_rect);
