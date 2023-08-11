@@ -53,12 +53,8 @@ enum avt_mode {
 	AVT_GENCP_MODE,
 };
 
-//#define AVT_RESET_DELAY1			(2000000)
-//#define AVT_RESET_DELAY2			(2500000)
-
 #define AVT_CTRL_FLAG_STREAM_DISABLED 		(1 << 1)
 #define AVT_CTRL_FLAG_READ_BACK 		(1 << 2)
-
 
 struct avt_ctrl_mapping {
 	u8 reg_size;
@@ -141,7 +137,6 @@ struct avt_ctrl_mapping {
 
 /* Execute a software trigger */
 #define V4L2_CID_TRIGGER_SOFTWARE	(V4L2_CID_CAMERA_CLASS_BASE+50)
-
 
 /* Camera temperature readout */
 #define V4L2_CID_DEVICE_TEMPERATURE	(V4L2_CID_CAMERA_CLASS_BASE+51)
@@ -648,7 +643,6 @@ struct avt3_dev
 	struct gpio_desc *pwdn_gpio;
 
 	int power_count;
-	//int force_reset_at_close;
 
 	struct v4l2_mbus_framefmt mbus_framefmt;
 	struct v4l2_captureparm streamcap;
@@ -676,7 +670,6 @@ struct avt3_dev
 	union cci_reg cci_reg;
 	struct gencp_reg gencp_reg;
 
-	//union cci_device_caps_reg 		device_caps;
 	union bcrm_feature_inquiry_reg feature_inquiry_reg;
 	union bcrm_avail_mipi_reg avail_mipi_reg;
 	union bcrm_avail_mipi_reg ignore_avail_mipi_reg;
@@ -684,17 +677,14 @@ struct avt3_dev
 	union bcrm_supported_lanecount_reg lane_capabilities;
 
 	struct avt_csi_mipi_mode_mapping *available_fmts;
-//	uint16_t *available_fmts;
 	uint32_t available_fmts_cnt;
 
 	struct list_head requests_queued;
 	struct completion bcrm_wrhs_completion;
 
-//	struct delayed_work bcrm_wrhs_dwork;
 	struct work_struct bcrm_wrhs_work;
 	struct workqueue_struct *bcrm_wrhs_queue;
 
-// from avt_csi2_priv
 	u32 mbus_fmt_code;
 	bool cross_update;
 	struct avt_frame_param frmp;
@@ -744,16 +734,11 @@ enum bayer_format {
 };
 
 struct avt_csi_mipi_mode_mapping {
-	// u32 pixelformat;
 	u32 mbus_code;
 	u16 mipi_fmt;
 	u32 colorspace;
 	u32 fourcc;           /* v4l2 format id */
 	enum bayer_format bayer_pattern;
-	// int bpp;
-	// bool valid;
-	// bool enumfmt;
-	// int idx;
 	char name[32];
 #ifdef DEBUG
 	char  mb_code_string[32];
