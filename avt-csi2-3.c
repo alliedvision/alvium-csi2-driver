@@ -76,7 +76,6 @@
 #include <uapi/linux/libcsi_ioctl.h>
 
 static int debug = 0;
-// module_param(debug, int, 0600);/* S_IRUGO */
 module_param(debug, int, 0644); /* S_IRUGO */
 MODULE_PARM_DESC(debug, "Debug level (0-2)");
 
@@ -216,20 +215,7 @@ struct avt3_mode_info
 	u32 htot;
 	u32 vact;
 	u32 vtot;
-	//	const struct reg_value *reg_data;
-	//	u32 reg_data_size;
 };
-//
-//	[0]: 'RGBP' (16-bit RGB 5-6-5)
-//	[1]: 'RGB3' (24-bit RGB 8-8-8)
-//	[2]: 'BGR3' (24-bit BGR 8-8-8)
-//	[3]: 'YUYV' (YUYV 4:2:2)
-//	[4]: 'YUV4' (32-bit A/XYUV 8-8-8-8)
-//	[5]: 'NV12' (Y/CbCr 4:2:0)
-//	[6]: 'YM24' (Planar YUV 4:4:4 (N-C))
-//	[7]: 'XR24' (32-bit BGRX 8-8-8-8)
-//	[8]: 'AR24' (32-bit BGRA 8-8-8-8)
-//
 
 
 static const long binning_modes_enabled[AVT_BINNING_TYPE_CNT] = {
@@ -322,11 +308,9 @@ static int avt3_detect(struct i2c_client *client);
 static int avt3_reset(struct avt3_dev *sensor, enum avt_reset_type reset_type);
 static void avt3_dphy_reset(struct avt3_dev *sensor, bool bResetPhy);
 
-static void avt3_ctrl_changed(struct avt3_dev *camera,
-			      const struct v4l2_ctrl * const ctrl);
+static void avt3_ctrl_changed(struct avt3_dev *camera, const struct v4l2_ctrl * const ctrl);
 static struct v4l2_ctrl* avt3_ctrl_find(struct avt3_dev *camera,u32 id);
-static int avt3_ctrl_send(struct i2c_client *client,
-						  struct avt_ctrl *vc);
+static int avt3_ctrl_write(struct i2c_client *client, enum avt_ctrl ctrl_id, __u32 value);
 static int avt3_get_sensor_capabilities(struct v4l2_subdev *sd);
 static inline struct avt3_dev *to_avt3_dev(struct v4l2_subdev *sd)
 {
@@ -338,8 +322,6 @@ static struct avt3_dev *client_to_avt3_dev(const struct i2c_client *client)
 	return container_of(i2c_get_clientdata(client), struct avt3_dev, sd);
 }
 
-// static int avt3_set_mipi_clock(struct v4l2_subdev *sd);
-
 #define DUMP_BCRM_REG8(CLIENT, BCRM_REG) dump_bcrm_reg(CLIENT, (BCRM_REG), (#BCRM_REG), AV_CAM_DATA_SIZE_8)
 #define DUMP_BCRM_REG16(CLIENT, BCRM_REG) dump_bcrm_reg(CLIENT, (BCRM_REG), (#BCRM_REG), AV_CAM_DATA_SIZE_16)
 #define DUMP_BCRM_REG32(CLIENT, BCRM_REG) dump_bcrm_reg(CLIENT, (BCRM_REG), (#BCRM_REG), AV_CAM_DATA_SIZE_32)
@@ -347,7 +329,6 @@ static struct avt3_dev *client_to_avt3_dev(const struct i2c_client *client)
 
 static void dump_bcrm_reg(struct i2c_client *client, u16 nOffset, const char *pRegName, int regsize);
 
-// static void bcrm_dump(struct i2c_client *client, char *szdump2buffer, int max_len)
 static void bcrm_dump(struct i2c_client *client)
 {
 	/* Dump all BCRM registers */
@@ -822,7 +803,6 @@ static int avt3_set_bcrm(struct i2c_client *client)
 	int elapsed = 0;
 	int const timeout = 5000;
 	int const delay = 50;
-	struct avt_ctrl ctrl;
 	int ret;
 
 	struct avt3_dev *sensor = client_to_avt3_dev(client);
@@ -876,10 +856,7 @@ static int avt3_set_bcrm(struct i2c_client *client)
 		return -EIO;
 	}
 
-	ctrl.id = V4L2_AV_CSI2_PIXELFORMAT_W;
-	ctrl.value0 = sensor->mbus_framefmt.code;
-
-	ret = avt3_ctrl_send(sensor->i2c_client,&ctrl);
+	ret = avt3_ctrl_write(sensor->i2c_client, V4L2_AV_CSI2_PIXELFORMAT, sensor->mbus_framefmt.code);
 
 	if (ret < 0) {
 		avt_err(&sensor->sd,"Failed to set pixelformat!");
@@ -1038,7 +1015,6 @@ static ssize_t availability_show(struct device *dev,
 	MUTEX_LOCK(&sensor->lock);
 
 	dev_info(dev, "%s[%d]: %s", __func__, __LINE__, __FILE__);
-	// ret = sprintf(buf, "%d\n", sensor->is_streaming ? 0 : 1);
 	ret = sprintf(buf, "%d\n", sensor->open_refcnt == 0 ? 1 : 0);
 
 	MUTEX_UNLOCK(&sensor->lock);
@@ -1490,12 +1466,6 @@ static ssize_t mipiclk_store(struct device *dev,
 	}
 	else
 	{
-
-		/* Set number of lanes */
-		//		ret = bcrm_regmap_write(sensor, sensor->regmap8,
-		//				sensor->cci_reg.reg.bcrm_addr + BCRM_CSI2_LANE_COUNT_8RW,
-		//				sensor->v4l2_fwnode_ep.bus.mipi_csi2.num_data_lanes);
-
 		ret = bcrm_regmap_write(sensor, sensor->regmap32, sensor->cci_reg.reg.bcrm_addr + BCRM_CSI2_CLOCK_32RW, avt_next_clk);
 
 		dev_info(&client->dev, "%s[%d]: requested csi clock frequency %u Hz, retval %ld)\n",
@@ -1538,11 +1508,7 @@ static ssize_t softreset_show(struct device *dev,
 	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
 	ssize_t ret;
 
-	//	MUTEX_LOCK(&sensor->lock);
-
 	ret = sprintf(buf, "%d\n", sensor->pending_softreset_request);
-
-	//	MUTEX_UNLOCK(&sensor->lock);
 
 	return ret;
 }
@@ -1787,10 +1753,7 @@ static ssize_t sw_trigger_store(struct device *dev,
 	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
 	ssize_t ret;
 
-	if (!sensor->is_streaming /*||
-		!sensor->avt_trigger_status.trigger_mode_enabled ||
-		sensor->avt_trigger_status.trigger_source != V4L2_TRIGGER_SOURCE_SOFTWARE */
-	)
+	if (!sensor->is_streaming)
 	{
 		dev_err(dev, "%s[%d]: sensor->is_streaming: %d, sensor->avt_trigger_status.trigger_mode_enabled %d, sensor->avt_trigger_status.trigger_source %d\n",
 				__func__, __LINE__,
@@ -1850,12 +1813,9 @@ static ssize_t hardreset_store(struct device *dev,
 static ssize_t bcrm_dump_show(struct device *dev,
 							  struct device_attribute *attr, char *buf)
 {
-	// struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
-	ssize_t ret = 0;
-
 	bcrm_dump(to_i2c_client(dev));
 
-	return ret;
+	return 0;
 }
 
 static DEVICE_ATTR_RO(availability);
@@ -2022,7 +1982,7 @@ static int lockup_media_bus_fmt(struct avt3_dev *sensor, u32 mbus_code)
 
 void set_mode_mapping(struct avt_csi_mipi_mode_mapping *pfmt,
 					  u32 mbus_code, u16 mipi_fmt, u32 colorspace,
-					  u32 fourcc, /* v4l2 format id */
+					  u32 fourcc,
 					  enum bayer_format bayer_pattern, const char *name)
 {
 	pfmt->mbus_code = mbus_code;
@@ -2106,7 +2066,6 @@ static int avt3_init_avail_formats(struct v4l2_subdev *sd)
 			sensor->avail_mipi_reg.avail_mipi.raw14_avail,
 			sensor->avail_mipi_reg.avail_mipi.jpeg_avail);
 
-	// sensor->available_fmts = kmalloc(sizeof(avt_mbus_formats[0]) * ARRAY_SIZE(avt_mbus_formats), GFP_KERNEL);
 	sensor->available_fmts = kmalloc(sizeof(sensor->available_fmts[0]) * AVT3_MAX_FORMAT_ENTRIES, GFP_KERNEL);
 
 	if (!sensor->available_fmts)
@@ -2126,9 +2085,9 @@ static int avt3_init_avail_formats(struct v4l2_subdev *sd)
 
   #define add_format_gen(avail_field_name, mbus_code, mipi_fmt, colorspace, fourcc, bayer_pattern) \
     if(sensor->avail_mipi_reg.avail_mipi.avail_field_name && !sensor->ignore_avail_mipi_reg.avail_mipi.avail_field_name) { \
-      adev_info(&client->dev, "add " #mbus_code "/" #fourcc "/" #mipi_fmt " to list of available formats %d - %d:%d", bayer_pattern, \
+      adev_info(&client->dev, "add MEDIA_BUS_FMT_" #mbus_code "/V4L2_PIX_FMT_" #fourcc "/MIPI_CSI2_DT_" #mipi_fmt " to list of available formats %d - %d:%d", bayer_pattern, \
                 sensor->avail_mipi_reg.avail_mipi.avail_field_name, sensor->ignore_avail_mipi_reg.avail_mipi.avail_field_name); \
-      add_format_unconditional(mbus_code, mipi_fmt, colorspace, fourcc, bayer_pattern); \
+      add_format_unconditional(MEDIA_BUS_FMT_ ## mbus_code, MIPI_CSI2_DT_ ## mipi_fmt, colorspace, V4L2_PIX_FMT_ ## fourcc, bayer_pattern); \
     }
 
   #define add_format_srgb(avail_field_name, mbus_code, mipi_fmt, fourcc) \
@@ -2140,47 +2099,47 @@ static int avt3_init_avail_formats(struct v4l2_subdev *sd)
     }
 
   // YUV formats
-  add_format_srgb(yuv422_8_avail,  MEDIA_BUS_FMT_UYVY8_2X8,   MIPI_CSI2_DT_YUV422_8B, V4L2_PIX_FMT_UYVY);
-  add_format_srgb(yuv422_8_avail,  MEDIA_BUS_FMT_UYVY8_1X16,  MIPI_CSI2_DT_YUV422_8B, V4L2_PIX_FMT_UYVY);
-  add_format_srgb(yuv422_8_avail,  MEDIA_BUS_FMT_YUYV8_1X16,  MIPI_CSI2_DT_YUV422_8B, V4L2_PIX_FMT_YUV422P);
-  add_format_srgb(yuv422_8_avail,  MEDIA_BUS_FMT_YUYV8_2X8,   MIPI_CSI2_DT_YUV422_8B, V4L2_PIX_FMT_YUYV);
-  add_format_srgb(yuv422_8_avail,  MEDIA_BUS_FMT_VYUY8_2X8,   MIPI_CSI2_DT_YUV422_8B, V4L2_PIX_FMT_VYUY);
+  add_format_srgb(yuv422_8_avail,  UYVY8_2X8,   YUV422_8B, UYVY);
+  add_format_srgb(yuv422_8_avail,  UYVY8_1X16,  YUV422_8B, UYVY);
+  add_format_srgb(yuv422_8_avail,  YUYV8_1X16,  YUV422_8B, YUV422P);
+  add_format_srgb(yuv422_8_avail,  YUYV8_2X8,   YUV422_8B, YUYV);
+  add_format_srgb(yuv422_8_avail,  VYUY8_2X8,   YUV422_8B, VYUY);
 
-  add_format_srgb(yuv422_10_avail, MEDIA_BUS_FMT_YUYV10_1X20, MIPI_CSI2_DT_YUV422_8B, V4L2_PIX_FMT_YUV410);
+  add_format_srgb(yuv422_10_avail, YUYV10_1X20, YUV422_8B, YUV410);
 
   // RGB formats
-  add_format_srgb(rgb888_avail,    MEDIA_BUS_FMT_RGB888_1X24, MIPI_CSI2_DT_RGB888,    V4L2_PIX_FMT_RGB24);
-  add_format_srgb(rgb888_avail,    MEDIA_BUS_FMT_RBG888_1X24, MIPI_CSI2_DT_RGB888,    V4L2_PIX_FMT_RGB24);
-  add_format_srgb(rgb888_avail,    MEDIA_BUS_FMT_BGR888_1X24, MIPI_CSI2_DT_RGB888,    V4L2_PIX_FMT_RGB24);
-  add_format_srgb(rgb888_avail,    MEDIA_BUS_FMT_RGB888_3X8,  MIPI_CSI2_DT_RGB888,    V4L2_PIX_FMT_RGB24);
+  add_format_srgb(rgb888_avail,    RGB888_1X24, RGB888,    RGB24);
+  add_format_srgb(rgb888_avail,    RBG888_1X24, RGB888,    RGB24);
+  add_format_srgb(rgb888_avail,    BGR888_1X24, RGB888,    RGB24);
+  add_format_srgb(rgb888_avail,    RGB888_3X8,  RGB888,    RGB24);
 
   // 8 bit raw formats (mono / bayer)
-  add_format_raw(monochrome_avail, raw8_avail,  MEDIA_BUS_FMT_Y8_1X8,       MIPI_CSI2_DT_RAW8,  V4L2_PIX_FMT_GREY,    monochrome);
-  add_format_raw(bayer_GR_avail,   raw8_avail,  MEDIA_BUS_FMT_SGRBG8_1X8,   MIPI_CSI2_DT_RAW8,  V4L2_PIX_FMT_SGRBG8,  bayer_gr);
-  add_format_raw(bayer_RG_avail,   raw8_avail,  MEDIA_BUS_FMT_SRGGB8_1X8,   MIPI_CSI2_DT_RAW8,  V4L2_PIX_FMT_SRGGB8,  bayer_rg);
-  add_format_raw(bayer_BG_avail,   raw8_avail,  MEDIA_BUS_FMT_SBGGR8_1X8,   MIPI_CSI2_DT_RAW8,  V4L2_PIX_FMT_SBGGR8,  bayer_bg);
-  add_format_raw(bayer_GB_avail,   raw8_avail,  MEDIA_BUS_FMT_SGBRG8_1X8,   MIPI_CSI2_DT_RAW8,  V4L2_PIX_FMT_SGBRG8,  bayer_gb);
+  add_format_raw(monochrome_avail, raw8_avail,  Y8_1X8,       RAW8,  GREY,    monochrome);
+  add_format_raw(bayer_GR_avail,   raw8_avail,  SGRBG8_1X8,   RAW8,  SGRBG8,  bayer_gr);
+  add_format_raw(bayer_RG_avail,   raw8_avail,  SRGGB8_1X8,   RAW8,  SRGGB8,  bayer_rg);
+  add_format_raw(bayer_BG_avail,   raw8_avail,  SBGGR8_1X8,   RAW8,  SBGGR8,  bayer_bg);
+  add_format_raw(bayer_GB_avail,   raw8_avail,  SGBRG8_1X8,   RAW8,  SGBRG8,  bayer_gb);
 
   // 10 bit raw formats (mono / bayer)
-  add_format_raw(monochrome_avail, raw10_avail, MEDIA_BUS_FMT_Y10_1X10,     MIPI_CSI2_DT_RAW10, V4L2_PIX_FMT_Y10,     monochrome);
-  add_format_raw(bayer_GR_avail,   raw10_avail, MEDIA_BUS_FMT_SGRBG10_1X10, MIPI_CSI2_DT_RAW10, V4L2_PIX_FMT_SGRBG10, bayer_gr);
-  add_format_raw(bayer_RG_avail,   raw10_avail, MEDIA_BUS_FMT_SRGGB10_1X10, MIPI_CSI2_DT_RAW10, V4L2_PIX_FMT_SRGGB10, bayer_rg);
-  add_format_raw(bayer_BG_avail,   raw10_avail, MEDIA_BUS_FMT_SBGGR10_1X10, MIPI_CSI2_DT_RAW10, V4L2_PIX_FMT_SGRBG10, bayer_bg);
-  add_format_raw(bayer_GB_avail,   raw10_avail, MEDIA_BUS_FMT_SGBRG10_1X10, MIPI_CSI2_DT_RAW10, V4L2_PIX_FMT_SGBRG10, bayer_gb);
+  add_format_raw(monochrome_avail, raw10_avail, Y10_1X10,     RAW10, Y10,     monochrome);
+  add_format_raw(bayer_GR_avail,   raw10_avail, SGRBG10_1X10, RAW10, SGRBG10, bayer_gr);
+  add_format_raw(bayer_RG_avail,   raw10_avail, SRGGB10_1X10, RAW10, SRGGB10, bayer_rg);
+  add_format_raw(bayer_BG_avail,   raw10_avail, SBGGR10_1X10, RAW10, SGRBG10, bayer_bg);
+  add_format_raw(bayer_GB_avail,   raw10_avail, SGBRG10_1X10, RAW10, SGBRG10, bayer_gb);
 
   // 12 bit raw formats (mono / bayer)
-  add_format_raw(monochrome_avail, raw12_avail, MEDIA_BUS_FMT_Y12_1X12,     MIPI_CSI2_DT_RAW12, V4L2_PIX_FMT_Y12,     monochrome);
-  add_format_raw(bayer_GR_avail,   raw12_avail, MEDIA_BUS_FMT_SGRBG12_1X12, MIPI_CSI2_DT_RAW12, V4L2_PIX_FMT_SGRBG12, bayer_gr);
-  add_format_raw(bayer_RG_avail,   raw12_avail, MEDIA_BUS_FMT_SRGGB12_1X12, MIPI_CSI2_DT_RAW12, V4L2_PIX_FMT_SRGGB12, bayer_rg);
-  add_format_raw(bayer_BG_avail,   raw12_avail, MEDIA_BUS_FMT_SBGGR12_1X12, MIPI_CSI2_DT_RAW12, V4L2_PIX_FMT_SGRBG12, bayer_bg);
-  add_format_raw(bayer_GB_avail,   raw12_avail, MEDIA_BUS_FMT_SGBRG12_1X12, MIPI_CSI2_DT_RAW12, V4L2_PIX_FMT_SGBRG12, bayer_gb);
+  add_format_raw(monochrome_avail, raw12_avail, Y12_1X12,     RAW12, Y12,     monochrome);
+  add_format_raw(bayer_GR_avail,   raw12_avail, SGRBG12_1X12, RAW12, SGRBG12, bayer_gr);
+  add_format_raw(bayer_RG_avail,   raw12_avail, SRGGB12_1X12, RAW12, SRGGB12, bayer_rg);
+  add_format_raw(bayer_BG_avail,   raw12_avail, SBGGR12_1X12, RAW12, SGRBG12, bayer_bg);
+  add_format_raw(bayer_GB_avail,   raw12_avail, SGBRG12_1X12, RAW12, SGBRG12, bayer_gb);
 
   // 14 bit raw formats (mono / bayer)
-  add_format_raw(monochrome_avail, raw14_avail, MEDIA_BUS_FMT_Y14_1X14,     MIPI_CSI2_DT_RAW14, V4L2_PIX_FMT_Y14,     monochrome);
-  add_format_raw(bayer_GR_avail,   raw14_avail, MEDIA_BUS_FMT_SGRBG14_1X14, MIPI_CSI2_DT_RAW14, V4L2_PIX_FMT_SGRBG14, bayer_gr);
-  add_format_raw(bayer_RG_avail,   raw14_avail, MEDIA_BUS_FMT_SRGGB14_1X14, MIPI_CSI2_DT_RAW14, V4L2_PIX_FMT_SRGGB14, bayer_rg);
-  add_format_raw(bayer_BG_avail,   raw14_avail, MEDIA_BUS_FMT_SBGGR14_1X14, MIPI_CSI2_DT_RAW14, V4L2_PIX_FMT_SGRBG14, bayer_bg);
-  add_format_raw(bayer_GB_avail,   raw14_avail, MEDIA_BUS_FMT_SGBRG14_1X14, MIPI_CSI2_DT_RAW14, V4L2_PIX_FMT_SGBRG14, bayer_gb);
+  add_format_raw(monochrome_avail, raw14_avail, Y14_1X14,     RAW14, Y14,     monochrome);
+  add_format_raw(bayer_GR_avail,   raw14_avail, SGRBG14_1X14, RAW14, SGRBG14, bayer_gr);
+  add_format_raw(bayer_RG_avail,   raw14_avail, SRGGB14_1X14, RAW14, SRGGB14, bayer_rg);
+  add_format_raw(bayer_BG_avail,   raw14_avail, SBGGR14_1X14, RAW14, SGRBG14, bayer_bg);
+  add_format_raw(bayer_GB_avail,   raw14_avail, SGBRG14_1X14, RAW14, SGBRG14, bayer_gb);
 
   // GenICam
 	add_format_unconditional(MEDIA_BUS_FMT_CUSTOM, 0x31, V4L2_COLORSPACE_DEFAULT, V4L2_PIX_FMT_CUSTOM, bayer_ignore);
@@ -2196,31 +2155,6 @@ static int avt3_init_avail_formats(struct v4l2_subdev *sd)
 
 	return sensor->available_fmts_cnt;
 }
-
-#if 0
-static const struct avt3_mode_info *
-avt3_find_mode(struct avt3_dev *sensor, enum avt3_frame_rate fr,
-			   int width, int height, bool nearest)
-{
-	const struct avt3_mode_info *mode;
-	// int	i;
-
-	avt_dbg(&sensor->sd, "width %d, height %d, framerate[%d] %d [ToDo: replace that code]",
-			width, height, fr, avt3_framerates[fr]);
-// ToDo: instead of using the table it should be checked if it fits to the camera capabilities
-// than variable mode and the avt3_mode_data can be removed
-
-	mode = v4l2_find_nearest_size(avt3_mode_data,
-								  ARRAY_SIZE(avt3_mode_data),
-								  hact, vact,
-								  width, height);
-
-	if (!mode)
-		return NULL;
-
-	return mode;
-}
-#endif
 
 /* hard reset depends on gpio-pins, needs to be completed on
    suitable board instead of imx8mp-evk */
@@ -2408,15 +2342,11 @@ out:
 
 static void avt3_dphy_reset(struct avt3_dev *sensor, bool bResetPhy)
 {
-	// struct v4l2_ext_control vc;
 	struct i2c_client *client = sensor->i2c_client;
 	int ret;
 	int ival = bResetPhy;
 
-	dev_info(&client->dev, "%s[%d]",
-			 __func__, __LINE__);
-
-	//	MUTEX_LOCK(&sensor->lock);
+	dev_info(&client->dev, "%s[%d]", __func__, __LINE__);
 
 	ret = regmap_write(sensor->regmap32,
 					   sensor->cci_reg.reg.bcrm_addr + BCRM_PHY_RESET_8RW,
@@ -2431,7 +2361,6 @@ static void avt3_dphy_reset(struct avt3_dev *sensor, bool bResetPhy)
 
 out:
 	sensor->pending_dphyreset_request = 0;
-	//	MUTEX_UNLOCK(&sensor->lock);
 }
 
 /* --------------- Subdev Operations --------------- */
@@ -2622,7 +2551,7 @@ static int avt3_try_fmt_internal(struct v4l2_subdev *sd,
 	fmt->colorspace = sensor->available_fmts[i].colorspace;
 	fmt->ycbcr_enc = V4L2_MAP_YCBCR_ENC_DEFAULT(fmt->colorspace);
 	fmt->quantization = V4L2_QUANTIZATION_FULL_RANGE;
-	fmt->xfer_func = V4L2_XFER_FUNC_DEFAULT;//V4L2_MAP_XFER_FUNC_DEFAULT(fmt->colorspace);
+	fmt->xfer_func = V4L2_XFER_FUNC_DEFAULT;
 
 	return 0;
 }
@@ -2747,10 +2676,7 @@ static int avt3_pad_ops_set_fmt(struct v4l2_subdev *sd,
 	*fmt = *mbus_fmt;
 
 	if(pending_fmt_change && mbus_fmt->code != MEDIA_BUS_FMT_CUSTOM) {
-		struct avt_ctrl ct;
-		ct.id = V4L2_AV_CSI2_PIXELFORMAT_W;
-		ct.value0 = sensor->mbus_framefmt.code;
-		ret = avt3_ctrl_send(sensor->i2c_client, &ct);
+		ret = avt3_ctrl_write(sensor->i2c_client, V4L2_AV_CSI2_PIXELFORMAT, sensor->mbus_framefmt.code);
 
 		if(ret < 0) {
 			avt_err(sd, "Failed setting pixel format in camera: %d", ret);
@@ -2766,7 +2692,7 @@ out:
 	return ret;
 }
 
-static int avt3_ctrl_send(struct i2c_client *client, struct avt_ctrl *vc)
+static int avt3_ctrl_write(struct i2c_client *client, enum avt_ctrl ctrl_id, __u32 value)
 {
 	struct avt3_dev *sensor = client_to_avt3_dev(client);
 	int ret = 0;
@@ -2774,96 +2700,88 @@ static int avt3_ctrl_send(struct i2c_client *client, struct avt_ctrl *vc)
 	int length = 0;
 	int fmtidx;
 
-	int r_wn = 0; /* write -> r_wn = 0, read -> r_wn = 1 */
 	__u8 bayer_temp = 0;
 
-	avt_dbg(&sensor->sd, "switch (vc->id) %x ", vc->id);
+	avt_dbg(&sensor->sd, "switch (ctrl_id) %x ", ctrl_id);
 
-	switch (vc->id)
+	switch (ctrl_id)
 	{
 
-	case V4L2_AV_CSI2_STREAMON_W: {
-		unsigned int	acquisition_state;
+	case V4L2_AV_CSI2_STREAMON:
+    {
+      unsigned int	acquisition_state;
 
-		ret = regmap_read(sensor->regmap8,
-						BCRM_ACQUISITION_STOP_8RW, &acquisition_state);
-		if (0 != acquisition_state) {
-			adev_info(&client->dev, 
-				"V4L2_AV_CSI2_STREAMON_W called but cam is streaming already. acquisition_state %d, sensor->is_streaming %d",
-				acquisition_state, sensor->is_streaming);
-			dump_stack();
-			return -EINVAL;
-		}
-	}
+      ret = regmap_read(sensor->regmap8,
+              BCRM_ACQUISITION_STOP_8RW, &acquisition_state);
+      if (0 != acquisition_state) {
+        adev_info(&client->dev, 
+          "V4L2_AV_CSI2_STREAMON called but cam is streaming already. acquisition_state %d, sensor->is_streaming %d",
+          acquisition_state, sensor->is_streaming);
+        dump_stack();
+        return -EINVAL;
+      }
+	  }
 
-		avt_dbg(&sensor->sd, "V4L2_AV_CSI2_STREAMON_W %d", vc->value0);
+		avt_dbg(&sensor->sd, "V4L2_AV_CSI2_STREAMON %d", value);
 		reg = BCRM_ACQUISITION_START_8RW;
 		length = AV_CAM_DATA_SIZE_8;
 		break;
 
-	case V4L2_AV_CSI2_STREAMOFF_W:
-		avt_dbg(&sensor->sd, "V4L2_AV_CSI2_STREAMOFF_W %d", vc->value0);
+	case V4L2_AV_CSI2_STREAMOFF:
+		avt_dbg(&sensor->sd, "V4L2_AV_CSI2_STREAMOFF %d", value);
 		reg = BCRM_ACQUISITION_STOP_8RW;
 		length = AV_CAM_DATA_SIZE_8;
 		break;
 
-	case V4L2_AV_CSI2_ABORT_W:
-		avt_dbg(&sensor->sd, "V4L2_AV_CSI2_ABORT_W ");
+	case V4L2_AV_CSI2_ABORT:
+		avt_dbg(&sensor->sd, "V4L2_AV_CSI2_ABORT %d", value);
 		reg = BCRM_ACQUISITION_ABORT_8RW;
 		length = AV_CAM_DATA_SIZE_8;
 		break;
 
-	case V4L2_AV_CSI2_WIDTH_W:
-		avt_dbg(&sensor->sd, "V4L2_AV_CSI2_WIDTH_W %d", vc->value0);
+	case V4L2_AV_CSI2_WIDTH:
+		avt_dbg(&sensor->sd, "V4L2_AV_CSI2_WIDTH %d", value);
 		reg = BCRM_IMG_WIDTH_32RW;
 		length = AV_CAM_DATA_SIZE_32;
 		break;
-	case V4L2_AV_CSI2_HEIGHT_W:
-		avt_dbg(&sensor->sd, "V4L2_AV_CSI2_HEIGHT_W %d", vc->value0);
+	case V4L2_AV_CSI2_HEIGHT:
+		avt_dbg(&sensor->sd, "V4L2_AV_CSI2_HEIGHT %d", value);
 		reg = BCRM_IMG_HEIGHT_32RW;
 		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 0;
 		break;
-	case V4L2_AV_CSI2_OFFSET_X_W:
-		avt_dbg(&sensor->sd, "V4L2_AV_CSI2_OFFSET_X_W %d", vc->value0);
+	case V4L2_AV_CSI2_OFFSET_X:
+		avt_dbg(&sensor->sd, "V4L2_AV_CSI2_OFFSET_X %d", value);
 		reg = BCRM_IMG_OFFSET_X_32RW;
 		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 0;
 		break;
-	case V4L2_AV_CSI2_OFFSET_Y_W:
-		avt_dbg(&sensor->sd, "V4L2_AV_CSI2_OFFSET_Y_W %d", vc->value0);
+	case V4L2_AV_CSI2_OFFSET_Y:
+		avt_dbg(&sensor->sd, "V4L2_AV_CSI2_OFFSET_Y %d", value);
 		reg = BCRM_IMG_OFFSET_Y_32RW;
 		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 0;
 		break;
-	case V4L2_AV_CSI2_HFLIP_W:
-		avt_dbg(&sensor->sd, "V4L2_AV_CSI2_HFLIP_W %d", vc->value0);
+	case V4L2_AV_CSI2_HFLIP:
+		avt_dbg(&sensor->sd, "V4L2_AV_CSI2_HFLIP %d", value);
 		reg = BCRM_IMG_REVERSE_X_8RW;
 		length = AV_CAM_DATA_SIZE_8;
-		r_wn = 0;
 		break;
-	case V4L2_AV_CSI2_VFLIP_W:
-		avt_dbg(&sensor->sd, "V4L2_AV_CSI2_VFLIP_W %d", vc->value0);
+	case V4L2_AV_CSI2_VFLIP:
+		avt_dbg(&sensor->sd, "V4L2_AV_CSI2_VFLIP %d", value);
 		reg = BCRM_IMG_REVERSE_Y_8RW;
 		length = AV_CAM_DATA_SIZE_8;
-		r_wn = 0;
 		break;
 
-	case V4L2_AV_CSI2_PIXELFORMAT_W:
-		avt_dbg(&sensor->sd, "V4L2_AV_CSI2_PIXELFORMAT_W %d 0x%04X", vc->value0, vc->value0);
+	case V4L2_AV_CSI2_PIXELFORMAT:
+		avt_dbg(&sensor->sd, "V4L2_AV_CSI2_PIXELFORMAT %d 0x%04X", value, value);
 		reg = BCRM_IMG_MIPI_DATA_FORMAT_32RW;
 		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 0;
-		avt_dbg(&sensor->sd, "switch (vc->id) %d V4L2_AV_CSI2_PIXELFORMAT_W %d 0x%04X",
-				vc->id, vc->value0, vc->value0);
 
-		fmtidx = lockup_media_bus_fmt(sensor, vc->value0);
+		fmtidx = lockup_media_bus_fmt(sensor, value);
 
 		if (fmtidx == -EINVAL || fmtidx >= sensor->available_fmts_cnt)
 		{
-			adev_info(&client->dev, "not supported by the host, lockup_media_bus_fmt returned fmtidx %d for V4L2_AV_CSI2_PIXELFORMAT_W %d 0x%04X",
+			adev_info(&client->dev, "not supported by the host, lockup_media_bus_fmt returned fmtidx %d for V4L2_AV_CSI2_PIXELFORMAT %d 0x%04X",
 					  fmtidx,
-					  vc->value0, vc->value0);
+					  value, value);
 			dump_stack();
 			return -EINVAL;
 		}
@@ -2877,176 +2795,14 @@ static int avt3_ctrl_send(struct i2c_client *client, struct avt_ctrl *vc)
 				  sensor->available_fmts[fmtidx].mipi_fmt,
 				  sensor->available_fmts[fmtidx].bayer_pattern);
 
-		vc->value0 = sensor->available_fmts[fmtidx].mipi_fmt;
+		value = sensor->available_fmts[fmtidx].mipi_fmt;
 		bayer_temp = sensor->available_fmts[fmtidx].bayer_pattern;
 		break;
 
-	case V4L2_AV_CSI2_WIDTH_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_WIDTH_R ", __func__, __LINE__);
-		reg = BCRM_IMG_WIDTH_32RW;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_WIDTH_MINVAL_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_WIDTH_MINVAL_R ", __func__, __LINE__);
-		reg = BCRM_IMG_WIDTH_MIN_32R;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_WIDTH_MAXVAL_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_WIDTH_MAXVAL_R ", __func__, __LINE__);
-		reg = BCRM_IMG_WIDTH_MAX_32R;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_WIDTH_INCVAL_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_WIDTH_INCVAL_R ", __func__, __LINE__);
-		reg = BCRM_IMG_WIDTH_INC_32R;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_HEIGHT_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_HEIGHT_R ", __func__, __LINE__);
-		reg = BCRM_IMG_HEIGHT_32RW;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_HEIGHT_MINVAL_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_HEIGHT_MINVAL_R ", __func__, __LINE__);
-		reg = BCRM_IMG_HEIGHT_MIN_32R;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_HEIGHT_MAXVAL_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_HEIGHT_MAXVAL_R ", __func__, __LINE__);
-		reg = BCRM_IMG_HEIGHT_MAX_32R;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_HEIGHT_INCVAL_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_HEIGHT_INCVAL_R ", __func__, __LINE__);
-		reg = BCRM_IMG_HEIGHT_INC_32R;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_OFFSET_X_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_OFFSET_X_R ", __func__, __LINE__);
-		reg = BCRM_IMG_OFFSET_X_32RW;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_OFFSET_X_MIN_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_OFFSET_X_MIN_R ", __func__, __LINE__);
-		reg = BCRM_IMG_OFFSET_X_MIN_32R;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_OFFSET_X_MAX_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_OFFSET_X_MAX_R ", __func__, __LINE__);
-		reg = BCRM_IMG_OFFSET_X_MAX_32R;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_OFFSET_X_INC_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_OFFSET_X_INC_R ", __func__, __LINE__);
-		reg = BCRM_IMG_OFFSET_X_INC_32R;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_OFFSET_Y_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_OFFSET_Y_R ", __func__, __LINE__);
-		reg = BCRM_IMG_OFFSET_Y_32RW;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_OFFSET_Y_MIN_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_OFFSET_Y_MIN_R ", __func__, __LINE__);
-		reg = BCRM_IMG_OFFSET_Y_MIN_32R;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_OFFSET_Y_MAX_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_OFFSET_Y_MAX_R ", __func__, __LINE__);
-		reg = BCRM_IMG_OFFSET_Y_MAX_32R;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_OFFSET_Y_INC_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_OFFSET_Y_INC_R ", __func__, __LINE__);
-		reg = BCRM_IMG_OFFSET_Y_INC_32R;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_SENSOR_WIDTH_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_SENSOR_WIDTH_R ", __func__, __LINE__);
-		reg = BCRM_SENSOR_WIDTH_32R;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_SENSOR_HEIGHT_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_SENSOR_HEIGHT_R ", __func__, __LINE__);
-		reg = BCRM_SENSOR_HEIGHT_32R;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_MAX_WIDTH_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_MAX_WIDTH_R ", __func__, __LINE__);
-		reg = BCRM_WIDTH_MAX_32R;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_MAX_HEIGHT_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_MAX_HEIGHT_R ", __func__, __LINE__);
-		reg = BCRM_HEIGHT_MAX_32R;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_PIXELFORMAT_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_PIXELFORMAT_R ", __func__, __LINE__);
-		reg = BCRM_IMG_MIPI_DATA_FORMAT_32RW;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_PAYLOADSIZE_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_PAYLOADSIZE_R ", __func__, __LINE__);
-		reg = BCRM_BUFFER_SIZE_32R;
-		length = AV_CAM_DATA_SIZE_32;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_ACQ_STATUS_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_ACQ_STATUS_R ", __func__, __LINE__);
-		reg = BCRM_ACQUISITION_STATUS_8R;
-		length = AV_CAM_DATA_SIZE_8;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_HFLIP_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_HFLIP_R ", __func__, __LINE__);
-		reg = BCRM_IMG_REVERSE_X_8RW;
-		length = AV_CAM_DATA_SIZE_8;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_VFLIP_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_VFLIP_R ", __func__, __LINE__);
-		reg = BCRM_IMG_REVERSE_Y_8RW;
-		length = AV_CAM_DATA_SIZE_8;
-		r_wn = 1;
-		break;
-	case V4L2_AV_CSI2_CURRENTMODE_R:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_CURRENTMODE_R ", __func__, __LINE__);
-		ret = regmap_read(sensor->regmap8,
-						  GENCP_CURRENTMODE_8R, &vc->value0);
-		if (ret < 0)
-		{
-			dev_err(&client->dev, "%s[%d]: Failed to get mode: regmap_read on GENCP_CURRENTMODE_8R failed (%d)\n",
-					__func__, __LINE__, ret);
-			return ret;
-		}
-		return ret;
+	case V4L2_AV_CSI2_CHANGEMODE:
+		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_CHANGEMODE ", __func__, __LINE__);
 
-	case V4L2_AV_CSI2_CHANGEMODE_W:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_CHANGEMODE_W ", __func__, __LINE__);
-
-		if (vc->value0 == 1)
+		if (value == 1)
 		{
 			ret = avt3_set_gencp(client);
 		}
@@ -3057,578 +2813,205 @@ static int avt3_ctrl_send(struct i2c_client *client, struct avt_ctrl *vc)
 		return ret;
 
 	default:
-		dev_err(&client->dev, "%s[%d]: unknown ctrl 0x%x\n", __func__, __LINE__, vc->id);
+		dev_err(&client->dev, "%s[%d]: unknown ctrl 0x%x\n", __func__, __LINE__, ctrl_id);
 		return -EINVAL;
 	}
 
-	if (r_wn)
-	{ /* read (r_wn=1) */
+  avt_dbg(&sensor->sd, "reg %x, length %d, vc->value0 0x%x\n", reg, length, value);
 
-		switch (length)
-		{
-		case AV_CAM_DATA_SIZE_8:
-			ret = regmap_read(sensor->regmap8,
-							  sensor->cci_reg.reg.bcrm_addr + reg, &vc->value0);
-			break;
-		case AV_CAM_DATA_SIZE_16:
-			ret = regmap_read(sensor->regmap16,
-							  sensor->cci_reg.reg.bcrm_addr + reg, &vc->value0);
-			break;
-		case AV_CAM_DATA_SIZE_32:
-			ret = regmap_read(sensor->regmap32,
-							  sensor->cci_reg.reg.bcrm_addr + reg, &vc->value0);
-			break;
-		case AV_CAM_DATA_SIZE_64:
-			ret = regmap_bulk_read(sensor->regmap64,
-								   sensor->cci_reg.reg.bcrm_addr + reg, &vc->value0, 1);
-			break;
-		default:
-			dev_err(&client->dev, "%s[%d]: unknown length %d\n", __func__, __LINE__, length);
-		}
+  switch (length)
+  {
+  case AV_CAM_DATA_SIZE_8:
+    ret = bcrm_regmap_write(sensor, sensor->regmap8,
+                sensor->cci_reg.reg.bcrm_addr + reg, value);
+    break;
+  case AV_CAM_DATA_SIZE_16:
+    ret = bcrm_regmap_write(sensor, sensor->regmap16,
+                sensor->cci_reg.reg.bcrm_addr + reg, value);
+    break;
+  case AV_CAM_DATA_SIZE_32:
+    ret = bcrm_regmap_write(sensor, sensor->regmap32,
+                sensor->cci_reg.reg.bcrm_addr + reg, value);
+    break;
+  default:
+    dev_err(&client->dev, "%s[%d]: unknown length %d\n", __func__, __LINE__, length);
+  }
 
-		if (ret < 0)
-		{
-			dev_err(&client->dev, "%s[%d]: regmap_read at 0x%04x failed with %d\n",
-					__func__, __LINE__, sensor->cci_reg.reg.bcrm_addr + reg, ret);
-			return ret;
-		}
+  if (ret < 0)
+  {
+    dev_err(&client->dev, "%s[%d]: bcrm_regmap_write failed\n",
+        __func__, __LINE__);
+    return ret;
+  }
 
-		if (vc->id == V4L2_AV_CSI2_PIXELFORMAT_R)
-		{
-			// TODO: Check correct mbus_format_value
-			vc->value0 = sensor->mbus_fmt_code;
-			dev_info(&client->dev,
-					 "%s[%d]: V4L2_AV_CSI2_PIXELFORMAT_R TODO: Check correct mbus_format_value "
-					 "vc->value0 0x%04X == sensor->mbus_fmt_code 0x%04X\n",
-					 __func__, __LINE__, vc->value0, sensor->mbus_fmt_code);
-		}
-		return 0;
-	}
-	else
-	{ /* write (r_wn=0) */
-		avt_dbg(&sensor->sd, "reg %x, length %d, vc->value0 0x%x\n", reg, length, vc->value0);
+  /* set pixelformat followed by set matching bayer format */
+  if (ctrl_id == V4L2_AV_CSI2_PIXELFORMAT && bayer_temp != bayer_ignore)
+  {
+    ret = set_bayer_format(client, bayer_temp);
+    if (ret < 0)
+    {
+      dev_err(&client->dev, "%s[%d]: bcrm_regmap_write failed, ret %d\n",
+          __func__, __LINE__, ret);
+      return ret;
+    }
+  }
 
-		switch (length)
-		{
-		case AV_CAM_DATA_SIZE_8:
-			ret = bcrm_regmap_write(sensor, sensor->regmap8,
-									sensor->cci_reg.reg.bcrm_addr + reg, vc->value0);
-			break;
-		case AV_CAM_DATA_SIZE_16:
-			ret = bcrm_regmap_write(sensor, sensor->regmap16,
-									sensor->cci_reg.reg.bcrm_addr + reg, vc->value0);
-			break;
-		case AV_CAM_DATA_SIZE_32:
-			ret = bcrm_regmap_write(sensor, sensor->regmap32,
-									sensor->cci_reg.reg.bcrm_addr + reg, vc->value0);
-			break;
-		case AV_CAM_DATA_SIZE_64:
-			ret = bcrm_regmap_write64(sensor, sensor->regmap64,
-									  sensor->cci_reg.reg.bcrm_addr + reg, vc->value64);
-			break;
-		default:
-			dev_err(&client->dev, "%s[%d]: unknown length %d\n", __func__, __LINE__, length);
-		}
-
-		if (ret < 0)
-		{
-			dev_err(&client->dev, "%s[%d]: bcrm_regmap_write failed\n",
-					__func__, __LINE__);
-			return ret;
-		}
-
-		/* set pixelformat followed by set matching bayer format */
-		if (vc->id == V4L2_AV_CSI2_PIXELFORMAT_W && bayer_temp != bayer_ignore)
-		{
-			ret = set_bayer_format(client, bayer_temp);
-			if (ret < 0)
-			{
-				dev_err(&client->dev, "%s[%d]: bcrm_regmap_write failed, ret %d\n",
-						__func__, __LINE__, ret);
-				return ret;
-			}
-		}
-
-		return 0;
-	}
+  return 0;
 }
 
-// V4L2_EXPOSURE_AUTO = 0,
-// V4L2_EXPOSURE_MANUAL = 1,
-// V4L2_EXPOSURE_SHUTTER_PRIORITY = 2,
-// V4L2_EXPOSURE_APERTURE_PRIORITY = 3
 
-//#define V4L2_CID_EXPOSURE		(V4L2_CID_BASE+17)
-//#define V4L2_CID_EXPOSURE_AUTO			(V4L2_CID_CAMERA_CLASS_BASE+1)
-//#define V4L2_CID_EXPOSURE_ABSOLUTE		(V4L2_CID_CAMERA_CLASS_BASE+2)
-//#define V4L2_CID_EXPOSURE_AUTO_PRIORITY		(V4L2_CID_CAMERA_CLASS_BASE+3)
-//#define V4L2_CID_AUTO_EXPOSURE_BIAS
 
 static int avt3_queryctrl(struct v4l2_subdev *sd,
-						  //		struct v4l2_queryctrl *qctrl,
 						  struct v4l2_query_ext_ctrl *qctrl)
 {
-	//	struct i2c_client *client = v4l2_get_subdevdata(sd);
 	struct avt3_dev *sensor = to_avt3_dev(sd);
 
 	int ret = 0;
-	s64 vals64;
-	s32 s32tmp;
 
 	avt_info(sd, "qctrl->id 0x%08X, qctrl->type %d - code should be rewritten",
 			 qctrl->id, qctrl->type);
 
+  #define handle_query_ctrl_integer(available, bits, cname, cid, reg_base)                             \
+    case V4L2_ ## cid:                                                                                 \
+    {                                                                                                  \
+      s ## bits tmp_min, tmp_max, tmp_inc, tmp_val;                                                    \
+                                                                                                       \
+      if (!available)                                                                                  \
+        return -EINVAL;                                                                                \
+                                                                                                       \
+      ret = regmap_bulk_read(sensor->regmap ## bits, sensor->cci_reg.reg.bcrm_addr + BCRM_ ## reg_base ## _MIN_ ##  bits ## R, &tmp_min, 1);    \
+      if(ret != 0)                                                                                     \
+        return ret;                                                                                    \
+                                                                                                       \
+      ret = regmap_bulk_read(sensor->regmap ## bits, sensor->cci_reg.reg.bcrm_addr + BCRM_ ## reg_base ## _MAX_ ##  bits ## R, &tmp_max, 1);    \
+      if(ret != 0)                                                                                     \
+        return ret;                                                                                    \
+                                                                                                       \
+      ret = regmap_bulk_read(sensor->regmap ## bits, sensor->cci_reg.reg.bcrm_addr + BCRM_ ## reg_base ## _INC_ ##  bits ## R, &tmp_inc, 1);    \
+      if(ret != 0)                                                                                     \
+        return ret;                                                                                    \
+                                                                                                       \
+      ret = regmap_bulk_read(sensor->regmap ## bits, sensor->cci_reg.reg.bcrm_addr + BCRM_ ## reg_base ## _ ##  bits ## RW, &tmp_val, 1);    \
+      if(ret != 0)                                                                                     \
+        return ret;                                                                                    \
+                                                                                                       \
+      qctrl->minimum = tmp_min;                                                                        \
+      qctrl->maximum = tmp_max;                                                                        \
+      qctrl->step = tmp_inc;                                                                           \
+      qctrl->default_value = tmp_val;                                                                  \
+                                                                                                       \
+      qctrl->flags = V4L2_CTRL_FLAG_SLIDER;                                                            \
+      qctrl->type = (bits == 32) ? V4L2_CTRL_TYPE_INTEGER : V4L2_CTRL_TYPE_INTEGER64;                  \
+      strcpy(qctrl->name, cname);                                                                      \
+                                                                                                       \
+      avt_info(sd, "qctrl->id 0x%08X, qctrl->type %d case V4L2_" #cid " [%lld, %lld]:%lld %lld",       \
+           qctrl->id, qctrl->type, qctrl->minimum, qctrl->maximum, qctrl->step, qctrl->default_value); \
+                                                                                                       \
+      return 0;                                                                                        \
+    }
+
+  #define handle_query_ctrl_integer_inquiry(inquiry_flag, bits, name, id, reg_base) \
+    handle_query_ctrl_integer(sensor->feature_inquiry_reg.feature_inq.inquiry_flag, bits, name, id, reg_base)
+
+  #define handle_query_ctrl_integer_always(bits, name, id, reg_base) \
+    handle_query_ctrl_integer(true, bits, name, id, reg_base)
+
+
+  #define handle_query_ctrl_bitmask(available, ctype, min, max, inc, def, cname, cid)                  \
+    case V4L2_ ## cid:                                                                                 \
+      if (!available)                                                                                  \
+        return -EINVAL;                                                                                \
+                                                                                                       \
+      qctrl->flags = 0;                                                                                \
+      qctrl->minimum = min;                                                                            \
+      qctrl->maximum = max;                                                                            \
+      qctrl->step = inc;                                                                               \
+      qctrl->default_value = def;                                                                      \
+      qctrl->type = V4L2_CTRL_TYPE_ ## ctype;                                                          \
+      strcpy(qctrl->name, cname);                                                                      \
+                                                                                                       \
+      avt_info(sd, "qctrl->id 0x%08X, qctrl->type %d case V4L2_" #cid " [%lld, %lld]:%lld %lld",       \
+           qctrl->id, qctrl->type, qctrl->minimum, qctrl->maximum, qctrl->step, qctrl->default_value); \
+                                                                                                       \
+      return 0;
+
+  #define handle_query_ctrl_bitmask_inquiry(inquiry_flag, type, min, max, inc, def, name, id) \
+    handle_query_ctrl_bitmask(sensor->feature_inquiry_reg.feature_inq.inquiry_flag, type, min, max, inc, def, name, id)
+
+  #define handle_query_ctrl_bitmask_always(type, min, max, inc, def, name, id) \
+    handle_query_ctrl_bitmask(true, type, min, max, inc, def, name, id)
+
+
 	switch (qctrl->id)
 	{
+    handle_query_ctrl_integer_always(64, "Exposure", CID_EXPOSURE, EXPOSURE_TIME)
+    handle_query_ctrl_integer_inquiry(black_level_avail,   32, "Brightness",   CID_BRIGHTNESS,   BLACK_LEVEL)
+    handle_query_ctrl_integer_inquiry(contrast_avail,      32, "Contrast",     CID_CONTRAST,     CONTRAST_VALUE)
+    handle_query_ctrl_integer_inquiry(hue_avail,           32, "Hue",          CID_HUE,          HUE)
+    handle_query_ctrl_integer_inquiry(saturation_avail,    32, "Saturation",   CID_SATURATION,   SATURATION)
+    handle_query_ctrl_integer_inquiry(white_balance_avail, 64, "Red Balance",  CID_RED_BALANCE,  RED_BALANCE_RATIO)
+    handle_query_ctrl_integer_inquiry(white_balance_avail, 64, "Blue Balance", CID_BLUE_BALANCE, BLUE_BALANCE_RATIO)
+    handle_query_ctrl_integer_inquiry(gain_avail,          64, "Gain",         CID_GAIN,         GAIN)
+    handle_query_ctrl_integer_inquiry(sharpness_avail,     32, "Sharpness",    CID_SHARPNESS,    SHARPNESS)
+    handle_query_ctrl_integer_inquiry(gamma_avail,         64, "Gamma",        CID_GAMMA,        GAMMA)
+    
+    handle_query_ctrl_bitmask_inquiry(white_balance_auto_avail, BITMASK, 0, 2, 1, 0, "Auto White Balance", CID_AUTO_WHITE_BALANCE)
+    handle_query_ctrl_bitmask_inquiry(gain_auto_avail,          BITMASK, 0, 2, 1, 0, "Auto Gain",          CID_AUTOGAIN)
+    handle_query_ctrl_bitmask_inquiry(white_balance_auto_avail, BITMASK, 0, 7, 1, 0, "Do White Balance",   CID_DO_WHITE_BALANCE)
+    handle_query_ctrl_bitmask_inquiry(exposure_auto_avail,      BITMASK, 0, 3, 1, 0, "Exposure Auto",      CID_EXPOSURE_AUTO)
+    handle_query_ctrl_bitmask_inquiry(reverse_x_avail,          BOOLEAN, 0, 1, 1, 0, "H-Flip",             CID_HFLIP)
+    handle_query_ctrl_bitmask_inquiry(reverse_y_avail,          BOOLEAN, 0, 1, 1, 0, "Y-Flip",             CID_VFLIP)
+    handle_query_ctrl_bitmask_always(BITMASK, 0, 0x0111, 0, 0, "3A Lock", CID_3A_LOCK)
 
-	/* BLACK LEVEL is deprecated and thus we use Brightness */
-	case V4L2_CID_BRIGHTNESS:
-		if (!sensor->feature_inquiry_reg.feature_inq.black_level_avail)
-			return -EINVAL;
-
-		ret = regmap_read(sensor->regmap32,
-						  sensor->cci_reg.reg.bcrm_addr + BCRM_BLACK_LEVEL_MIN_32R, &s32tmp);
-		qctrl->minimum = s32tmp;
-		ret = regmap_read(sensor->regmap32,
-						  sensor->cci_reg.reg.bcrm_addr + BCRM_BLACK_LEVEL_MAX_32R, &s32tmp);
-		qctrl->maximum = s32tmp;
-		ret = regmap_read(sensor->regmap32,
-						  sensor->cci_reg.reg.bcrm_addr + BCRM_BLACK_LEVEL_INC_32R, &s32tmp);
-		qctrl->step = s32tmp;
-#if 0
-		ret = regmap_read(sensor->regmap32,
-			sensor->cci_reg.reg.bcrm_addr + BCRM_BLACK_LEVEL_32RW,
-			&qctrl->default_value);
-#else
-		qctrl->default_value = qctrl->minimum + (qctrl->maximum - qctrl->minimum) / 2;
-#endif
-		qctrl->flags = V4L2_CTRL_FLAG_SLIDER;
-		qctrl->type = V4L2_CTRL_TYPE_INTEGER;
-		strcpy(qctrl->name, "Brightness");
-
-		avt_info(sd, "qctrl->id 0x%08X, qctrl->type %d case V4L2_CID_BRIGHTNESS [%lld, %lld]:%lld %lld",
-				 qctrl->id, qctrl->type, qctrl->minimum, qctrl->maximum, qctrl->step, qctrl->default_value);
-
-		ret = 0;
-		break;
-
-	case V4L2_CID_CONTRAST:
-		if (!sensor->feature_inquiry_reg.feature_inq.contrast_avail)
-			return -EINVAL;
-		ret = regmap_read(sensor->regmap32,
-						  sensor->cci_reg.reg.bcrm_addr + BCRM_CONTRAST_VALUE_MIN_32R, &s32tmp);
-		qctrl->minimum = s32tmp;
-		ret = regmap_read(sensor->regmap32,
-						  sensor->cci_reg.reg.bcrm_addr + BCRM_CONTRAST_VALUE_MAX_32R, &s32tmp);
-		qctrl->maximum = s32tmp;
-		ret = regmap_read(sensor->regmap32,
-						  sensor->cci_reg.reg.bcrm_addr + BCRM_CONTRAST_VALUE_INC_32R, &s32tmp);
-		qctrl->step = s32tmp;
-		ret = regmap_read(sensor->regmap32,
-						  sensor->cci_reg.reg.bcrm_addr + BCRM_CONTRAST_VALUE_32RW, &s32tmp);
-		qctrl->default_value = s32tmp;
-		qctrl->flags = V4L2_CTRL_FLAG_SLIDER;
-		qctrl->type = V4L2_CTRL_TYPE_INTEGER;
-		strcpy(qctrl->name, "Contrast");
-
-		avt_info(sd, "qctrl->id 0x%08X, qctrl->type %d case V4L2_CID_CONTRAST [%lld, %lld]:%lld %lld",
-				 qctrl->id, qctrl->type, qctrl->minimum, qctrl->maximum, qctrl->step, qctrl->default_value);
-		ret = 0;
-		break;
-
-	case V4L2_CID_HUE:
-		if (!sensor->feature_inquiry_reg.feature_inq.hue_avail)
-			return -EINVAL;
-		ret = regmap_read(sensor->regmap32,
-						  sensor->cci_reg.reg.bcrm_addr + BCRM_HUE_MIN_32R, &s32tmp);
-		qctrl->minimum = s32tmp;
-		ret = regmap_read(sensor->regmap32,
-						  sensor->cci_reg.reg.bcrm_addr + BCRM_HUE_MAX_32R, &s32tmp);
-		qctrl->maximum = s32tmp;
-		ret = regmap_read(sensor->regmap32,
-						  sensor->cci_reg.reg.bcrm_addr + BCRM_HUE_INC_32R, &s32tmp);
-		qctrl->step = s32tmp;
-		ret = regmap_read(sensor->regmap32,
-						  sensor->cci_reg.reg.bcrm_addr + BCRM_HUE_32RW,
-						  &s32tmp);
-		qctrl->default_value = s32tmp;
-
-		qctrl->flags = V4L2_CTRL_FLAG_SLIDER;
-		qctrl->type = V4L2_CTRL_TYPE_INTEGER;
-		strcpy(qctrl->name, "Hue");
-
-		avt_info(sd, "qctrl->id 0x%08X, qctrl->type %d case V4L2_CID_HUE [%lld, %lld]:%lld %lld",
-				 qctrl->id, qctrl->type, qctrl->minimum, qctrl->maximum, qctrl->step, qctrl->default_value);
-
-		ret = 0;
-		break;
-
-	case V4L2_CID_SATURATION:
-		if (!sensor->feature_inquiry_reg.feature_inq.saturation_avail)
-			return -EINVAL;
-		ret = regmap_read(sensor->regmap32,
-						  sensor->cci_reg.reg.bcrm_addr + BCRM_SATURATION_MIN_32R, &s32tmp);
-		qctrl->minimum = s32tmp;
-		ret = regmap_read(sensor->regmap32,
-						  sensor->cci_reg.reg.bcrm_addr + BCRM_SATURATION_MAX_32R, &s32tmp);
-		qctrl->maximum = s32tmp;
-		ret = regmap_read(sensor->regmap32,
-						  sensor->cci_reg.reg.bcrm_addr + BCRM_SATURATION_INC_32R, &s32tmp);
-		qctrl->step = s32tmp;
-
-		ret = regmap_read(sensor->regmap32,
-						  sensor->cci_reg.reg.bcrm_addr + BCRM_SATURATION_32RW, &s32tmp);
-		qctrl->default_value = s32tmp;
-
-		qctrl->default_value = qctrl->minimum + (qctrl->maximum - qctrl->minimum) / 2;
-		qctrl->flags = V4L2_CTRL_FLAG_SLIDER;
-		qctrl->type = V4L2_CTRL_TYPE_INTEGER;
-		strcpy(qctrl->name, "Saturation");
-
-		avt_info(sd, "qctrl->id 0x%08X, qctrl->type %d case V4L2_CID_SATURATION [%lld, %lld]:%lld %lld",
-				 qctrl->id, qctrl->type, qctrl->minimum, qctrl->maximum, qctrl->step, qctrl->default_value);
-		ret = 0;
-		break;
-
-	case V4L2_CID_AUTO_WHITE_BALANCE:
-		if (!sensor->feature_inquiry_reg.feature_inq.white_balance_auto_avail)
-			return -EINVAL;
-
-		qctrl->flags = 0;
-		qctrl->minimum = 0;
-		qctrl->maximum = 2;
-		qctrl->step = 1;
-		qctrl->default_value = 0;
-		qctrl->type = V4L2_CTRL_TYPE_BITMASK;
-		strcpy(qctrl->name, "auto white balance");
-		ret = 0;
-		avt_info(sd, "qctrl->id 0x%08X, qctrl->type %d case V4L2_CID_AUTO_WHITE_BALANCE [%lld, %lld]:%lld %lld",
-				 qctrl->id, qctrl->type, qctrl->minimum, qctrl->maximum, qctrl->step, qctrl->default_value);
-
-		break;
-
-	case V4L2_CID_RED_BALANCE:
-		qctrl->flags = V4L2_CTRL_FLAG_SLIDER;
-		ret = regmap_bulk_read(sensor->regmap64,
-							   sensor->cci_reg.reg.bcrm_addr + BCRM_RED_BALANCE_RATIO_MIN_64R,
-							   &vals64, 1);
-		qctrl->minimum = vals64;
-		ret = regmap_bulk_read(sensor->regmap64,
-							   sensor->cci_reg.reg.bcrm_addr + BCRM_RED_BALANCE_RATIO_MAX_64R,
-							   &vals64, 1);
-		qctrl->maximum = vals64;
-		ret = regmap_bulk_read(sensor->regmap64,
-							   sensor->cci_reg.reg.bcrm_addr + BCRM_RED_BALANCE_RATIO_INC_64R,
-							   &vals64, 1);
-		qctrl->step = vals64;
-		ret = regmap_bulk_read(sensor->regmap64,
-							   sensor->cci_reg.reg.bcrm_addr + BCRM_RED_BALANCE_RATIO_64RW,
-							   &vals64, 1);
-		qctrl->default_value = vals64;
-
-		qctrl->type = V4L2_CTRL_TYPE_INTEGER64;
-		strcpy(qctrl->name, "Red Balance");
-		avt_info(sd, "qctrl->id 0x%08X, qctrl->type %d case V4L2_CID_RED_BALANCE [%lld, %lld]:%lld %lld",
-				 qctrl->id, qctrl->type,
-				 qctrl->minimum, qctrl->maximum, qctrl->step, qctrl->default_value);
-		ret = 0;
-		break;
-
-	case V4L2_CID_BLUE_BALANCE:
-		qctrl->flags = V4L2_CTRL_FLAG_SLIDER;
-		ret = regmap_bulk_read(sensor->regmap64,
-							   sensor->cci_reg.reg.bcrm_addr + BCRM_BLUE_BALANCE_RATIO_MIN_64R,
-							   &vals64, 1);
-		qctrl->minimum = vals64;
-		ret = regmap_bulk_read(sensor->regmap64,
-							   sensor->cci_reg.reg.bcrm_addr + BCRM_BLUE_BALANCE_RATIO_MAX_64R,
-							   &vals64, 1);
-		qctrl->maximum = vals64;
-		ret = regmap_bulk_read(sensor->regmap64,
-							   sensor->cci_reg.reg.bcrm_addr + BCRM_BLUE_BALANCE_RATIO_INC_64R,
-							   &vals64, 1);
-		qctrl->step = vals64;
-
-		ret = regmap_bulk_read(sensor->regmap64,
-							   sensor->cci_reg.reg.bcrm_addr + BCRM_BLUE_BALANCE_RATIO_64RW,
-							   &vals64, 1);
-		qctrl->default_value = vals64;
-
-		qctrl->type = V4L2_CTRL_TYPE_INTEGER64;
-		strcpy(qctrl->name, "Blue Balance");
-
-		avt_info(sd, "qctrl->id 0x%08X, qctrl->type %d case V4L2_CID_BLUE_BALANCE [%lld, %lld]:%lld %lld",
-				 qctrl->id, qctrl->type,
-				 qctrl->minimum, qctrl->maximum, qctrl->step, qctrl->default_value);
-
-		ret = 0;
-		break;
-
-	case V4L2_CID_HFLIP:
-		if (!sensor->feature_inquiry_reg.feature_inq.reverse_x_avail)
-			return -EINVAL;
-		qctrl->minimum = 0;
-		qctrl->maximum = 1;
-		qctrl->step = 1;
-		qctrl->default_value = 0;
-		qctrl->flags = 0;
-		qctrl->type = V4L2_CTRL_TYPE_BOOLEAN;
-		avt_info(sd, "qctrl->id 0x%08X, qctrl->type %d case V4L2_CID_HFLIP [%lld, %lld]:%lld %lld: supported %d",
-				 qctrl->id, qctrl->type,
-				 qctrl->minimum, qctrl->maximum, qctrl->step, qctrl->default_value,
-				 sensor->feature_inquiry_reg.feature_inq.reverse_x_avail);
-		strcpy(qctrl->name, "H-Flip");
-		ret = 0;
-		break;
-
-	case V4L2_CID_VFLIP:
-		if (!sensor->feature_inquiry_reg.feature_inq.reverse_y_avail)
-			return -EINVAL;
-		qctrl->minimum = 0;
-		qctrl->maximum = 1;
-		qctrl->step = 1;
-		qctrl->default_value = 0;
-		qctrl->type = V4L2_CTRL_TYPE_BOOLEAN;
-		avt_info(sd, "qctrl->id 0x%08X, qctrl->type %d case V4L2_CID_VFLIP [%lld, %lld]:%lld %lld: supported %d",
-				 qctrl->id, qctrl->type,
-				 qctrl->minimum, qctrl->maximum, qctrl->step, qctrl->default_value,
-				 sensor->feature_inquiry_reg.feature_inq.reverse_y_avail);
-		strcpy(qctrl->name, "V-Flip");
-		ret = 0;
-		break;
-
-	case V4L2_CID_AUTOGAIN:
-		if (!sensor->feature_inquiry_reg.feature_inq.gain_auto_avail)
-			return -EINVAL;
-		qctrl->minimum = 0;
-		qctrl->maximum = 2;
-		qctrl->step = 1;
-		qctrl->default_value = 0;
-		qctrl->type = V4L2_CTRL_TYPE_BITMASK;
-		strcpy(qctrl->name, "Auto Gain");
-		avt_info(sd, "qctrl->id 0x%08X, qctrl->type %d case V4L2_CID_AUTOGAIN [%lld, %lld]:%lld %lld",
-				 qctrl->id, qctrl->type,
-				 qctrl->minimum, qctrl->maximum, qctrl->step, qctrl->default_value);
-		ret = 0;
-		break;
-
-	case V4L2_CID_DO_WHITE_BALANCE:
-		if (!sensor->feature_inquiry_reg.feature_inq.white_balance_avail)
-			return -EINVAL;
-		qctrl->minimum = 0;
-		qctrl->maximum = 7;
-		qctrl->step = 0;
-		qctrl->default_value = 0;
-		qctrl->type = V4L2_CTRL_TYPE_BITMASK;
-		strcpy(qctrl->name, "do white balance");
-		ret = 0;
-		avt_info(sd, "qctrl->id 0x%08X, qctrl->type %d case V4L2_CID_DO_WHITE_BALANCE [%lld, %lld]:%lld %lld",
-				 qctrl->id, qctrl->type,
-				 qctrl->minimum, qctrl->maximum, qctrl->step, qctrl->default_value);
-		break;
-
-	case V4L2_CID_GAIN:
-		if (!sensor->feature_inquiry_reg.feature_inq.gain_avail)
-			return -EINVAL;
-		ret = regmap_bulk_read(sensor->regmap64,
-							   sensor->cci_reg.reg.bcrm_addr + BCRM_GAIN_MIN_64R,
-							   &vals64, 1);
-		qctrl->minimum = vals64;
-		ret = regmap_bulk_read(sensor->regmap64,
-							   sensor->cci_reg.reg.bcrm_addr + BCRM_GAIN_MAX_64R,
-							   &vals64, 1);
-		qctrl->maximum = vals64;
-		ret = regmap_bulk_read(sensor->regmap64,
-							   sensor->cci_reg.reg.bcrm_addr + BCRM_GAIN_INC_64R,
-							   &vals64, 1);
-		qctrl->step = vals64;
-
-		ret = regmap_bulk_read(sensor->regmap64,
-							   sensor->cci_reg.reg.bcrm_addr + BCRM_GAIN_64RW,
-							   &vals64, 1);
-		qctrl->default_value = vals64;
-
-		avt_info(sd, "qctrl->id 0x%08X, qctrl->type %d case V4L2_CID_GAIN [%lld, %lld]:%lld %lld",
-				 qctrl->id, qctrl->type,
-				 qctrl->minimum, qctrl->maximum, qctrl->step, qctrl->default_value);
-
-		qctrl->type = V4L2_CTRL_TYPE_INTEGER64;
-		strcpy(qctrl->name, "Gain");
-		ret = 0;
-		break;
-
-	case V4L2_CID_EXPOSURE:
-		ret = regmap_bulk_read(sensor->regmap64,
-							   sensor->cci_reg.reg.bcrm_addr + BCRM_EXPOSURE_TIME_MIN_64R,
-							   &vals64, 1);
-		qctrl->minimum = vals64;
-		ret = regmap_bulk_read(sensor->regmap64,
-							   sensor->cci_reg.reg.bcrm_addr + BCRM_EXPOSURE_TIME_MAX_64R,
-							   &vals64, 1);
-		qctrl->maximum = vals64;
-		ret = regmap_bulk_read(sensor->regmap64,
-							   sensor->cci_reg.reg.bcrm_addr + BCRM_EXPOSURE_TIME_INC_64R,
-							   &vals64, 1);
-		qctrl->step = vals64;
-		ret = regmap_bulk_read(sensor->regmap64,
-							   sensor->cci_reg.reg.bcrm_addr + BCRM_EXPOSURE_TIME_64RW,
-							   &vals64, 1);
-		qctrl->default_value = vals64;
-
-		avt_info(sd, "qctrl->id 0x%08X, qctrl->type %d case V4L2_CID_EXPOSURE [%lld, %lld]:%lld %lld",
-				 qctrl->id, qctrl->type,
-				 qctrl->minimum, qctrl->maximum, qctrl->step, qctrl->default_value);
-		qctrl->type = V4L2_CTRL_TYPE_INTEGER64;
-		strcpy(qctrl->name, "Exposure");
-		ret = 0;
-		break;
-
-	case V4L2_CID_SHARPNESS:
-		if (!sensor->feature_inquiry_reg.feature_inq.sharpness_avail)
-			return -EINVAL;
-		ret = regmap_read(sensor->regmap32,
-						  sensor->cci_reg.reg.bcrm_addr + BCRM_SHARPNESS_MIN_32R, &s32tmp);
-		qctrl->minimum = s32tmp;
-		ret = regmap_read(sensor->regmap32,
-						  sensor->cci_reg.reg.bcrm_addr + BCRM_SHARPNESS_MAX_32R, &s32tmp);
-		qctrl->maximum = s32tmp;
-		ret = regmap_read(sensor->regmap32,
-						  sensor->cci_reg.reg.bcrm_addr + BCRM_SHARPNESS_INC_32R, &s32tmp);
-		qctrl->step = s32tmp;
-
-		ret = regmap_read(sensor->regmap32,
-						  sensor->cci_reg.reg.bcrm_addr + BCRM_SHARPNESS_32RW, &s32tmp);
-		qctrl->default_value = s32tmp;
-
-		qctrl->default_value = qctrl->minimum + (qctrl->maximum - qctrl->minimum) / 2;
-		qctrl->flags = V4L2_CTRL_FLAG_SLIDER;
-		qctrl->type = V4L2_CTRL_TYPE_INTEGER;
-		strcpy(qctrl->name, "Sharpness");
-		avt_info(sd, "qctrl->id 0x%08X, qctrl->type %d case V4L2_CID_SHARPNESS [%lld, %lld]:%lld %lld",
-				 qctrl->id, qctrl->type,
-				 qctrl->minimum, qctrl->maximum, qctrl->step, qctrl->default_value);
-		ret = 0;
-		break;
-
-	case V4L2_CID_GAMMA:
-		if (!sensor->feature_inquiry_reg.feature_inq.gamma_avail)
-			return -EINVAL;
-		ret = regmap_bulk_read(sensor->regmap64,
-							   sensor->cci_reg.reg.bcrm_addr + BCRM_GAMMA_MIN_64R,
-							   &vals64, 1);
-		qctrl->minimum = vals64;
-		ret = regmap_bulk_read(sensor->regmap64,
-							   sensor->cci_reg.reg.bcrm_addr + BCRM_GAMMA_MAX_64R,
-							   &vals64, 1);
-		qctrl->maximum = vals64;
-		ret = regmap_bulk_read(sensor->regmap64,
-							   sensor->cci_reg.reg.bcrm_addr + BCRM_GAMMA_INC_64R,
-							   &vals64, 1);
-		qctrl->step = vals64;
-		ret = regmap_bulk_read(sensor->regmap64,
-							   sensor->cci_reg.reg.bcrm_addr + BCRM_GAMMA_64RW,
-							   &vals64, 1);
-		qctrl->default_value = vals64;
-
-		avt_info(sd, "qctrl->id 0x%08X, qctrl->type %d case V4L2_CID_GAMMA [%lld, %lld]:%lld %lld",
-				 qctrl->id, qctrl->type,
-				 qctrl->minimum, qctrl->maximum, qctrl->step, qctrl->default_value);
-		qctrl->type = V4L2_CTRL_TYPE_INTEGER64;
-		strcpy(qctrl->name, "Gamma");
-		ret = 0;
-		break;
-
-	case V4L2_CID_EXPOSURE_AUTO:
-		if (!sensor->feature_inquiry_reg.feature_inq.exposure_auto_avail)
-		{
-			return -EINVAL;
-		}
-		qctrl->minimum = 0;
-		qctrl->maximum = 3;
-		qctrl->step = 0;
-		qctrl->default_value = 0;
-		qctrl->type = V4L2_CTRL_TYPE_BITMASK;
-		strcpy(qctrl->name, "Exposure Auto");
-		avt_info(sd, "qctrl->id 0x%08X, qctrl->type %d case V4L2_CID_EXPOSURE_AUTO: supported %d",
-				 qctrl->id, qctrl->type, sensor->feature_inquiry_reg.feature_inq.exposure_auto_avail);
-		ret = 0;
-		break;
-
+  // TODO: Forward EXPOSURE_ABSOLUTE to regular EXPOSURE
 	case V4L2_CID_EXPOSURE_ABSOLUTE:
-		avt_info(sd, "qctrl->id 0x%08X, qctrl->type %d case V4L2_CID_EXPOSURE_ABSOLUTE",
-				 qctrl->id, qctrl->type);
-		ret = regmap_bulk_read(sensor->regmap64,
-							   sensor->cci_reg.reg.bcrm_addr + BCRM_EXPOSURE_TIME_MIN_64R,
-							   &vals64, 1);
-		qctrl->minimum = vals64;
-		ret = regmap_bulk_read(sensor->regmap64,
-							   sensor->cci_reg.reg.bcrm_addr + BCRM_EXPOSURE_TIME_MAX_64R,
-							   &vals64, 1);
-		qctrl->maximum = vals64;
-		ret = regmap_bulk_read(sensor->regmap64,
-							   sensor->cci_reg.reg.bcrm_addr + BCRM_EXPOSURE_TIME_INC_64R,
-							   &vals64, 1);
-		qctrl->step = vals64;
-		ret = regmap_bulk_read(sensor->regmap64,
-							   sensor->cci_reg.reg.bcrm_addr + BCRM_EXPOSURE_TIME_64RW,
-							   &qctrl->default_value, 1);
-		qctrl->default_value = vals64;
+    {
+      s64 vals64;
+      avt_info(sd, "qctrl->id 0x%08X, qctrl->type %d case V4L2_CID_EXPOSURE_ABSOLUTE",
+           qctrl->id, qctrl->type);
+      ret = regmap_bulk_read(sensor->regmap64,
+                   sensor->cci_reg.reg.bcrm_addr + BCRM_EXPOSURE_TIME_MIN_64R,
+                   &vals64, 1);
+      qctrl->minimum = vals64;
+      ret = regmap_bulk_read(sensor->regmap64,
+                   sensor->cci_reg.reg.bcrm_addr + BCRM_EXPOSURE_TIME_MAX_64R,
+                   &vals64, 1);
+      qctrl->maximum = vals64;
+      ret = regmap_bulk_read(sensor->regmap64,
+                   sensor->cci_reg.reg.bcrm_addr + BCRM_EXPOSURE_TIME_INC_64R,
+                   &vals64, 1);
+      qctrl->step = vals64;
+      ret = regmap_bulk_read(sensor->regmap64,
+                   sensor->cci_reg.reg.bcrm_addr + BCRM_EXPOSURE_TIME_64RW,
+                   &qctrl->default_value, 1);
+      qctrl->default_value = vals64;
 
-		qctrl->type = V4L2_CTRL_TYPE_INTEGER64;
-		strcpy(qctrl->name, "Exposure Absolute");
-		avt_info(sd, "V4L2_CID_EXPOSURE_ABSOLUTE: \n"
-					 "   BCRM_EXPOSURE_TIME_MIN_64R       %lld, \n"
-					 "   BCRM_EXPOSURE_TIME_MAX_64R       %lld, \n"
-					 "   BCRM_EXPOSURE_TIME_INC_64R %lld, \n"
-					 "   BCRM_EXPOSURE_TIME_64RW          %lld",
-				 qctrl->minimum,
-				 qctrl->maximum,
-				 qctrl->step,
-				 qctrl->default_value);
-		ret = 0;
-		break;
-
-	case V4L2_CID_3A_LOCK:
-		avt_info(sd, "qctrl->id 0x%08X, qctrl->type %d case V4L2_CID_3A_LOCK",
-				 qctrl->id, qctrl->type);
-
-		// #define V4L2_LOCK_EXPOSURE			(1 << 0)
-		// #define V4L2_LOCK_WHITE_BALANCE		(1 << 1)
-		// #define V4L2_LOCK_FOCUS				(1 << 2)
-
-		qctrl->minimum = 0;
-		qctrl->maximum = 0x0111;
-		qctrl->step = 0;
-		qctrl->default_value = 0;
-		qctrl->type = V4L2_CTRL_TYPE_BITMASK;
-		strcpy(qctrl->name, "3A Lock");
-		ret = 0;
-		break;
-
-	case V4L2_CID_LINK_FREQ:
-		avt_err(sd, "qctrl->id 0x%08X, qctrl->type %d case V4L2_CID_LINK_FREQ -- call not supported",
-				qctrl->id, qctrl->type);
-		ret = -EINVAL;
-		break;
-
-	case V4L2_CID_PIXEL_RATE:
-		avt_info(sd, "qctrl->id 0x%08X, qctrl->type %d case V4L2_CID_PIXEL_RATE",
-				 qctrl->id, qctrl->type);
-		ret = -EINVAL;
-		break;
-
-	case V4L2_CID_TEST_PATTERN:
-		avt_info(sd, "qctrl->id 0x%08X, qctrl->type %d case V4L2_CID_TEST_PATTERN",
-				 qctrl->id, qctrl->type);
-		ret = -EINVAL;
-		break;
+      qctrl->type = V4L2_CTRL_TYPE_INTEGER64;
+      strcpy(qctrl->name, "Exposure Absolute");
+      avt_info(sd, "V4L2_CID_EXPOSURE_ABSOLUTE: \n"
+             "   BCRM_EXPOSURE_TIME_MIN_64R       %lld, \n"
+             "   BCRM_EXPOSURE_TIME_MAX_64R       %lld, \n"
+             "   BCRM_EXPOSURE_TIME_INC_64R %lld, \n"
+             "   BCRM_EXPOSURE_TIME_64RW          %lld",
+           qctrl->minimum,
+           qctrl->maximum,
+           qctrl->step,
+           qctrl->default_value);
+      return 0;
+    }
 
 	default:
 		avt_info(sd, "not supported qctrl->id 0x%08X qctrl->type %d", qctrl->id, qctrl->type);
 		qctrl->flags = V4L2_CTRL_FLAG_DISABLED;
-		ret = -EINVAL;
-		break;
+    return -EINVAL;
 	}
+
+  #undef handle_query_ctrl_bitmask_always
+  #undef handle_query_ctrl_bitmask_inquiry
+  #undef handle_query_ctrl_bitmask
+  #undef handle_query_ctrl_integer_inquiry
+  #undef handle_query_ctrl_integer_always
+  #undef handle_query_ctrl_integer
 
 	return 0;
 }
@@ -4550,9 +3933,6 @@ static void avt3_ctrl_added(struct avt3_dev *camera,struct v4l2_ctrl *ctrl)
 
 static int avt3_init_controls(struct avt3_dev *sensor)
 {
-	// struct i2c_client *client = sensor->i2c_client;
-	// struct v4l2_queryctrl qectrl;
-	//struct v4l2_query_ext_ctrl qectrl;
 	struct v4l2_ctrl_config config;
 	struct v4l2_ctrl *ctrl;
 	int ret;
@@ -4630,50 +4010,6 @@ free_ctrls:
 	return ret;
 }
 
-/* Implementierung von imx8-media-cap:
-static int capture_enum_framesizes(struct file *file, void *fh,
-				   struct v4l2_frmsizeenum *fsize)
-{
-	struct capture_priv *priv = video_drvdata(file);
-	const struct imx_media_pixfmt *cc;
-	struct v4l2_subdev_frame_size_enum fse = {
-		.index = fsize->index,
-		.pad = priv->src_sd_pad,
-		.which = V4L2_SUBDEV_FORMAT_ACTIVE,
-	};
-	int ret;
-
-	cc = imx_media_find_pixel_format(fsize->pixel_format, PIXFMT_SEL_ANY);
-	if (!cc)
-		return -EINVAL;
-
-	fse.code = cc->codes ? cc->codes[0] : 0;
-
-	ret = v4l2_subdev_call(priv->src_sd, pad, enum_frame_size, NULL, &fse);
-	if (ret)
-		return ret;
-
-	if (fse.min_width == fse.max_width &&
-		fse.min_height == fse.max_height) {
-		fsize->type = V4L2_FRMSIZE_TYPE_DISCRETE;
-		fsize->discrete.width = fse.min_width;
-		fsize->discrete.height = fse.min_height;
-	} else {
-		fsize->type = V4L2_FRMSIZE_TYPE_CONTINUOUS;
-		fsize->stepwise.min_width = fse.min_width;
-		fsize->stepwise.max_width = fse.max_width;
-		fsize->stepwise.min_height = fse.min_height;
-		fsize->stepwise.max_height = fse.max_height;
-		fsize->stepwise.step_width = 1;
-		fsize->stepwise.step_height = 1;
-	}
-
-	return 0;
-}
-
-ToDo: Min und Max verschiedne zurueckgeben!!
-*/
-
 static void set_frameinterval(struct v4l2_fract *interval,const u64 framerate,const u64 factor)
 {
 	interval->denominator = (framerate * interval->numerator) / factor;
@@ -4745,10 +4081,10 @@ static int avt3_pad_ops_enum_frame_size(struct v4l2_subdev *sd,
 		avt_dbg(&sensor->sd, "fse->index(%d) >= 1.", fse->index);
 		return -EINVAL;
 	}
-	fse->min_width = sensor->min_rect.width;   // avt3_mode_data[0].vact;
-	fse->max_width = sensor->max_rect.width;   // avt3_mode_data[fse->index].hact;
-	fse->min_height = sensor->min_rect.height; // avt3_mode_data[0].vact;
-	fse->max_height = sensor->max_rect.height; // avt3_mode_data[fse->index].vact;
+	fse->min_width = sensor->min_rect.width;
+	fse->max_width = sensor->max_rect.width;
+	fse->min_height = sensor->min_rect.height;
+	fse->max_height = sensor->max_rect.height;
 
 #endif
 	return 0;
@@ -4931,13 +4267,11 @@ static int avt3_pad_ops_enum_mbus_code(struct v4l2_subdev *sd,
 	if (NULL == sd_state)
 	{
 		dev_warn(&client->dev, "%s[%d]: sd_state == NULL", __func__, __LINE__);
-		//	return -EINVAL;
 	}
 #else
 	if (NULL == cfg)
 	{
 		dev_warn(&client->dev, "%s[%d]: cfg == NULL", __func__, __LINE__);
-		//	return -EINVAL;
 	}
 #endif
 
@@ -4960,35 +4294,6 @@ static int avt3_pad_ops_enum_mbus_code(struct v4l2_subdev *sd,
 
 	return 0;
 }
-
-#if 0
-#if (LINUX_VERSION_CODE > KERNEL_VERSION(5, 6, 0))
-static int v4l2_subdev_video_ops_g_mbus_config(struct v4l2_subdev *sd,
-												unsigned int pad,
-											   struct v4l2_mbus_config *cfg)
-{
-
-//	struct avt3_dev *sensor = to_avt3_dev(sd);
-//	struct i2c_client *client = sensor->i2c_client;
-
-	v4l2_dbg(2, debug, sd, "%s[%d]",
-			 __func__, __LINE__);
-
-	cfg->type = V4L2_MBUS_CSI2_DPHY;
-
-	//ToDo MH: check correct clock modes for alvium cam
-	cfg->flags = V4L2_MBUS_CSI2_CONTINUOUS_CLOCK; //V4L2_MBUS_CSI2_NONCONTINUOUS_CLOCK; //
-	cfg->flags |= V4L2_MBUS_CSI2_LANES;
-
-	v4l2_dbg(2, debug, sd, "%s[%d]: mbus type code %d, mbus flags 0x%02x",
-			 __func__, __LINE__, (int)cfg->type, (int)cfg->flags);
-//	dev_info(&client->dev, "%s[%d]: mbus type code %d, mbus flags 0x%02x",
-//			 __func__, __LINE__, (int)cfg->type, (int)cfg->flags);
-
-	return 0;
-}
-#endif
-#endif
 
 static void avt3_controls_stream_grab(struct avt3_dev *camera,bool grabbed)
 {
@@ -5015,7 +4320,6 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 {
 	struct avt3_dev *sensor = to_avt3_dev(sd);
 	struct i2c_client *client = sensor->i2c_client;
-	struct avt_ctrl ct;
 	int ret = 0;
 
 	dev_info(&client->dev, "%s[%d]: enable %d, sensor->is_streaming %d\n"
@@ -5035,12 +4339,9 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 
 	MUTEX_LOCK(&sensor->lock);
 
-	CLEAR(ct);
 	if (!enable && sensor->is_streaming)
 	{
-		ct.id = V4L2_AV_CSI2_STREAMOFF_W;
-		ct.value0 = 1;
-		ret = avt3_ctrl_send(sensor->i2c_client, &ct);
+		ret = avt3_ctrl_write(sensor->i2c_client, V4L2_AV_CSI2_STREAMOFF, 1);
 		sensor->is_streaming = false;
 
 		// ToDo: eventually wait until cam has stopped streaming
@@ -5090,29 +4391,17 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 		}
 
 
-		ct.id = V4L2_AV_CSI2_WIDTH_W;
-		ct.value0 = crop_rect.width;
-		ret = avt3_ctrl_send(sensor->i2c_client, &ct);
+		ret = avt3_ctrl_write(sensor->i2c_client, V4L2_AV_CSI2_WIDTH, crop_rect.width);
 
-		ct.id = V4L2_AV_CSI2_OFFSET_X_W;
-		ct.value0 = crop_rect.left;
-		ret = avt3_ctrl_send(sensor->i2c_client, &ct);
+		ret = avt3_ctrl_write(sensor->i2c_client, V4L2_AV_CSI2_OFFSET_X, crop_rect.left);
 
-		ct.id = V4L2_AV_CSI2_HEIGHT_W;
-		ct.value0 = crop_rect.height;
-		ret = avt3_ctrl_send(sensor->i2c_client, &ct);
+		ret = avt3_ctrl_write(sensor->i2c_client, V4L2_AV_CSI2_HEIGHT, crop_rect.height);
 
-		ct.id = V4L2_AV_CSI2_OFFSET_Y_W;
-		ct.value0 = crop_rect.top;
-		ret = avt3_ctrl_send(sensor->i2c_client, &ct);
+		ret = avt3_ctrl_write(sensor->i2c_client, V4L2_AV_CSI2_OFFSET_Y, crop_rect.top);
 
-		ct.id = V4L2_AV_CSI2_VFLIP_W;
-		ct.value0 = sensor->vflip;
-		ret = avt3_ctrl_send(sensor->i2c_client, &ct);
+		ret = avt3_ctrl_write(sensor->i2c_client, V4L2_AV_CSI2_VFLIP, sensor->vflip);
 
-		ct.id = V4L2_AV_CSI2_HFLIP_W;
-		ct.value0 = sensor->hflip;
-		ret = avt3_ctrl_send(sensor->i2c_client, &ct);
+		ret = avt3_ctrl_write(sensor->i2c_client, V4L2_AV_CSI2_HFLIP, sensor->hflip);
 
 
 		ret = regmap_bulk_read(sensor->regmap64,
@@ -5206,9 +4495,7 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 			bcrm_dump(client);
 
 		/* start streaming */
-		ct.id = V4L2_AV_CSI2_STREAMON_W;
-		ct.value0 = 1;
-		ret = avt3_ctrl_send(client, &ct);
+		ret = avt3_ctrl_write(client, V4L2_AV_CSI2_STREAMON, 1);
 
 		// ToDo: probably it's better to check the status here. but this conflicts with the workaround for imx8mp delayed start
 		if (!ret)
@@ -5223,21 +4510,6 @@ out:
 	return ret;
 }
 
-#if 0
-
-int avt3_core_ops_g_chip_ident(struct v4l2_subdev *sd,
-									  struct v4l2_dbg_chip_ident *chip)
-{
-	struct i2c_client *client = v4l2_get_subdevdata(sd);
-	//	chip->match.name.type.__u32 ident;       /* chip identifier as specified in <media/v4l2-chip-ident.h> */
-	//	__u32 revision;
-	chip->ident = 0x0815;
-	chip->revision = 0x55aa;
-
-	dev_info(&client->dev, "%s[%d]+ %s", __func__, __LINE__, __FILE__);
-	return 0;
-}
-#endif
 
 int avt3_core_ops_reset(struct v4l2_subdev *sd, u32 val)
 {
@@ -5254,7 +4526,6 @@ int avt3_core_ops_g_register(struct v4l2_subdev *sd, struct v4l2_dbg_register *r
 	struct avt3_dev *sensor = to_avt3_dev(sd);
 	int ret = 0;
 	unsigned int val = 0;
-	//__u64 val64 = 0;
 
 	dev_info(&client->dev, "%s[%d]: reg 0x%04llX, size %d",
 			 __func__, __LINE__, reg->reg, reg->size);
@@ -5297,29 +4568,13 @@ int avt3_core_ops_s_register(struct v4l2_subdev *sd, const struct v4l2_dbg_regis
 {
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
 
-	// v4l2_dbg(2, debug, sd, "%s[%d]: %s", __func__, __LINE__, __FILE__);
 	dev_info(&client->dev, "%s[%d]: reg 0x%04llX, size %u",
 			 __func__, __LINE__, reg->reg, reg->size);
 
 	return 0;
 }
 
-// long avt3_core_ops_command(struct v4l2_subdev *sd, unsigned int cmd, void *arg) {
-//
-////	int ret = -ENOTTY;
-//	struct i2c_client *client = v4l2_get_subdevdata(sd);
-////	struct avt3_dev *sensor = to_avt3_dev(sd);
-////	struct v4l2_capability *cap = arg;
-//
-//	dev_info(&client->dev,  "%s[%d]:  cmd 0x%08x %d %s",
-//		__func__, __LINE__, cmd, cmd & 0xff, __FILE__);
-//
-//	dump_stack();
-//
-//	return 0;
-//}
 
-#if 1
 long avt3_core_ops_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 {
 	int ret = -ENOTTY;
@@ -5336,7 +4591,6 @@ long avt3_core_ops_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 
 	switch (cmd)
 	{
-#if 1
 		/* ToDo: check to remove that code */
 	case VIDIOC_QUERYCAP:
 		dev_info(&client->dev, "%s[%d]: cmd VIDIOC_QUERYCAP", __func__, __LINE__);
@@ -5351,7 +4605,6 @@ long avt3_core_ops_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 		cap->bus_info[0] = '\0';
 		ret = 0;
 		break;
-#endif
 
 	case VIDIOC_DBG_S_REGISTER:
 	{
@@ -5385,8 +4638,6 @@ long avt3_core_ops_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 //				 i2c_reg->register_address, i2c_reg->register_size, i2c_reg->num_bytes);
 
 		ret = regmap_bulk_read(sensor->regmap8, i2c_reg->register_address, i2c_reg_buf, i2c_reg->num_bytes);
-//		ret = i2c_read(client, i2c_reg->register_address, i2c_reg->register_size,
-//					   i2c_reg->num_bytes, i2c_reg_buf);
 
 		if (ret < 0)
 			dev_info(&client->dev, "%s[%d]: i2c read failed (%d), bytes read = %d\n",
@@ -5404,7 +4655,6 @@ long avt3_core_ops_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 		break;
 
 	case VIDIOC_W_I2C:
-//		dev_info(&client->dev, "%s[%d]: cmd VIDIOC_W_I2C", __func__, __LINE__);
 		i2c_reg = (struct v4l2_i2c *)arg;
 
 		i2c_reg_buf = kzalloc(i2c_reg->num_bytes, GFP_KERNEL);
@@ -5412,10 +4662,6 @@ long avt3_core_ops_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 			return -ENOMEM;
 
 		ret = copy_from_user(i2c_reg_buf, (char *)i2c_reg->ptr_buffer, i2c_reg->num_bytes);
-
-//		dev_info(&client->dev, "%s[%d]: cmd VIDIOC_W_I2C i2c_reg->reg 0x%04x, i2c_reg->register_size %d, i2c_reg->num_bytes %d",
-//				 __func__, __LINE__,
-//				 i2c_reg->register_address, i2c_reg->register_size, i2c_reg->num_bytes);
 
 		/* TODO: check count, size and endianess!! */
 		ret = regmap_bulk_write(sensor->regmap8, i2c_reg->register_address, i2c_reg_buf, i2c_reg->num_bytes);
@@ -5494,7 +4740,6 @@ long avt3_core_ops_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 
 	return ret;
 }
-#endif
 
 static int avt3_core_ops_subscribe_event(struct v4l2_subdev *sd, struct v4l2_fh *fh,
 										 struct v4l2_event_subscription *sub)
@@ -5513,11 +4758,9 @@ static int avt3_core_ops_subscribe_event(struct v4l2_subdev *sd, struct v4l2_fh 
 }
 
 static const struct v4l2_subdev_core_ops avt3_core_ops = {
-	//.g_chip_ident = avt3_core_ops_g_chip_ident,
 	.s_power = avt3_core_ops_s_power,
 	.log_status = v4l2_ctrl_subdev_log_status,
 	.ioctl = avt3_core_ops_ioctl,
-	//	.command = avt3_core_ops_command,
 	.reset = avt3_core_ops_reset,
 	.subscribe_event = avt3_core_ops_subscribe_event,
 	.unsubscribe_event = v4l2_event_subdev_unsubscribe,
@@ -5587,9 +4830,6 @@ static const struct v4l2_subdev_internal_ops avt3_subdev_internal_ops = {
 
 int avt3_video_ops_querystd(struct v4l2_subdev *sd, v4l2_std_id *std)
 {
-	// struct avt3_dev *sensor = to_avt3_dev(sd);
-	// struct i2c_client *client = sensor->i2c_client;
-
 	v4l2_dbg(2, debug, sd, "%s[%d]: %s",
 			 __func__, __LINE__, __FILE__);
 	return 0;
@@ -5598,29 +4838,13 @@ int avt3_video_ops_querystd(struct v4l2_subdev *sd, v4l2_std_id *std)
 int v4l2_subdev_video_ops_s_mbus_config(struct v4l2_subdev *sd,
 										const struct v4l2_mbus_config *cfg)
 {
-	// struct avt3_dev *sensor = to_avt3_dev(sd);
-	// struct i2c_client *client = sensor->i2c_client;
 	v4l2_dbg(2, debug, sd, "%s[%d]: %s", __func__, __LINE__, __FILE__);
 	return 0;
 }
 
-#ifndef ZYNQMP
-
-//#if !defined(CONFIG_ARCH_ZYNQMP)
-// struct v4l2_captureparm {
-//	__u32		   capability;	  /*  Supported modes */
-//	__u32		   capturemode;	  /*  Current mode */
-//	struct v4l2_fract  timeperframe;  /*  Time per frame in seconds */
-//	__u32		   extendedmode;  /*  Driver-specific extensions */
-//	__u32  			readbuffers;   /*  # of buffers for read */
-//	__u32		   reserved[4];
-//};
-//#endif
-
 int avt3_video_ops_g_parm(struct v4l2_subdev *sd, struct v4l2_streamparm *parm)
 {
 	struct avt3_dev *sensor = to_avt3_dev(sd);
-	// struct i2c_client *client = sensor->i2c_client;
 	dev_info(&sensor->i2c_client->dev, "%s[%d]: %s", __func__, __LINE__, __FILE__);
 
 	if (!parm)
@@ -5635,7 +4859,6 @@ int avt3_video_ops_g_parm(struct v4l2_subdev *sd, struct v4l2_streamparm *parm)
 
 	memcpy(&parm->parm.capture, &sensor->streamcap, sizeof(struct v4l2_captureparm));
 
-	//	parm->parm.capture.readbuffers = 1;
 	parm->parm.capture.capability = V4L2_CAP_TIMEPERFRAME | V4L2_MODE_HIGHQUALITY;
 	parm->parm.capture.timeperframe = sensor->frame_interval;
 	/* return latest format as has been set by avt3_video_ops_g_parm */
@@ -5646,7 +4869,6 @@ int avt3_video_ops_g_parm(struct v4l2_subdev *sd, struct v4l2_streamparm *parm)
 int avt3_video_ops_s_parm(struct v4l2_subdev *sd, struct v4l2_streamparm *parm)
 {
 	struct avt3_dev *sensor = to_avt3_dev(sd);
-	// struct i2c_client *client = sensor->i2c_client;
 	struct v4l2_fract *timeperframe = &parm->parm.capture.timeperframe;
 
 	v4l2_dbg(2, debug, sd, "%s[%d]: %s", __func__, __LINE__, __FILE__);
@@ -5672,7 +4894,6 @@ int avt3_video_ops_s_parm(struct v4l2_subdev *sd, struct v4l2_streamparm *parm)
 
 	return 0;
 }
-#endif
 
 static const struct v4l2_subdev_video_ops avt3_video_ops = {
 	.g_frame_interval = avt3_video_ops_g_frame_interval,
@@ -5684,7 +4905,7 @@ static const struct v4l2_subdev_video_ops avt3_video_ops = {
 	.s_parm = avt3_video_ops_s_parm,
 #endif
 #if ((LINUX_VERSION_CODE) < (KERNEL_VERSION(5, 6, 0)))
-	.g_mbus_config = v4l2_subdev_video_ops_g_mbus_config, // avt3_g_mbus_config,
+	.g_mbus_config = v4l2_subdev_video_ops_g_mbus_config,
 	.s_mbus_config = v4l2_subdev_video_ops_s_mbus_config,
 #endif
 };
@@ -5881,7 +5102,6 @@ int avt3_pad_ops_get_frame_desc(struct v4l2_subdev *sd, unsigned int pad,
 {
 	struct avt3_dev *sensor = to_avt3_dev(sd);
 	struct i2c_client *client = sensor->i2c_client;
-	// int	ret = 0;
 
 	dev_info(&client->dev, "%s[%d]: %s",
 			 __func__, __LINE__, __FILE__);
@@ -5891,12 +5111,9 @@ int avt3_pad_ops_get_frame_desc(struct v4l2_subdev *sd, unsigned int pad,
 int avt3_pad_ops_set_frame_desc(struct v4l2_subdev *sd, unsigned int pad,
 								struct v4l2_mbus_frame_desc *fd)
 {
-	// struct avt3_dev *sensor = to_avt3_dev(sd);
-	// struct i2c_client *client = sensor->i2c_client;
 
 	struct avt3_dev *sensor = to_avt3_dev(sd);
 	struct i2c_client *client = sensor->i2c_client;
-	// int	ret = 0;
 
 	dev_info(&client->dev, "%s[%d]: %s",
 			 __func__, __LINE__, __FILE__);
@@ -5907,8 +5124,6 @@ int avt3_pad_ops_link_validate(struct v4l2_subdev *sd, struct media_link *link,
 							   struct v4l2_subdev_format *source_fmt,
 							   struct v4l2_subdev_format *sink_fmt)
 {
-	// struct avt3_dev *sensor = to_avt3_dev(sd);
-	// struct i2c_client *client = sensor->i2c_client;
 
 	v4l2_dbg(2, debug, sd, "%s[%d]: %s",
 			 __func__, __LINE__, __FILE__);
@@ -5917,7 +5132,6 @@ int avt3_pad_ops_link_validate(struct v4l2_subdev *sd, struct media_link *link,
 #endif /* CONFIG_MEDIA_CONTROLLER */
 
 static const struct v4l2_subdev_pad_ops avt3_pad_ops = {
-	//	.init_cfg = avt3_pad_ops_init_cfg,
 	.enum_mbus_code = avt3_pad_ops_enum_mbus_code,
 	.enum_frame_size = avt3_pad_ops_enum_frame_size,
 	.enum_frame_interval = avt3_pad_ops_enum_frame_interval,
@@ -5966,38 +5180,8 @@ int avt3_meo_link_validate(struct media_link *link)
 
 static const struct media_entity_operations avt3_sd_media_ops = {
 	.link_setup = avt3_meo_link_setup,
-	//	.get_fwnode_pad = avt3_meo_get_fwnode_pad,
-	//	.link_validate = avt3_meo_link_validate,
 };
 
-#if 0
-static int avt3_set_mipi_clock(struct v4l2_subdev *sd) {
-	struct avt3_dev *sensor = to_avt3_dev(sd);
-	struct i2c_client *client = sensor->i2c_client;
-	int	ret;
-
-	uint32_t avt_current_clk = 0;
-		
-	/* Set number of lanes */
-	ret = bcrm_regmap_write(sensor, sensor->regmap8,
-			sensor->cci_reg.reg.bcrm_addr + BCRM_CSI2_LANE_COUNT_8RW,
-			sensor->v4l2_fwnode_ep.bus.mipi_csi2.num_data_lanes);
-
-	ret = bcrm_regmap_write(sensor, sensor->regmap32, sensor->cci_reg.reg.bcrm_addr +
-			BCRM_CSI2_CLOCK_32RW, sensor->v4l2_fwnode_ep.link_frequencies[0]);
-
-	ret = regmap_read(sensor->regmap32, sensor->cci_reg.reg.bcrm_addr +
-			BCRM_CSI2_CLOCK_32RW, &avt_current_clk);
-
-	dev_info(&client->dev, "%s[%d]: requested csi clock frequency %llu Hz, got %u Hz)\n",
-			__func__, __LINE__, sensor->v4l2_fwnode_ep.link_frequencies[0], avt_current_clk);
-
-	if (0 < avt_current_clk)
-		sensor->v4l2_fwnode_ep.link_frequencies[0] = avt_current_clk;
-
-	return ret;
-}
-#endif
 
 static int avt3_get_sensor_capabilities(struct v4l2_subdev *sd)
 {
@@ -6011,8 +5195,6 @@ static int avt3_get_sensor_capabilities(struct v4l2_subdev *sd)
 	uint32_t clk;
 	uint8_t bcm_mode = 0;
 	u32 temp;
-
-	//	struct v4l2_subdev_selection sel;
 
 	/* reading the Feature inquiry register */
 	ret = regmap_bulk_read(sensor->regmap64,
@@ -6250,9 +5432,8 @@ static int avt3_get_sensor_capabilities(struct v4l2_subdev *sd)
 	return 0;
 }
 
-static int avt_csi2_check_mipicfg(struct avt3_dev *sensor /*, struct device *dev*/)
+static int avt_csi2_check_mipicfg(struct avt3_dev *sensor)
 {
-
 	struct i2c_client *client = sensor->i2c_client;
 	int ret = -EINVAL;
 	int i;
@@ -6431,25 +5612,14 @@ int avt3_streamon_thread(void *data)
 {
 	struct v4l2_subdev *sd = (struct v4l2_subdev *)data;
 	struct avt3_dev *sensor = to_avt3_dev(sd);
-	// struct i2c_client *client = sensor->i2c_client;
 	int ret = 0;
 
-	// int sampling_us = sensor->bcrm_handshake_timeout_ms*1000;
-	// struct timespec64 next, now, delta;
-	//	s64 delay_us;
-	//	long	loop_counter = 0;
-	//	struct avt_ctrl ct;
 	long jiffies = msecs_to_jiffies(5000);
-	;
 
-	// v4l2_dbg(2, debug, sd, "%s[%d]+\n", __func__, __LINE__);
 	avt_info(sd, "+");
-
-	// ktime_get_ts64(&next);
 
 	do
 	{
-
 		ret = down_timeout(&sensor->streamon_sem, jiffies);
 
 		if (0 == ret)
@@ -6457,17 +5627,11 @@ int avt3_streamon_thread(void *data)
 			if (sensor->is_streaming && sensor->phyreset_on_streamon)
 			{
 				usleep_range(sensor->dphyreset_delay, sensor->dphyreset_delay * 2);
-				// if (sensor->phyreset_on_streamon) {
 				avt3_dphy_reset(sensor, true);
 				avt3_dphy_reset(sensor, false);
 				avt_info(sd, "trigger alvium phy reset, sensor->dphyreset_delay %u ret %d",
 						 sensor->dphyreset_delay, ret);
-
-				//			avt3_set_mipi_clock(sd);
-				//			dev_warn(&client->dev, "%s[%d]: release alvium phy reset", __func__, __LINE__);
 			}
-			// complete(&sensor->streamon_completion);
-			//	continue;
 		}
 	} while (!kthread_should_stop());
 	avt_info(sd, "-");
@@ -6488,8 +5652,6 @@ static int avt3_streamon_thread_enable(struct v4l2_subdev *sd)
 
 	if (IS_ERR(task))
 		return PTR_ERR(task);
-
-	// init_completion(&sensor->streamon_completion);
 
 	get_task_struct(task);
 	wake_up_process(task);
@@ -6660,7 +5822,6 @@ static int bcrm_regmap_write64(struct avt3_dev *sensor,struct regmap *map,
 				 __func__, __LINE__, sensor->bcrm_handshake_timeout_ms);
 		/* Handshake not supported. Use static sleep at least once as fallback */
 		msleep(sensor->bcrm_handshake_timeout_ms);
-		// duration_ms = (uint64_t)default_wait_time_ms;
 	}
 
 	return wait_for_write_handshake(sensor);
@@ -6696,7 +5857,6 @@ static int bcrm_regmap_write(struct avt3_dev *sensor,
 				 __func__, __LINE__, sensor->bcrm_handshake_timeout_ms);
 		/* Handshake not supported. Use static sleep at least once as fallback */
 		msleep(sensor->bcrm_handshake_timeout_ms);
-		// duration_ms = (uint64_t)default_wait_time_ms;
 
 		return ret;
 	}
@@ -6715,9 +5875,6 @@ static void bcrm_wrhs_work_func(struct work_struct *work)
 		container_of(work, struct avt3_dev, bcrm_wrhs_work);
 
 	atomic_set(&sensor->bcrm_wrhs_enabled,1);
-
-	//	dev_info(&sensor->i2c_client->dev, "%s[%d]: workqueue_test: 0x%08X current->pid 0x%08x\n",
-	//  	__func__, __LINE__, (u32)work, current->pid );
 
 	do
 	{
@@ -6826,7 +5983,6 @@ static int avt3_probe(struct i2c_client *client)
 
 	if (NULL == sensor->pwdn_gpio || IS_ERR(sensor->pwdn_gpio))
 	{
-		// return PTR_ERR(sensor->pwdn_gpio);
 		dev_warn(&client->dev, "%s[%d]: no powerdown-gpios defined", __func__, __LINE__);
 	}
 	else
@@ -6840,7 +5996,6 @@ static int avt3_probe(struct i2c_client *client)
 	// GPIOD_OUT_LOW);
 	if (NULL == sensor->reset_gpio || IS_ERR(sensor->reset_gpio))
 	{
-		// return PTR_ERR(sensor->reset_gpio);
 		dev_warn(&client->dev, "%s[%d]: no reset-gpios defined", __func__, __LINE__);
 	}
 	else
@@ -7045,14 +6200,11 @@ static int avt3_probe(struct i2c_client *client)
 		goto fwnode_cleanup;
 	}
 
-	// devm_gpiod_get_optional(dev, "enable", GPIOD_OUT_LOW);
-
 	/* request optional power down pin */
 	sensor->pwdn_gpio = devm_gpiod_get_optional(dev, "powerdown",
 												GPIOD_OUT_HIGH);
 	if (NULL == sensor->pwdn_gpio || IS_ERR(sensor->pwdn_gpio))
 	{
-		// return PTR_ERR(sensor->pwdn_gpio);
 		dev_warn(&client->dev, "%s[%d]: no powerdown-gpios powerdown defined",
 				 __func__, __LINE__);
 		sensor->pwdn_gpio = NULL;
@@ -7068,7 +6220,6 @@ static int avt3_probe(struct i2c_client *client)
 												 GPIOD_OUT_HIGH);
 	if (NULL == sensor->reset_gpio || IS_ERR(sensor->reset_gpio))
 	{
-		// return PTR_ERR(sensor->reset_gpio);
 		dev_warn(&client->dev, "%s[%d]: no reset-gpios defined",
 				 __func__, __LINE__);
 		sensor->reset_gpio = NULL;
@@ -7219,7 +6370,7 @@ static int avt3_probe(struct i2c_client *client)
 	fmt->colorspace = V4L2_COLORSPACE_SRGB;
 	fmt->ycbcr_enc = V4L2_MAP_YCBCR_ENC_DEFAULT(fmt->colorspace);
 	fmt->quantization = V4L2_QUANTIZATION_FULL_RANGE;
-	fmt->xfer_func = V4L2_XFER_FUNC_DEFAULT;//V4L2_MAP_XFER_FUNC_DEFAULT(fmt->colorspace);
+	fmt->xfer_func = V4L2_XFER_FUNC_DEFAULT;
 	fmt->width = sensor->max_rect.width;
 	fmt->height = sensor->max_rect.height;
 	fmt->field = V4L2_FIELD_NONE;
@@ -7236,21 +6387,14 @@ static int avt3_probe(struct i2c_client *client)
 		goto entity_cleanup;
 	}
 
-#if 1
 	ret = v4l2_async_register_subdev(&sensor->sd);
-#else
-	/* registers a sensor sub-device to the asynchronous sub-device framework
-	   and parse set up common sensor related devices */
-	ret = v4l2_async_register_subdev_sensor_common(&sensor->sd);
-#endif
+
 	if (ret)
 	{
 		dev_err(dev, "%s[%d]: v4l2_async_register_subdev_sensor_common failed with (%d)\n", __func__, __LINE__, ret);
 		goto free_ctrls;
 	}
 	dev_info(&client->dev, "sensor %s registered\n", sensor->sd.name);
-
-	// INIT_LIST_HEAD(&sensor->queue_list);
 
 	ret = sysfs_create_group(&dev->kobj, &avt3_attr_grp);
 	dev_info(dev, " -> %s[%d]: sysfs group created! (%d)\n", __func__, __LINE__, ret);
@@ -7264,7 +6408,6 @@ static int avt3_probe(struct i2c_client *client)
 
 #ifdef DPHY_RESET_WORKAROUND
 	sema_init(&sensor->streamon_sem, 0);
-	// init_completion(&sensor->streamon_completion);
 	avt3_streamon_thread_enable(&sensor->sd);
 #endif
 
@@ -7273,8 +6416,6 @@ static int avt3_probe(struct i2c_client *client)
 	dev_info(&client->dev, "%s[%d]: probe success !\n", __func__, __LINE__);
 
 	return 0;
-
-	//##################
 
 free_ctrls:
 
