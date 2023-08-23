@@ -5029,6 +5029,9 @@ static int avt3_pad_ops_enum_frame_interval(
 	struct v4l2_subdev_frame_interval_enum *fie)
 {
 	struct avt3_dev *sensor = to_avt3_dev(sd);
+	u32 width = fie->width;
+	u32 height = fie->height;
+	const struct avt3_binning_info *new_binning;
 	int i,ret;
 	u64 max_framerate;
 
@@ -5045,13 +5048,6 @@ static int avt3_pad_ops_enum_frame_interval(
 				 fie->index, 1, fie->pad, fie->code, fie->width, fie->height);
 		return -EINVAL;
 	}
-	if (sensor->mbus_framefmt.code != fie->code)
-	{
-		avt_info(sd, "sensor->mbus_framefmt.code 0x%04X, fie->code 0x%04X",
-				 sensor->mbus_framefmt.code, fie->code);
-		return -EINVAL;
-	}
-
 	/*
 	To enumerate frame intervals applications initialize the index, pad, which, code, width and height fields of
 	struct v4l2_subdev_frame_interval_enum and call the ioctl VIDIOC_SUBDEV_ENUM_FRAME_INTERVAL ioctl with a
@@ -5072,8 +5068,11 @@ static int avt3_pad_ops_enum_frame_interval(
 		return -EINVAL;
 	}
 
-	if (fie->width != clamp(fie->width,sensor->min_rect.width,sensor->max_rect.width)
-        || fie->height != clamp(fie->height,sensor->min_rect.height,sensor->max_rect.height))
+	// Get matching binning config for requested resolution
+	avt3_calc_compose(sensor,&sensor->curr_rect,&width,&height,
+			  &new_binning);
+
+	if (fie->width != width || fie->height != height)
 	{
 		avt_err(&sensor->sd, "Frameintervals for unsupported width (%u) or height (%u) requested", fie->width,fie->height);
 		return -EINVAL;
