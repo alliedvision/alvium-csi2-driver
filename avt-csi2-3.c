@@ -5038,6 +5038,7 @@ static int avt3_set_crop(struct avt3_dev *camera,
 	struct v4l2_rect *crop_rect;
 	struct v4l2_mbus_framefmt *frmfmt;
 	const struct avt3_binning_info *info;
+	u32 width = max->width,height = max->height;
 
 	if (sel->which  == V4L2_SUBDEV_FORMAT_TRY) {
 		crop_rect = v4l2_subdev_get_try_crop(&camera->sd, sd_state, sel->pad);
@@ -5052,10 +5053,10 @@ static int avt3_set_crop(struct avt3_dev *camera,
 
 	v4l2_rect_map_inside(&sel->r, max);
 
-	avt3_calc_compose(camera,&sel->r,&frmfmt->width,&frmfmt->height,&info);
+	avt3_calc_compose(camera,&sel->r,&width,&height,&info);
 
-	frmfmt->width = max->width;
-	frmfmt->height = max->height;
+	frmfmt->width = width;
+	frmfmt->height = height;
 
 	*crop_rect = sel->r;
 
