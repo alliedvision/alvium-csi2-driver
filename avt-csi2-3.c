@@ -4398,14 +4398,9 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 
 		ret = avt3_ctrl_write(sensor->i2c_client, V4L2_AV_CSI2_OFFSET_Y, crop_rect.top);
 
-		ret = avt3_ctrl_write(sensor->i2c_client, V4L2_AV_CSI2_VFLIP, sensor->vflip);
-
-		ret = avt3_ctrl_write(sensor->i2c_client, V4L2_AV_CSI2_HFLIP, sensor->hflip);
-
-
 		ret = regmap_bulk_read(sensor->regmap64,
-							   sensor->cci_reg.reg.bcrm_addr + BCRM_ACQUISITION_FRAME_RATE_MIN_64R,
-							   &u64FrMin, 1);
+				       sensor->cci_reg.reg.bcrm_addr + BCRM_ACQUISITION_FRAME_RATE_MIN_64R,
+				       &u64FrMin, 1);
 
 		if (ret < 0)
 		{
