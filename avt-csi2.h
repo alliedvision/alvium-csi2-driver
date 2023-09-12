@@ -53,12 +53,8 @@ enum avt_mode {
 	AVT_GENCP_MODE,
 };
 
-//#define AVT_RESET_DELAY1			(2000000)
-//#define AVT_RESET_DELAY2			(2500000)
-
 #define AVT_CTRL_FLAG_STREAM_DISABLED 		(1 << 1)
 #define AVT_CTRL_FLAG_READ_BACK 		(1 << 2)
-
 
 struct avt_ctrl_mapping {
 	u8 reg_size;
@@ -141,7 +137,6 @@ struct avt_ctrl_mapping {
 
 /* Execute a software trigger */
 #define V4L2_CID_TRIGGER_SOFTWARE	(V4L2_CID_CAMERA_CLASS_BASE+50)
-
 
 /* Camera temperature readout */
 #define V4L2_CID_DEVICE_TEMPERATURE	(V4L2_CID_CAMERA_CLASS_BASE+51)
@@ -648,7 +643,6 @@ struct avt3_dev
 	struct gpio_desc *pwdn_gpio;
 
 	int power_count;
-	//int force_reset_at_close;
 
 	struct v4l2_mbus_framefmt mbus_framefmt;
 	struct v4l2_captureparm streamcap;
@@ -676,7 +670,6 @@ struct avt3_dev
 	union cci_reg cci_reg;
 	struct gencp_reg gencp_reg;
 
-	//union cci_device_caps_reg 		device_caps;
 	union bcrm_feature_inquiry_reg feature_inquiry_reg;
 	union bcrm_avail_mipi_reg avail_mipi_reg;
 	union bcrm_avail_mipi_reg ignore_avail_mipi_reg;
@@ -684,17 +677,14 @@ struct avt3_dev
 	union bcrm_supported_lanecount_reg lane_capabilities;
 
 	struct avt_csi_mipi_mode_mapping *available_fmts;
-//	uint16_t *available_fmts;
 	uint32_t available_fmts_cnt;
 
 	struct list_head requests_queued;
 	struct completion bcrm_wrhs_completion;
 
-//	struct delayed_work bcrm_wrhs_dwork;
 	struct work_struct bcrm_wrhs_work;
 	struct workqueue_struct *bcrm_wrhs_queue;
 
-// from avt_csi2_priv
 	u32 mbus_fmt_code;
 	bool cross_update;
 	struct avt_frame_param frmp;
@@ -719,57 +709,20 @@ struct avt3_dev
 	atomic_t  bcrm_wrhs_enabled;
 };
 
-struct avt_ctrl {
-	__u32		id;
-	union {
-		__u64	value64;
-		struct {
-			__u32		value0;
-			__u32		value1;
-		};
-	};
+enum avt_ctrl {
+  V4L2_AV_CSI2_WIDTH = 0x1001,
+  V4L2_AV_CSI2_HEIGHT,
+  V4L2_AV_CSI2_PIXELFORMAT,
+  V4L2_AV_CSI2_STREAMON,
+  V4L2_AV_CSI2_STREAMOFF,
+  V4L2_AV_CSI2_ABORT,
+  V4L2_AV_CSI2_HFLIP,
+  V4L2_AV_CSI2_VFLIP,
+  V4L2_AV_CSI2_OFFSET_X,
+  V4L2_AV_CSI2_OFFSET_Y,
+  V4L2_AV_CSI2_CHANGEMODE,
+  V4L2_AV_CSI2_BAYER_PATTERN
 };
-
-#define V4L2_AV_CSI2_BASE								0x1000
-#define V4L2_AV_CSI2_WIDTH_R		(V4L2_AV_CSI2_BASE+0x0001)
-#define V4L2_AV_CSI2_WIDTH_W		(V4L2_AV_CSI2_BASE+0x0002)
-#define V4L2_AV_CSI2_WIDTH_MINVAL_R	(V4L2_AV_CSI2_BASE+0x0003)
-#define V4L2_AV_CSI2_WIDTH_MAXVAL_R	(V4L2_AV_CSI2_BASE+0x0004)
-#define V4L2_AV_CSI2_WIDTH_INCVAL_R	(V4L2_AV_CSI2_BASE+0x0005)
-#define V4L2_AV_CSI2_HEIGHT_R		(V4L2_AV_CSI2_BASE+0x0006)
-#define V4L2_AV_CSI2_HEIGHT_W		(V4L2_AV_CSI2_BASE+0x0007)
-#define V4L2_AV_CSI2_HEIGHT_MINVAL_R	(V4L2_AV_CSI2_BASE+0x0008)
-#define V4L2_AV_CSI2_HEIGHT_MAXVAL_R	(V4L2_AV_CSI2_BASE+0x0009)
-#define V4L2_AV_CSI2_HEIGHT_INCVAL_R	(V4L2_AV_CSI2_BASE+0x000A)
-#define V4L2_AV_CSI2_PIXELFORMAT_R	(V4L2_AV_CSI2_BASE+0x000B)
-#define V4L2_AV_CSI2_PIXELFORMAT_W	(V4L2_AV_CSI2_BASE+0x000C)
-#define V4L2_AV_CSI2_PAYLOADSIZE_R	(V4L2_AV_CSI2_BASE+0x000D)
-#define V4L2_AV_CSI2_STREAMON_W		(V4L2_AV_CSI2_BASE+0x000E)
-#define V4L2_AV_CSI2_STREAMOFF_W	(V4L2_AV_CSI2_BASE+0x000F)
-#define V4L2_AV_CSI2_ABORT_W		(V4L2_AV_CSI2_BASE+0x0010)
-#define V4L2_AV_CSI2_ACQ_STATUS_R	(V4L2_AV_CSI2_BASE+0x0011)
-#define V4L2_AV_CSI2_HFLIP_R		(V4L2_AV_CSI2_BASE+0x0012)
-#define V4L2_AV_CSI2_HFLIP_W		(V4L2_AV_CSI2_BASE+0x0013)
-#define V4L2_AV_CSI2_VFLIP_R		(V4L2_AV_CSI2_BASE+0x0014)
-#define V4L2_AV_CSI2_VFLIP_W		(V4L2_AV_CSI2_BASE+0x0015)
-#define V4L2_AV_CSI2_OFFSET_X_W		(V4L2_AV_CSI2_BASE+0x0016)
-#define V4L2_AV_CSI2_OFFSET_X_R		(V4L2_AV_CSI2_BASE+0x0017)
-#define V4L2_AV_CSI2_OFFSET_X_MIN_R	(V4L2_AV_CSI2_BASE+0x0018)
-#define V4L2_AV_CSI2_OFFSET_X_MAX_R	(V4L2_AV_CSI2_BASE+0x0019)
-#define V4L2_AV_CSI2_OFFSET_X_INC_R	(V4L2_AV_CSI2_BASE+0x001A)
-#define V4L2_AV_CSI2_OFFSET_Y_W		(V4L2_AV_CSI2_BASE+0x001B)
-#define V4L2_AV_CSI2_OFFSET_Y_R		(V4L2_AV_CSI2_BASE+0x001C)
-#define V4L2_AV_CSI2_OFFSET_Y_MIN_R	(V4L2_AV_CSI2_BASE+0x001D)
-#define V4L2_AV_CSI2_OFFSET_Y_MAX_R	(V4L2_AV_CSI2_BASE+0x001E)
-#define V4L2_AV_CSI2_OFFSET_Y_INC_R	(V4L2_AV_CSI2_BASE+0x001F)
-#define V4L2_AV_CSI2_SENSOR_WIDTH_R	(V4L2_AV_CSI2_BASE+0x0020)
-#define V4L2_AV_CSI2_SENSOR_HEIGHT_R	(V4L2_AV_CSI2_BASE+0x0021)
-#define V4L2_AV_CSI2_MAX_WIDTH_R	(V4L2_AV_CSI2_BASE+0x0022)
-#define V4L2_AV_CSI2_MAX_HEIGHT_R	(V4L2_AV_CSI2_BASE+0x0023)
-#define V4L2_AV_CSI2_CURRENTMODE_R	(V4L2_AV_CSI2_BASE+0x0024)
-#define V4L2_AV_CSI2_CHANGEMODE_W	(V4L2_AV_CSI2_BASE+0x0025)
-#define V4L2_AV_CSI2_BAYER_PATTERN_R	(V4L2_AV_CSI2_BASE+0x0026)
-#define V4L2_AV_CSI2_BAYER_PATTERN_W	(V4L2_AV_CSI2_BASE+0x0027)
 
 enum bayer_format {
 	bayer_ignore = -1,
@@ -781,16 +734,11 @@ enum bayer_format {
 };
 
 struct avt_csi_mipi_mode_mapping {
-	// u32 pixelformat;
 	u32 mbus_code;
 	u16 mipi_fmt;
 	u32 colorspace;
 	u32 fourcc;           /* v4l2 format id */
 	enum bayer_format bayer_pattern;
-	// int bpp;
-	// bool valid;
-	// bool enumfmt;
-	// int idx;
 	char name[32];
 #ifdef DEBUG
 	char  mb_code_string[32];
