@@ -5018,7 +5018,7 @@ static int avt3_set_compose(struct avt3_dev *camera,
 	frmfmt->width = sel->r.width;
 	frmfmt->height = sel->r.height;
 
-	if (sel->target == V4L2_SUBDEV_FORMAT_ACTIVE)
+	if (sel->which == V4L2_SUBDEV_FORMAT_ACTIVE)
 		camera->curr_binning_info = info;
 
 	return 0;
@@ -5055,7 +5055,7 @@ static int avt3_set_crop(struct avt3_dev *camera,
 
 	*crop_rect = sel->r;
 
-	if (sel->target == V4L2_SUBDEV_FORMAT_ACTIVE)
+	if (sel->which == V4L2_SUBDEV_FORMAT_ACTIVE)
 		camera->curr_binning_info = info;
 
 
@@ -6502,7 +6502,7 @@ module_i2c_driver(avt3_i2c_driver);
 MODULE_DESCRIPTION("Allied Vision's MIPI-CSI2 Camera Driver");
 MODULE_AUTHOR("Allied Vision Inc.");
 MODULE_LICENSE("GPL");
-MODULE_VERSION("1.0.0");
+MODULE_VERSION("1.1.0");
 
 #ifdef DPHY_RESET_WORKAROUND
 if (sensor->phyreset_on_streamon)
