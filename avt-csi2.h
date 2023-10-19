@@ -690,6 +690,7 @@ struct avt3_dev
 	struct avt_frame_param frmp;
 	uint32_t streamon_delay;
 	uint32_t force_reset_on_init;
+	u8	 stream_start_phy_reset;
 
 #ifdef BCRM_HS_THREAD
 	struct task_struct *bcrm_hs_task;

@@ -3300,8 +3300,11 @@ static int avt3_update_ctrl_value(struct avt3_dev *camera,
 				 reg,
 				 data_size);
 
-	if (ret < 0)
+	if (ret < 0) {
+		avt_err(&camera->sd,"Reading ctrl %x (reg: %x) failed with: %d",
+			ctrl->id,reg,ret);
 		return ret;
+	}
 
 	avt3_ctrl_from_reg(ctrl->id,&value);
 
@@ -4488,6 +4491,14 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 		if (debug >= 2)
 			bcrm_dump(client);
 
+		if (sensor->stream_start_phy_reset) {
+			avt3_dphy_reset(sensor,1);
+
+			usleep_range(100,1000);
+
+			avt3_dphy_reset(sensor,0);
+		}
+
 		/* start streaming */
 		ret = avt3_ctrl_write(client, V4L2_AV_CSI2_STREAMON, 1);
 
@@ -4580,6 +4591,8 @@ long avt3_core_ops_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 	struct v4l2_csi_config *config;
 
 	char *i2c_reg_buf;
+
+	MUTEX_LOCK(&sensor->lock);
 
 	avt_dbg(sd, "cmd 0x%08x %d %s", cmd, cmd & 0xff, __FILE__);
 
@@ -4731,6 +4744,8 @@ long avt3_core_ops_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 		ret = -ENOTTY;
 		break;
 	}
+
+	MUTEX_UNLOCK(&sensor->lock);
 
 	return ret;
 }
@@ -5881,10 +5896,10 @@ static void bcrm_wrhs_work_func(struct work_struct *work)
 			//TODO: Must we check the return value here ?
 			ret = regmap_write(sensor->regmap8, sensor->cci_reg.reg.bcrm_addr + BCRM_WRITE_HANDSHAKE_8RW, handshake_val & ~BCRM_HANDSHAKE_STATUS_MASK); /* reset only handshake status */
 
-			complete(&sensor->bcrm_wrhs_completion);
+					complete(&sensor->bcrm_wrhs_completion);
 
 			dev_dbg(&sensor->i2c_client->dev, "%s[%d]: Handshake ok\n",
-				__func__, __LINE__);
+						__func__, __LINE__);
 
 			break;
 		}
@@ -5941,6 +5956,7 @@ static int avt3_probe(struct i2c_client *client)
 	struct device *dev = &client->dev;
 	struct avt3_dev *sensor;
 	struct v4l2_mbus_framefmt *fmt;
+	struct fwnode_handle *fwnode = dev_fwnode(dev);
 	int ret;
 
 	dev_info(&client->dev, "%s[%d]: %s",
@@ -5962,13 +5978,15 @@ static int avt3_probe(struct i2c_client *client)
 
 	sensor->streamon_delay = 0;
 
-	ret = fwnode_property_read_u32(dev_fwnode(&client->dev),
-								   "streamon_delay",
-								   &sensor->streamon_delay);
+	ret = fwnode_property_read_u32(fwnode,"streamon_delay",
+				       &sensor->streamon_delay);
 	if (sensor->streamon_delay)
 	{
 		dev_info(dev, "%s[%d]: use sensor->streamon_delay of %u us\n", __func__, __LINE__, sensor->streamon_delay);
 	}
+
+	sensor->stream_start_phy_reset
+		= fwnode_property_present(fwnode,"phy_reset_on_start");
 
 	sensor->force_reset_on_init = fwnode_property_present(dev_fwnode(&client->dev), "force_reset_on_init");
 	dev_dbg(dev, "%s[%d]: force_reset_on_init %d\n", __func__, __LINE__, sensor->force_reset_on_init);
