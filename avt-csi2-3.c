@@ -2238,6 +2238,15 @@ static int wait_camera_available(struct avt3_dev *sensor, bool use_heartbeat) {
 	bool device_available = false;
 	u64 duration_ms = 0;
 
+
+	avt_info(&sensor->sd, "Waiting for camera to shutdown...");
+	do
+	{
+		usleep_range(delay_ms*1000, (delay_ms+1)*1000);
+		device_available = avt3_detect(sensor->i2c_client) == 0;
+		duration_ms = jiffies_to_msecs(get_jiffies_64() - start_jiffies);
+	} while((duration_ms < max_time_ms) && device_available);
+
 	avt_info(&sensor->sd, "Waiting for camera to respond to I2C transfers...");
 	do
 	{
@@ -2258,34 +2267,25 @@ static int wait_camera_available(struct avt3_dev *sensor, bool use_heartbeat) {
 		avt_info(&sensor->sd, "Done waiting, let's hope for the best...");
 
 	} else {
-		int heartbeat, ret;
+		int heartbeat;
 		avt_info(&sensor->sd, "Heartbeat supported, waiting for heartbeat to become active");
-
-		ret = heartbeat_write_default(sensor);
-		if(ret != 0) {
-			avt_err(&sensor->sd, "Heartbeat write failed (regmap_write returned %d)", ret);
-			return ret;
-		}
 
 		do
 		{
 			usleep_range(delay_ms*1000, (delay_ms+1)*1000);
 			heartbeat_read(sensor, &heartbeat);
-			if(ret < 0) {
-				return -1;
-			}
 			duration_ms = jiffies_to_msecs(get_jiffies_64() - start_jiffies);
 		} while((duration_ms < max_time_ms) && ((heartbeat == 0) || (heartbeat == heartbeat_default)));
 
-		if(heartbeat == 0) {
-			avt_err(&sensor->sd, "Camera not reconnected (heartbeat timeout)");
-			return -1;
+		if(heartbeat >= 0 && heartbeat < heartbeat_default) {
+			avt_info(&sensor->sd, "Heartbeat active");
+			return 0;
 		}
 
-		avt_info(&sensor->sd, "Heartbeat active");
+		avt_err(&sensor->sd, "Camera not reconnected (heartbeat timeout)");
 	}
 
-	return 0;
+	return -1;
 }
 
 static int avt3_reset(struct avt3_dev *sensor, enum avt_reset_type reset_type)
@@ -3300,8 +3300,11 @@ static int avt3_update_ctrl_value(struct avt3_dev *camera,
 				 reg,
 				 data_size);
 
-	if (ret < 0)
+	if (ret < 0) {
+		avt_err(&camera->sd,"Reading ctrl %x (reg: %x) failed with: %d",
+			ctrl->id,reg,ret);
 		return ret;
+	}
 
 	avt3_ctrl_from_reg(ctrl->id,&value);
 
@@ -3694,7 +3697,7 @@ static int avt3_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 		const struct avt_ctrl_mapping * const ctrl_mapping = ctrl->priv;
 
 
-		dev_info(&client->dev, "%s[%d]: Write custom ctrl %s (%x)\n",
+		dev_dbg(&client->dev, "%s[%d]: Write custom ctrl %s (%x)\n",
 			 __func__, __LINE__, ctrl_mapping->attr.name, ctrl->id);
 
 		if (ctrl_mapping->data_size != 0
@@ -4488,6 +4491,14 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 		if (debug >= 2)
 			bcrm_dump(client);
 
+		if (sensor->stream_start_phy_reset) {
+			avt3_dphy_reset(sensor,1);
+
+			usleep_range(100,1000);
+
+			avt3_dphy_reset(sensor,0);
+		}
+
 		/* start streaming */
 		ret = avt3_ctrl_write(client, V4L2_AV_CSI2_STREAMON, 1);
 
@@ -4580,6 +4591,8 @@ long avt3_core_ops_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 	struct v4l2_csi_config *config;
 
 	char *i2c_reg_buf;
+
+	MUTEX_LOCK(&sensor->lock);
 
 	avt_dbg(sd, "cmd 0x%08x %d %s", cmd, cmd & 0xff, __FILE__);
 
@@ -4731,6 +4744,8 @@ long avt3_core_ops_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 		ret = -ENOTTY;
 		break;
 	}
+
+	MUTEX_UNLOCK(&sensor->lock);
 
 	return ret;
 }
@@ -5018,7 +5033,7 @@ static int avt3_set_compose(struct avt3_dev *camera,
 	frmfmt->width = sel->r.width;
 	frmfmt->height = sel->r.height;
 
-	if (sel->target == V4L2_SUBDEV_FORMAT_ACTIVE)
+	if (sel->which == V4L2_SUBDEV_FORMAT_ACTIVE)
 		camera->curr_binning_info = info;
 
 	return 0;
@@ -5055,7 +5070,7 @@ static int avt3_set_crop(struct avt3_dev *camera,
 
 	*crop_rect = sel->r;
 
-	if (sel->target == V4L2_SUBDEV_FORMAT_ACTIVE)
+	if (sel->which == V4L2_SUBDEV_FORMAT_ACTIVE)
 		camera->curr_binning_info = info;
 
 
@@ -5881,10 +5896,10 @@ static void bcrm_wrhs_work_func(struct work_struct *work)
 			//TODO: Must we check the return value here ?
 			ret = regmap_write(sensor->regmap8, sensor->cci_reg.reg.bcrm_addr + BCRM_WRITE_HANDSHAKE_8RW, handshake_val & ~BCRM_HANDSHAKE_STATUS_MASK); /* reset only handshake status */
 
-			complete(&sensor->bcrm_wrhs_completion);
+					complete(&sensor->bcrm_wrhs_completion);
 
 			dev_dbg(&sensor->i2c_client->dev, "%s[%d]: Handshake ok\n",
-				__func__, __LINE__);
+						__func__, __LINE__);
 
 			break;
 		}
@@ -5941,6 +5956,7 @@ static int avt3_probe(struct i2c_client *client)
 	struct device *dev = &client->dev;
 	struct avt3_dev *sensor;
 	struct v4l2_mbus_framefmt *fmt;
+	struct fwnode_handle *fwnode = dev_fwnode(dev);
 	int ret;
 
 	dev_info(&client->dev, "%s[%d]: %s",
@@ -5962,13 +5978,15 @@ static int avt3_probe(struct i2c_client *client)
 
 	sensor->streamon_delay = 0;
 
-	ret = fwnode_property_read_u32(dev_fwnode(&client->dev),
-								   "streamon_delay",
-								   &sensor->streamon_delay);
+	ret = fwnode_property_read_u32(fwnode,"streamon_delay",
+				       &sensor->streamon_delay);
 	if (sensor->streamon_delay)
 	{
 		dev_info(dev, "%s[%d]: use sensor->streamon_delay of %u us\n", __func__, __LINE__, sensor->streamon_delay);
 	}
+
+	sensor->stream_start_phy_reset
+		= fwnode_property_present(fwnode,"phy_reset_on_start");
 
 	sensor->force_reset_on_init = fwnode_property_present(dev_fwnode(&client->dev), "force_reset_on_init");
 	dev_dbg(dev, "%s[%d]: force_reset_on_init %d\n", __func__, __LINE__, sensor->force_reset_on_init);
@@ -6502,7 +6520,7 @@ module_i2c_driver(avt3_i2c_driver);
 MODULE_DESCRIPTION("Allied Vision's MIPI-CSI2 Camera Driver");
 MODULE_AUTHOR("Allied Vision Inc.");
 MODULE_LICENSE("GPL");
-MODULE_VERSION("1.0.0");
+MODULE_VERSION("1.1.0");
 
 #ifdef DPHY_RESET_WORKAROUND
 if (sensor->phyreset_on_streamon)
