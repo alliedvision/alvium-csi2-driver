@@ -2238,6 +2238,15 @@ static int wait_camera_available(struct avt3_dev *sensor, bool use_heartbeat) {
 	bool device_available = false;
 	u64 duration_ms = 0;
 
+
+	avt_info(&sensor->sd, "Waiting for camera to shutdown...");
+	do
+	{
+		usleep_range(delay_ms*1000, (delay_ms+1)*1000);
+		device_available = avt3_detect(sensor->i2c_client) == 0;
+		duration_ms = jiffies_to_msecs(get_jiffies_64() - start_jiffies);
+	} while((duration_ms < max_time_ms) && device_available);
+
 	avt_info(&sensor->sd, "Waiting for camera to respond to I2C transfers...");
 	do
 	{
@@ -2258,34 +2267,25 @@ static int wait_camera_available(struct avt3_dev *sensor, bool use_heartbeat) {
 		avt_info(&sensor->sd, "Done waiting, let's hope for the best...");
 
 	} else {
-		int heartbeat, ret;
+		int heartbeat;
 		avt_info(&sensor->sd, "Heartbeat supported, waiting for heartbeat to become active");
-
-		ret = heartbeat_write_default(sensor);
-		if(ret != 0) {
-			avt_err(&sensor->sd, "Heartbeat write failed (regmap_write returned %d)", ret);
-			return ret;
-		}
 
 		do
 		{
 			usleep_range(delay_ms*1000, (delay_ms+1)*1000);
 			heartbeat_read(sensor, &heartbeat);
-			if(ret < 0) {
-				return -1;
-			}
 			duration_ms = jiffies_to_msecs(get_jiffies_64() - start_jiffies);
 		} while((duration_ms < max_time_ms) && ((heartbeat == 0) || (heartbeat == heartbeat_default)));
 
-		if(heartbeat == 0) {
-			avt_err(&sensor->sd, "Camera not reconnected (heartbeat timeout)");
-			return -1;
+		if(heartbeat >= 0 && heartbeat < heartbeat_default) {
+			avt_info(&sensor->sd, "Heartbeat active");
+			return 0;
 		}
 
-		avt_info(&sensor->sd, "Heartbeat active");
+		avt_err(&sensor->sd, "Camera not reconnected (heartbeat timeout)");
 	}
 
-	return 0;
+	return -1;
 }
 
 static int avt3_reset(struct avt3_dev *sensor, enum avt_reset_type reset_type)
@@ -3694,7 +3694,7 @@ static int avt3_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 		const struct avt_ctrl_mapping * const ctrl_mapping = ctrl->priv;
 
 
-		dev_info(&client->dev, "%s[%d]: Write custom ctrl %s (%x)\n",
+		dev_dbg(&client->dev, "%s[%d]: Write custom ctrl %s (%x)\n",
 			 __func__, __LINE__, ctrl_mapping->attr.name, ctrl->id);
 
 		if (ctrl_mapping->data_size != 0
