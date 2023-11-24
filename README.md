@@ -1,7 +1,7 @@
 # Alvium CSI2 driver
 
 ## Overview
-This repository contains the source code of the linux Alvium CSI2 driver module release 1.1.0. 
+This repository contains the source code of the Linux Alvium CSI2 driver module release 1.1.0. 
 
 ## Compatibility
 This release is tested with:
