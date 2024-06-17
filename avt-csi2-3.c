@@ -68,6 +68,10 @@
 #include <linux/kthread.h>
 #include <linux/semaphore.h>
 
+#ifdef NVIDIA
+#include <media/camera_common.h>
+#endif //#ifdef NVIDIA
+
 #include "avt-mipi-csi2.h"
 
 // only for dma_get_cache_alignment();
@@ -6567,6 +6571,53 @@ static const struct avt3_platform_ops platform_default_ops = {
 	.client_to_avt3_dev = avt3_platform_default_client_to_avt3_dev,
 };
 
+#ifdef NVIDIA
+static void *avt3_platform_nvidia_alloc(struct i2c_client *client) 
+{
+	return devm_kzalloc(&client->dev, sizeof(struct camera_common_data), GFP_KERNEL);
+}
+
+static void avt3_platform_nvidia_free(struct i2c_client *client, void *pdata) 
+{
+	devm_kfree(&client->dev, pdata);
+}
+
+static struct v4l2_subdev* avt3_platform_nvidia_init(void *pdata, struct avt3_dev* camera)
+{
+	int ret;
+	struct camera_common_data *common_data = pdata;
+	common_data->priv = camera;
+	common_data->dev = &camera->i2c_client->dev;
+	common_data->ctrl_handler = &camera->v4l2_ctrl_hdl;
+
+	ret = camera_common_initialize(common_data, "avt_csi2_3");
+	if (ret < 0) 
+	{
+		return ERR_PTR(ret);
+	}
+
+	return &common_data->subdev;
+}
+
+static struct avt3_dev *avt3_platform_nvidia_subdev_to_avt3_dev(struct v4l2_subdev *sd)
+{
+	return container_of(sd, struct camera_common_data, subdev)->priv;
+}
+
+static struct avt3_dev *avt3_platform_nvidia_client_to_avt3_dev(struct i2c_client *client)
+{
+	return container_of(i2c_get_clientdata(client), struct camera_common_data, subdev)->priv;
+}
+
+static const struct avt3_platform_ops platform_nvidia_ops = {
+	.alloc = avt3_platform_nvidia_alloc,
+	.free = avt3_platform_nvidia_free,
+	.init = avt3_platform_nvidia_init,
+	.subdev_to_avt3_dev = avt3_platform_nvidia_subdev_to_avt3_dev,
+	.client_to_avt3_dev = avt3_platform_nvidia_client_to_avt3_dev,
+};
+#endif //#ifdef NVIDIA
+
 static const struct i2c_device_id avt3_id[] = {
 	{AVT3_DRIVER_NAME, 0},
 	{},
@@ -6578,6 +6629,12 @@ static const struct of_device_id avt3_dt_ids[] = {
 		.compatible = "alliedvision,avt3",
 		.data = &platform_default_ops,
 	},
+#ifdef NVIDIA
+	{
+		.compatible = "alliedvision,avt3-nv",
+		.data = &platform_nvidia_ops,
+	},
+#endif //#ifdef NVIDIA
 	{}};
 MODULE_DEVICE_TABLE(of, avt3_dt_ids);
 
