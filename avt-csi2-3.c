@@ -191,6 +191,16 @@ struct avt_val64
 #define AVT_BINNING_MODE_FLAG_AVERAGE 		0b01
 #define AVT_BINNING_MODE_FLAG_SUM 		0b10
 
+struct avt3_platform_ops {
+	void* (*alloc)(struct i2c_client *client);
+	void (*free)(struct i2c_client *client, void *pdata);
+	struct v4l2_subdev* (*init)(void *pdata, struct avt3_dev* camera);
+
+	struct avt3_dev* (*subdev_to_avt3_dev)(struct v4l2_subdev *sd);
+	struct avt3_dev* (*client_to_avt3_dev)(struct i2c_client *client);
+	
+};
+
 enum avt_binning_type {
 	NONE = -1,
 	DIGITAL,
@@ -313,15 +323,7 @@ static void avt3_ctrl_changed(struct avt3_dev *camera, const struct v4l2_ctrl * 
 static struct v4l2_ctrl* avt3_ctrl_find(struct avt3_dev *camera,u32 id);
 static int avt3_ctrl_write(struct i2c_client *client, enum avt_ctrl ctrl_id, __u32 value);
 static int avt3_get_sensor_capabilities(struct v4l2_subdev *sd);
-static inline struct avt3_dev *to_avt3_dev(struct v4l2_subdev *sd)
-{
-	return container_of(sd, struct avt3_dev, sd);
-}
 
-static struct avt3_dev *client_to_avt3_dev(const struct i2c_client *client)
-{
-	return container_of(i2c_get_clientdata(client), struct avt3_dev, sd);
-}
 
 #define DUMP_BCRM_REG8(CLIENT, BCRM_REG) dump_bcrm_reg(CLIENT, (BCRM_REG), (#BCRM_REG), AV_CAM_DATA_SIZE_8)
 #define DUMP_BCRM_REG16(CLIENT, BCRM_REG) dump_bcrm_reg(CLIENT, (BCRM_REG), (#BCRM_REG), AV_CAM_DATA_SIZE_16)
@@ -5958,10 +5960,14 @@ static int avt3_probe(struct i2c_client *client)
 	struct avt3_dev *sensor;
 	struct v4l2_mbus_framefmt *fmt;
 	struct fwnode_handle *fwnode = dev_fwnode(dev);
+	struct avt3_platform_ops *pops;
 	int ret;
 
 	dev_info(&client->dev, "%s[%d]: %s",
 			 __func__, __LINE__, __FILE__);
+
+	pops = of_device_get_match_data(&client->dev);	
+	if (!pops)
 
 	if (avt3_detect(client) < 0)
 	{
@@ -5974,6 +5980,8 @@ static int avt3_probe(struct i2c_client *client)
 	{
 		return -ENOMEM;
 	}
+
+	sensor->platform_data = 
 
 	sensor->i2c_client = client;
 
@@ -6494,6 +6502,46 @@ static void avt3_remove(struct i2c_client *client)
 #endif
 }
 
+struct avt3_platform_default_data {
+	struct v4l2_subdev sd;
+	struct avt3_dev *camera;
+};
+
+static void *avt3_platform_default_alloc(struct i2c_client *client) 
+{
+	return devm_kzalloc(&client->dev, sizeof(struct avt3_platform_default_data), GFP_KERNEL);
+}
+
+static void avt3_platform_default_free(struct i2c_client *client, void *pdata) 
+{
+	devm_kfree(&client->dev, pdata);
+}
+
+static struct v4l2_subdev* avt3_platform_default_init(void *pdata, struct avt3_dev* camera)
+{
+	struct avt3_platform_default_data *default_pdata = pdata;
+	default_pdata->camera = camera;
+	return &default_pdata->sd;
+}
+
+static struct avt3_dev *avt3_platform_default_subdev_to_avt3_dev(struct v4l2_subdev *sd)
+{
+	return container_of(sd, struct avt3_platform_default_data, sd)->camera;
+}
+
+static struct avt3_dev *avt3_platform_default_client_to_avt3_dev(const struct i2c_client *client)
+{
+	return container_of(i2c_get_clientdata(client), struct avt3_platform_default_data, sd)->camera;
+}
+
+static const struct avt3_platform_ops platform_default_ops = {
+	.alloc = avt3_platform_default_alloc,
+	.free = avt3_platform_default_free,
+	.init = avt3_platform_default_init,
+	.subdev_to_avt3_dev = avt3_platform_default_subdev_to_avt3_dev,
+	.client_to_avt3_dev = avt3_platform_default_client_to_avt3_dev,
+};
+
 static const struct i2c_device_id avt3_id[] = {
 	{AVT3_DRIVER_NAME, 0},
 	{},
@@ -6501,7 +6549,10 @@ static const struct i2c_device_id avt3_id[] = {
 MODULE_DEVICE_TABLE(i2c, avt3_id);
 
 static const struct of_device_id avt3_dt_ids[] = {
-	{.compatible = "alliedvision,avt3"},
+	{
+		.compatible = "alliedvision,avt3",
+		.data = &platform_default_ops,
+	},
 	{}};
 MODULE_DEVICE_TABLE(of, avt3_dt_ids);
 
@@ -6522,11 +6573,3 @@ MODULE_DESCRIPTION("Allied Vision's MIPI-CSI2 Camera Driver");
 MODULE_AUTHOR("Allied Vision Inc.");
 MODULE_LICENSE("GPL");
 MODULE_VERSION("1.1.0");
-
-#ifdef DPHY_RESET_WORKAROUND
-if (sensor->phyreset_on_streamon)
-{
-	up(&sensor->streamon_sem);
-	dev_info(&client->dev, "%s[%d]: up(&sensor->streamon_sem) returnd", __func__, __LINE__);
-}
-#endif
