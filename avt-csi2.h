@@ -2,7 +2,7 @@
 #define __AVT_CSI2_H__
 
 #include "avt-csi2-regs.h"
-#include <uapi/linux/libcsi_ioctl.h>
+#include "libcsi_ioctl.h"
 
 #define USEMUTEX
 

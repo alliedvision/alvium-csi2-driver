@@ -56,7 +56,6 @@
 #include <linux/slab.h>
 #include <linux/types.h>
 #include <linux/gpio/consumer.h>
-#include <media/mipi-csi2.h>
 #include <media/v4l2-async.h>
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-device.h>
@@ -69,11 +68,13 @@
 #include <linux/kthread.h>
 #include <linux/semaphore.h>
 
+#include "avt-mipi-csi2.h"
+
 // only for dma_get_cache_alignment();
 #include <linux/dma-mapping.h>
 
 #include "avt-csi2.h"
-#include <uapi/linux/libcsi_ioctl.h>
+#include "libcsi_ioctl.h"
 
 static int debug = 0;
 module_param(debug, int, 0644); /* S_IRUGO */
