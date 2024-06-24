@@ -613,7 +613,8 @@ struct avt3_binning_info {
 struct avt3_dev
 {
 	struct i2c_client *i2c_client;
-	struct v4l2_subdev sd;
+	struct v4l2_subdev *sd;
+	void *platform_data;
 	struct mutex lock;
 
 	struct regmap *regmap8;
