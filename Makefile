@@ -10,6 +10,8 @@ modules_install:
 overlay_install:
 	mkdir $(INSTALL_MOD_PATH)/boot/
 	install -m 0644 $(SRC)/overlay/tegra234-p3767-camera-p3768-alvium-dual.dtbo $(INSTALL_MOD_PATH)/boot/
+	install -m 0644 $(SRC)/overlay/tegra234-p3737-camera-dual-alvium-overlay.dtbo $(INSTALL_MOD_PATH)/boot/
+	
 
 install: modules_install overlay_install
 
