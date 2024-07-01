@@ -7,6 +7,14 @@ all:
 modules_install:
 	$(MAKE) -C $(KERNEL_SRC) M=$(SRC) modules_install
 
+overlay_install:
+	mkdir -p $(INSTALL_MOD_PATH)/boot/
+	install -m 0644 $(SRC)/overlay/tegra234-p3767-camera-p3768-alvium-dual.dtbo $(INSTALL_MOD_PATH)/boot/
+	install -m 0644 $(SRC)/overlay/tegra234-p3737-camera-dual-alvium-overlay.dtbo $(INSTALL_MOD_PATH)/boot/
+	
+
+install: modules_install overlay_install
+
 clean:
 	rm -f *.o *~ core .depend .*.cmd *.ko *.mod.c
 	rm -f Module.markers Module.symvers modules.order
