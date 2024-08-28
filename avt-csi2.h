@@ -710,6 +710,8 @@ struct avt3_dev
 	struct bin_attribute *fw_transfer_attr;
 
 	struct avt3_fw_transfer	next_fw_rd_transfer;
+
+	struct device_attribute	*mode_attr;
 };
 
 enum avt_ctrl {

@@ -402,22 +402,22 @@ out:
 	return ret;
 }
 
-static ssize_t avt3_read8(struct avt3_dev *camera, u16 reg, u8 *val)
+static inline ssize_t avt3_read8(struct avt3_dev *camera, u16 reg, u8 *val)
 {
 	return avt3_read(camera, reg, (u8*)val, sizeof(*val));
 }
 
-static ssize_t avt3_read16(struct avt3_dev *camera, u16 reg, u16 *val)
+static inline ssize_t avt3_read16(struct avt3_dev *camera, u16 reg, u16 *val)
 {
 	return avt3_read(camera, reg, (u8*)val, sizeof(*val));
 }
 
-static ssize_t avt3_read32(struct avt3_dev *camera, u16 reg, u32 *val)
+static inline ssize_t avt3_read32(struct avt3_dev *camera, u16 reg, u32 *val)
 {
 	return avt3_read(camera, reg, (u8*)val, sizeof(*val));
 }
 
-static ssize_t avt3_read64(struct avt3_dev *camera, u16 reg, u64 *val) 
+static inline ssize_t avt3_read64(struct avt3_dev *camera, u16 reg, u64 *val) 
 {
 	return avt3_read(camera, reg, (u8*)val, sizeof(*val));
 }
@@ -427,8 +427,6 @@ static ssize_t avt3_write(struct avt3_dev *camera, u16 reg, u64 val, size_t len)
 	struct device *dev = &camera->i2c_client->dev;
 	u8 buf[8];
 	int ret;
-
-	dev_warn(dev, "avt3_write reg: %u val: %llu len: %lu\n", reg, val, len);
 
 	switch (len)
 	{
@@ -468,49 +466,84 @@ static inline u16 get_bcrm_addr(struct avt3_dev *camera,u16 reg)
 
 static inline int bcrm_read(struct avt3_dev *camera, u16 reg, u8 *val, size_t len)
 {
+	WARN_ON(camera->mode != AVT_BCRM_MODE);
+
 	return avt3_read(camera, get_bcrm_addr(camera, reg), val, len);
 }
 
 static inline int bcrm_read8(struct avt3_dev *camera,u16 reg,u8 *val)
 {
-	return avt3_read8(camera, get_bcrm_addr(camera, reg), val);
+	return bcrm_read(camera, reg, (u8*)val, sizeof(*val));
 }
 
 static inline int bcrm_read16(struct avt3_dev *camera,u16 reg,u16 *val)
 {
-	return avt3_read16(camera, get_bcrm_addr(camera, reg), val);
+	return bcrm_read(camera, reg, (u8*)val, sizeof(*val));
 }
 
 static inline int bcrm_read32(struct avt3_dev *camera,u16 reg,u32 *val)
 {
-	return avt3_read32(camera, get_bcrm_addr(camera, reg), val);
+	return bcrm_read(camera, reg, (u8*)val, sizeof(*val));
 }
 
 static inline int bcrm_read64(struct avt3_dev *camera,u16 reg,u64 *val)
 {
-	return avt3_read64(camera, get_bcrm_addr(camera, reg), val);
+	return bcrm_read(camera, reg, (u8*)val, sizeof(*val));
 }
 
 static inline int bcrm_write8(struct avt3_dev *camera, u16 reg, u8 val)
 {
-	return bcrm_write(camera, reg, val, AV_CAM_DATA_SIZE_8);
+	return bcrm_write(camera, reg, val, sizeof(val));
 }
 
 static inline int bcrm_write16(struct avt3_dev *camera, u16 reg, u16 val)
 {
-	return bcrm_write(camera, reg, val, AV_CAM_DATA_SIZE_16);
+	return bcrm_write(camera, reg, val, sizeof(val));
 }
 
 static inline int bcrm_write32(struct avt3_dev *camera, u16 reg, u32 val)
 {
-	return bcrm_write(camera, reg, val, AV_CAM_DATA_SIZE_32);
+	return bcrm_write(camera, reg, val, sizeof(val));
 }
 
 static inline int bcrm_write64(struct avt3_dev *camera, u16 reg, u64 val)
 {
-	return bcrm_write(camera, reg, val, AV_CAM_DATA_SIZE_64);
+	return bcrm_write(camera, reg, val, sizeof(val));
 }
 
+static int avt3_change_mode(struct avt3_dev *camera, u8 req_mode)
+{	
+	int ret;
+	u8 cur_mode;
+
+	if (req_mode == camera->mode)
+		return 0;
+
+	ret = avt3_write(camera, GENCP_CHANGEMODE_8W, req_mode, AV_CAM_DATA_SIZE_8);
+	if (ret < 0)
+		goto out;
+
+
+	ret = read_poll_timeout(avt3_read8, ret, cur_mode == req_mode,
+		10 * USEC_PER_MSEC, 500 * USEC_PER_MSEC, true,
+		camera, GENCP_CURRENTMODE_8R, &cur_mode);
+	if (ret < 0)
+		goto out;
+
+	camera->mode = req_mode;
+
+	if (req_mode == AVT_BCRM_MODE) {
+		ret = avt3_ctrl_write(camera->i2c_client, V4L2_AV_CSI2_PIXELFORMAT,
+			camera->mbus_framefmt.code);
+
+		if (ret < 0) {
+			avt_err(camera->sd,"Failed to set pixelformat!");
+		}
+	}
+
+out:
+	return ret;
+}
 
 static void bcrm_dump(struct i2c_client *client)
 {
@@ -907,128 +940,6 @@ static int read_gencp_registers(struct i2c_client *client)
 err_out:
 	MUTEX_UNLOCK(&sensor->lock);
 
-	return ret;
-}
-
-static int read_current_mode(struct avt3_dev *camera)
-{
-	int ret;
-	u8 current_mode;
-
-	ret = avt3_read8(camera, GENCP_CURRENTMODE_8R, &current_mode);
-	
-	if (ret < 0)
-		return ret;
-
-	return current_mode;
-}
-
-static int avt3_set_bcrm(struct i2c_client *client)
-{
-	uint8_t mode = 0;
-	int current_mode = 0;
-	int elapsed = 0;
-	int const timeout = 5000;
-	int const delay = 50;
-	int ret;
-
-	struct avt3_dev *sensor = client_to_avt3_dev(client);
-
-	current_mode = read_current_mode(sensor);
-	if (current_mode < 0)
-	{
-		avt_err(sensor->sd, "Failed to get mode: regmap_read on GENCP_CURRENTMODE_8R failed (%d)", ret);
-		return current_mode;
-	}
-
-	if (AVT_BCRM_MODE == current_mode && current_mode != sensor->mode)
-		avt_dbg(sensor->sd, "Sensor is already in BCRM mode but driver has inconsitent mode value.");
-
-	if (AVT_BCRM_MODE == current_mode)
-	{
-		avt_warn(sensor->sd, "Sensor is already in BCRM mode. Ignore request to set BCRM mode.");
-		sensor->mode = AVT_BCRM_MODE;
-		return ret;
-	}
-
-	mode = AVT_BCRM_MODE;
-	ret = avt3_write(sensor, GENCP_CHANGEMODE_8W, mode, AV_CAM_DATA_SIZE_8);
-
-	if (ret < 0)
-	{
-		avt_err(sensor->sd, "Failed to set BCRM mode: i2c write failed (%d)", ret);
-		return ret;
-	}
-
-	do
-	{
-		msleep(delay);
-
-		current_mode = read_current_mode(sensor);
-
-		if (current_mode < 0) {
-			avt_err(sensor->sd,"Failed to read current mode!");
-			return current_mode;
-		}
-
-		if (current_mode == mode) {
-			break;
-		}
-
-		elapsed += delay;
-	} while (elapsed < timeout);
-
-	if (elapsed >= timeout) {
-		avt_err(sensor->sd,"Waiting for mode change timeout!");
-		return -EIO;
-	}
-
-	ret = avt3_ctrl_write(sensor->i2c_client, V4L2_AV_CSI2_PIXELFORMAT, sensor->mbus_framefmt.code);
-
-	if (ret < 0) {
-		avt_err(sensor->sd,"Failed to set pixelformat!");
-		return ret;
-	}
-
-	sensor->mode = AVT_BCRM_MODE;
-	return ret;
-}
-
-static int avt3_set_gencp(struct i2c_client *client)
-{
-	u8 mode = 0;
-	u8 current_mode = 0;
-
-	int ret;
-	struct avt3_dev *sensor = client_to_avt3_dev(client);
-
-	ret = avt3_read8(sensor, GENCP_CURRENTMODE_8R, &current_mode);
-	
-	if (ret < 0)
-	{
-		avt_err(sensor->sd, "Failed to get mode: regmap_read on GENCP_CURRENTMODE_8R failed (%d)", ret);
-		return ret;
-	}
-
-	if (AVT_GENCP_MODE == current_mode && current_mode != sensor->mode)
-		avt_info(sensor->sd, "Sensor is already in GenCP mode but driver has inconsitent mode value.");
-
-	if (AVT_GENCP_MODE == current_mode)
-	{
-		avt_info(sensor->sd, "Sensor is already in GenCP mode. Ignore request to set GenCP mode.");
-		sensor->mode = AVT_GENCP_MODE;
-		return ret;
-	}
-
-	mode = AVT_GENCP_MODE;
-	ret = avt3_write(sensor, GENCP_CHANGEMODE_8W, AVT_GENCP_MODE, AV_CAM_DATA_SIZE_8);
-
-	if (ret < 0)
-	{
-		avt_dbg(sensor->sd, "Failed to set GenCP mode: i2c write failed (%d)", ret);
-		return ret;
-	}
-	sensor->mode = AVT_GENCP_MODE;
 	return ret;
 }
 
@@ -1933,6 +1844,7 @@ static ssize_t bcrm_dump_show(struct device *dev,
 	return 0;
 }
 
+
 static DEVICE_ATTR_RO(availability);
 static DEVICE_ATTR_RO(bcrm_dump);
 static DEVICE_ATTR_RO(cci_register_layout_version);
@@ -2762,16 +2674,88 @@ err:
 	return ret;
 }
 
+static int avt3_set_fmt_internal_bcrm(struct avt3_dev *camera,
+	struct v4l2_subdev_state *sd_state,
+	struct v4l2_subdev_format *format)
+{
+	struct v4l2_subdev *sd = camera->sd;
+	struct v4l2_mbus_framefmt *mbus_fmt = &format->format;
+	const struct avt3_binning_info *new_binning = NULL;
+	struct v4l2_mbus_framefmt *fmt;
+	bool pending_fmt_change = false;
+	int ret = 0;
+
+	if (mbus_fmt->code == MEDIA_BUS_FMT_CUSTOM) {
+		*mbus_fmt = camera->mbus_framefmt;
+		goto out;
+	}
+
+
+	ret = avt3_try_fmt_internal(sd, mbus_fmt, &new_binning);
+	if (ret)
+		goto out;
+
+	if (format->which == V4L2_SUBDEV_FORMAT_TRY) {
+		avt_dbg(sd,  "format->which == V4L2_SUBDEV_FORMAT_TRY");
+		fmt = v4l2_subdev_get_try_format(sd, sd_state, 0);
+	} else {
+		avt_dbg(sd,  "format->which != V4L2_SUBDEV_FORMAT_TRY");
+		fmt = &camera->mbus_framefmt;
+
+
+		if (new_binning != camera->curr_binning_info) {
+			camera->curr_binning_info = new_binning;
+			camera->pending_mode_change = true;
+		}
+
+		if (mbus_fmt->code != camera->mbus_framefmt.code) {
+			pending_fmt_change = true;
+		}
+	}
+
+	*fmt = *mbus_fmt;
+
+	if(pending_fmt_change && mbus_fmt->code != MEDIA_BUS_FMT_CUSTOM) {
+		ret = avt3_ctrl_write(camera->i2c_client, V4L2_AV_CSI2_PIXELFORMAT,
+			camera->mbus_framefmt.code);
+
+		if(ret < 0) {
+			avt_err(sd, "Failed setting pixel format in camera: %d", ret);
+			goto out;
+		}
+
+		ret = avt_update_exposure_limits(sd);
+	}
+
+out:
+	return ret;
+}
+
+static int avt3_set_fmt_internal_gencp(struct avt3_dev *camera,
+	struct v4l2_subdev_state *sd_state,
+	struct v4l2_subdev_format *format)
+{
+	struct v4l2_mbus_framefmt *mbus_fmt = &format->format;
+
+	if (mbus_fmt->code != MEDIA_BUS_FMT_CUSTOM) 
+		mbus_fmt->code = MEDIA_BUS_FMT_CUSTOM;
+
+	//Reset cropping if genicam for csi2 mode is selected
+	camera->curr_rect.left = 0;
+	camera->curr_rect.top = 0;
+	camera->curr_rect.width = mbus_fmt->width;
+	camera->curr_rect.height = mbus_fmt->height;
+
+	return 0;
+}
+
 
 static int avt3_pad_ops_set_fmt(struct v4l2_subdev *sd,
 				struct v4l2_subdev_state *sd_state,
 				struct v4l2_subdev_format *format)
 {
 	struct avt3_dev *sensor = to_avt3_dev(sd);
-	const struct avt3_binning_info *new_binning = NULL;
-	struct v4l2_mbus_framefmt *mbus_fmt = &format->format;
-	struct v4l2_mbus_framefmt *fmt;
-	bool pending_fmt_change = false;
+
 
 	int ret;
 
@@ -2789,55 +2773,15 @@ static int avt3_pad_ops_set_fmt(struct v4l2_subdev *sd,
 		goto out;
 	}
 
-	if (mbus_fmt->code != MEDIA_BUS_FMT_CUSTOM) {
-		ret = avt3_try_fmt_internal(sd, mbus_fmt, &new_binning);
-		if (ret)
-			goto out;
-	}
-
-	if (format->which == V4L2_SUBDEV_FORMAT_TRY) {
-		avt_dbg(sd,  "format->which == V4L2_SUBDEV_FORMAT_TRY");
-		fmt = v4l2_subdev_get_try_format(sd, sd_state, 0);
+	if (sensor->mode == AVT_BCRM_MODE) {
+		ret = avt3_set_fmt_internal_bcrm(sensor, sd_state, format);
+	} else if (sensor->mode == AVT_GENCP_MODE) {
+		ret = avt3_set_fmt_internal_gencp(sensor, sd_state, format);
 	} else {
-		avt_dbg(sd,  "format->which != V4L2_SUBDEV_FORMAT_TRY");
-		fmt = &sensor->mbus_framefmt;
-
-
-		if (new_binning != sensor->curr_binning_info) {
-			sensor->curr_binning_info = new_binning;
-			sensor->pending_mode_change = true;
-		}
-
-		if (mbus_fmt->code != sensor->mbus_framefmt.code) {
-			pending_fmt_change = true;
-		}
+		ret = -EINVAL;
 	}
 
-
-	if (mbus_fmt->code == MEDIA_BUS_FMT_CUSTOM) {
-		if (sensor->mode == AVT_BCRM_MODE ) {
-			*mbus_fmt = sensor->mbus_framefmt;
-		} else {
-			//Reset cropping if genicam for csi2 mode is selected
-			sensor->curr_rect.left = 0;
-			sensor->curr_rect.top = 0;
-			sensor->curr_rect.width = mbus_fmt->width;
-			sensor->curr_rect.height = mbus_fmt->height;
-		}
-	}
-
-	*fmt = *mbus_fmt;
-
-	if(pending_fmt_change && mbus_fmt->code != MEDIA_BUS_FMT_CUSTOM) {
-		ret = avt3_ctrl_write(sensor->i2c_client, V4L2_AV_CSI2_PIXELFORMAT, sensor->mbus_framefmt.code);
-
-		if(ret < 0) {
-			avt_err(sd, "Failed setting pixel format in camera: %d", ret);
-			goto out;
-		}
-
-		ret = avt_update_exposure_limits(sd);
-	}
+	
 
 out:
 	MUTEX_UNLOCK(&sensor->lock);
@@ -2864,7 +2808,7 @@ static int avt3_ctrl_write(struct i2c_client *client, enum avt_ctrl ctrl_id, __u
     {
       u8 acquisition_state;
 
-      ret = bcrm_read8(sensor, BCRM_ACQUISITION_STOP_8RW, &acquisition_state);
+      ret = bcrm_read8(sensor, BCRM_ACQUISITION_STATUS_8R, &acquisition_state);
       if (0 != acquisition_state) {
         adev_info(&client->dev, 
           "V4L2_AV_CSI2_STREAMON called but cam is streaming already. acquisition_state %d, sensor->is_streaming %d",
@@ -2950,19 +2894,6 @@ static int avt3_ctrl_write(struct i2c_client *client, enum avt_ctrl ctrl_id, __u
 		value = sensor->available_fmts[fmtidx].mipi_fmt;
 		bayer_temp = sensor->available_fmts[fmtidx].bayer_pattern;
 		break;
-
-	case V4L2_AV_CSI2_CHANGEMODE:
-		dev_info(&client->dev, "%s[%d]: V4L2_AV_CSI2_CHANGEMODE ", __func__, __LINE__);
-
-		if (value == 1)
-		{
-			ret = avt3_set_gencp(client);
-		}
-		else
-		{
-			ret = avt3_set_bcrm(client);
-		}
-		return ret;
 
 	default:
 		dev_err(&client->dev, "%s[%d]: unknown ctrl 0x%x\n", __func__, __LINE__, ctrl_id);
@@ -3462,6 +3393,9 @@ static int avt3_g_volatile_ctrl(struct v4l2_ctrl *ctrl)
 
 	avt_dbg(sensor->sd, "ctrl->id %d", ctrl->id);
 
+	if (sensor->mode != AVT_BCRM_MODE) {
+		return -EBUSY;
+	}
 
 	if (ctrl->id == V4L2_CID_BINNING_SETTING) {
 		ctrl->p_new.p_area->width = sensor->curr_binning_info->hfact;
@@ -3711,6 +3645,9 @@ static int avt3_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 	struct i2c_client *client = sensor->i2c_client;
 	int ret = 0;
 
+	if (sensor->mode != AVT_BCRM_MODE) {
+		return -EBUSY;
+	}
 
 	/* ignore if sensor is in sleep mode */
 	if (sensor->power_count == 0)
@@ -4755,7 +4692,6 @@ static const struct v4l2_subdev_core_ops avt3_core_ops = {
 static int avt3_subdev_internal_ops_close(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct avt3_dev *sensor = to_avt3_dev(sd);
-	struct i2c_client *client = sensor->i2c_client;
 	int ret = 0;
 
 	avt_dbg(sd, "sensor->open_refcnt %d, sensor->is_streaming %d",
@@ -4771,7 +4707,7 @@ static int avt3_subdev_internal_ops_close(struct v4l2_subdev *sd, struct v4l2_su
 
 	if (!sensor->is_streaming)
 	{
-		avt3_set_bcrm(client);
+		//avt3_change_mode(sensor)
 	}
 
 	sensor->open_refcnt--;
@@ -4782,7 +4718,6 @@ static int avt3_subdev_internal_ops_open(struct v4l2_subdev *sd, struct v4l2_sub
 {
 	// called when userspace app calls 'open'
 	struct avt3_dev *sensor = to_avt3_dev(sd);
-	struct i2c_client *client = v4l2_get_subdevdata(sd);
 
 	avt_dbg(sd, "sensor->open_refcnt %d", sensor->open_refcnt);
 
@@ -4796,7 +4731,11 @@ static int avt3_subdev_internal_ops_open(struct v4l2_subdev *sd, struct v4l2_sub
 	{
 		avt_dbg(sd, "force bcrm mode");
 		// set BCRM mode only when sensor is not streaming
-		avt3_set_bcrm(client);
+		mutex_lock(&sensor->lock);
+
+		avt3_change_mode(sensor, AVT_BCRM_MODE);
+
+		mutex_unlock(&sensor->lock);
 	}
 
 	sensor->open_refcnt++;
@@ -5720,6 +5659,8 @@ static int bcrm_write(struct avt3_dev *camera, u16 reg, u64 val, size_t len)
 	struct device *dev = &camera->i2c_client->dev;
 	int ret;
 
+	WARN_ON(camera->mode != AVT_BCRM_MODE);
+
 	ret = prepare_write_handshake(camera);
 
 	if (ret < 0)
@@ -5896,7 +5837,7 @@ static int avt3_fw_transfer_init(struct avt3_dev *camera)
 {
 	struct device *dev = &camera->i2c_client->dev;
 	struct bin_attribute *fw_transfer_attr;
-	int ret = 0;
+	int ret;
 
 	fw_transfer_attr = devm_kzalloc(dev, sizeof(*fw_transfer_attr), GFP_KERNEL);
 	if (!fw_transfer_attr) 
@@ -5914,10 +5855,82 @@ static int avt3_fw_transfer_init(struct avt3_dev *camera)
 	ret = device_create_bin_file(dev, fw_transfer_attr);
 	if (ret) {
 		devm_kfree(dev, fw_transfer_attr);
-		return ret;
+	} else {
+		camera->fw_transfer_attr = fw_transfer_attr;
+	}
+	
+	return ret;
+}
+
+
+static ssize_t avt3_mode_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct i2c_client *client = to_i2c_client(dev);
+	struct avt3_dev *camera = client_to_avt3_dev(client);
+	
+	mutex_lock(&camera->lock);
+	if (camera->mode == AVT_GENCP_MODE)
+		sysfs_emit(buf, "%s\n","gencp");
+	else
+		sysfs_emit(buf, "%s\n", "bcm");
+
+	mutex_unlock(&camera->lock);
+
+	return strlen(buf);
+}
+
+
+static ssize_t avt3_mode_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t len)
+{
+	struct i2c_client *client = to_i2c_client(dev);
+	struct avt3_dev *camera = client_to_avt3_dev(client);
+	u8 mode_req;
+	int ret;
+	const char *modestr = strim((char*)buf);
+
+	if (strcmp(modestr, "bcm") == 0) {
+		mode_req = 0;
+	} else if (strcmp(modestr, "gencp") == 0) {
+		mode_req = 1;
+	} else {
+		return -EINVAL;
 	}
 
-	camera->fw_transfer_attr = fw_transfer_attr;
+	mutex_lock(&camera->lock);
+	
+	ret = avt3_change_mode(camera, mode_req);
+	if (ret < 0)
+		goto out;
+
+	ret = len;
+out: 
+	mutex_unlock(&camera->lock);
+
+	return ret;
+}
+
+static int avt3_mode_attr_init(struct avt3_dev *camera) 
+{
+	struct device *dev = &camera->i2c_client->dev;
+	struct device_attribute *mode_attr;
+	int ret;
+
+	mode_attr = devm_kzalloc(dev, sizeof(*mode_attr), GFP_KERNEL);
+	if (!mode_attr) 
+		return -ENOMEM;
+
+	sysfs_attr_init(&mode_attr->attr);
+	mode_attr->attr.name = "mode";
+	mode_attr->attr.mode = 0666;
+	mode_attr->show = avt3_mode_show;
+	mode_attr->store = avt3_mode_store;
+
+	ret = device_create_file(dev, mode_attr);
+	if (ret) {
+		devm_kfree(dev, mode_attr);
+	} else {
+		camera->mode_attr = mode_attr;
+	}
 
 	return ret;
 }
@@ -6379,6 +6392,12 @@ static int avt3_probe(struct i2c_client *client)
 	{
 		dev_err(dev, "%s[%d]: Failed to create sysfs group (%d)\n", __func__, __LINE__, ret);
 		goto free_ctrls;
+	}
+
+	ret = avt3_mode_attr_init(sensor);
+	if (ret) {
+		dev_err(dev, "Failed to create mode attribute!\n");
+		goto sysfs_cleanup;
 	}
 
 	ret = avt3_fw_transfer_init(sensor);
