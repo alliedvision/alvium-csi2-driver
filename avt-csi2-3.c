@@ -36,6 +36,7 @@
 
 #define AVT3_DRIVER_NAME "avt3"
 
+#include <asm/unaligned.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/version.h>
@@ -309,15 +310,7 @@ static const struct avt_binning_setting avt_binning_settings[] = {
 
 static const size_t avt_binning_setting_cnt = ARRAY_SIZE(avt_binning_settings);
 
-static int bcrm_regmap_write64(struct avt3_dev *sensor,
-							   struct regmap *map,
-							   unsigned int reg,
-							   unsigned long long val);
-
-static int bcrm_regmap_write(struct avt3_dev *sensor,
-							 struct regmap *map,
-							 unsigned int reg,
-							 unsigned int val);
+static int bcrm_write(struct avt3_dev *camera, u16 reg, u64 val, size_t len);
 
 static int avt3_detect(struct i2c_client *client);
 static int avt3_reset(struct avt3_dev *sensor, enum avt_reset_type reset_type);
@@ -347,6 +340,177 @@ static inline struct avt3_dev* client_to_avt3_dev(struct i2c_client *client)
 	const struct avt3_platform_ops *pops = of_device_get_match_data(&client->dev);
 	return pops->client_to_avt3_dev(client);
 }
+
+
+static ssize_t avt3_read_raw(struct avt3_dev *camera, u16 reg,
+	u8 *buf, size_t len)
+{
+	int ret;
+
+	ret = regmap_bulk_read(camera->regmap, reg, buf, len);
+	if (ret) {
+		return ret;
+	}
+
+	return len;
+}
+
+static ssize_t avt3_write_raw(struct avt3_dev *camera, u16 reg,
+	const u8 *buf, size_t len)
+{
+	int ret;
+
+	ret = regmap_bulk_write(camera->regmap, reg, buf, len);
+	if (ret) {
+		return ret;
+	}
+
+	return len;
+}
+
+static ssize_t avt3_read(struct avt3_dev *camera, u16 reg, void *val, size_t len)
+{
+	u8 tmp[8];
+	int ret;
+
+	ret = avt3_read_raw(camera, reg, tmp, len);
+	if (ret < 0)
+		goto out;
+
+	switch (len)
+	{
+	case 1:
+		*((u8*)val) = tmp[0];
+		break;
+	case 2:
+		*((u16*)val) = get_unaligned_be16(tmp);
+		break;
+	case 4:
+		*((u32*)val) = get_unaligned_be32(tmp);
+		break;
+	case 8:
+		*((u64*)val) = get_unaligned_be64(tmp);
+		break;
+	default:
+		break;
+	}
+
+	// TODO: For compatibility reason, check if can be removed
+	ret = 0;
+
+out:
+	return ret;
+}
+
+static ssize_t avt3_read8(struct avt3_dev *camera, u16 reg, u8 *val)
+{
+	return avt3_read(camera, reg, (u8*)val, sizeof(*val));
+}
+
+static ssize_t avt3_read16(struct avt3_dev *camera, u16 reg, u16 *val)
+{
+	return avt3_read(camera, reg, (u8*)val, sizeof(*val));
+}
+
+static ssize_t avt3_read32(struct avt3_dev *camera, u16 reg, u32 *val)
+{
+	return avt3_read(camera, reg, (u8*)val, sizeof(*val));
+}
+
+static ssize_t avt3_read64(struct avt3_dev *camera, u16 reg, u64 *val) 
+{
+	return avt3_read(camera, reg, (u8*)val, sizeof(*val));
+}
+
+static ssize_t avt3_write(struct avt3_dev *camera, u16 reg, u64 val, size_t len)
+{
+	struct device *dev = &camera->i2c_client->dev;
+	u8 buf[8];
+	int ret;
+
+	dev_warn(dev, "avt3_write reg: %u val: %llu len: %lu\n", reg, val, len);
+
+	switch (len)
+	{
+	// 8-bit register
+	case 1:
+		buf[0] = val;
+		break;
+	// 16-bit register
+	case 2:
+		put_unaligned_be16(val, buf);
+		break;
+	// 32-bit register
+	case 4:
+		put_unaligned_be32(val, buf);
+		break;
+	// 64-bit register
+	case 8:
+		put_unaligned_be64(val, buf);
+		break;
+	default:
+		dev_err(dev, "%s: Invalid data size!\n", __func__);
+		return -EINVAL;
+	}
+
+	ret = avt3_write_raw(camera, reg, buf, len);
+	// TODO: For compatibility reason, check if can be removed 
+	if (ret < 0)
+		return ret;
+
+	return 0;
+}
+
+static inline u16 get_bcrm_addr(struct avt3_dev *camera,u16 reg)
+{
+	return camera->cci_reg.reg.bcrm_addr + reg;
+}
+
+static inline int bcrm_read(struct avt3_dev *camera, u16 reg, u8 *val, size_t len)
+{
+	return avt3_read(camera, get_bcrm_addr(camera, reg), val, len);
+}
+
+static inline int bcrm_read8(struct avt3_dev *camera,u16 reg,u8 *val)
+{
+	return avt3_read8(camera, get_bcrm_addr(camera, reg), val);
+}
+
+static inline int bcrm_read16(struct avt3_dev *camera,u16 reg,u16 *val)
+{
+	return avt3_read16(camera, get_bcrm_addr(camera, reg), val);
+}
+
+static inline int bcrm_read32(struct avt3_dev *camera,u16 reg,u32 *val)
+{
+	return avt3_read32(camera, get_bcrm_addr(camera, reg), val);
+}
+
+static inline int bcrm_read64(struct avt3_dev *camera,u16 reg,u64 *val)
+{
+	return avt3_read64(camera, get_bcrm_addr(camera, reg), val);
+}
+
+static inline int bcrm_write8(struct avt3_dev *camera, u16 reg, u8 val)
+{
+	return bcrm_write(camera, reg, val, AV_CAM_DATA_SIZE_8);
+}
+
+static inline int bcrm_write16(struct avt3_dev *camera, u16 reg, u16 val)
+{
+	return bcrm_write(camera, reg, val, AV_CAM_DATA_SIZE_16);
+}
+
+static inline int bcrm_write32(struct avt3_dev *camera, u16 reg, u32 val)
+{
+	return bcrm_write(camera, reg, val, AV_CAM_DATA_SIZE_32);
+}
+
+static inline int bcrm_write64(struct avt3_dev *camera, u16 reg, u64 val)
+{
+	return bcrm_write(camera, reg, val, AV_CAM_DATA_SIZE_64);
+}
+
 
 static void bcrm_dump(struct i2c_client *client)
 {
@@ -526,19 +690,19 @@ static void dump_bcrm_reg(struct i2c_client *client, u16 nOffset, const char *pR
 		switch (regsize)
 		{
 		case AV_CAM_DATA_SIZE_8:
-			regmap_read(sensor->regmap8, sensor->cci_reg.reg.bcrm_addr + nOffset, &val64.u32[0]);
-			avt_info(sensor->sd, "%44s: %u (0x%x)", pRegName, val64.u32[0], val64.u32[0]);
+			bcrm_read8(sensor, nOffset, &val64.u8[0]);
+			avt_info(sensor->sd, "%44s: %u (0x%x)", pRegName, val64.u8[0], val64.u8[0]);
 			break;
 		case AV_CAM_DATA_SIZE_16:
-			regmap_read(sensor->regmap16, sensor->cci_reg.reg.bcrm_addr + nOffset, &val64.u32[0]);
-			avt_info(sensor->sd, "%44s: %u (0x%08x)", pRegName, val64.u32[0], val64.u32[0]);
+			bcrm_read16(sensor, nOffset, &val64.u16[0]);
+			avt_info(sensor->sd, "%44s: %u (0x%08x)", pRegName, val64.u16[0], val64.u16[0]);
 			break;
 		case AV_CAM_DATA_SIZE_32:
-			regmap_read(sensor->regmap32, sensor->cci_reg.reg.bcrm_addr + nOffset, &val64.u32[0]);
+			bcrm_read32(sensor, nOffset, &val64.u32[0]);
 			avt_info(sensor->sd, "%44s: %u (0x%08x)", pRegName, val64.u32[0], val64.u32[0]);
 			break;
 		case AV_CAM_DATA_SIZE_64:
-			regmap_bulk_read(sensor->regmap64, sensor->cci_reg.reg.bcrm_addr + nOffset, &val64, 1);
+			bcrm_read64(sensor, nOffset, &val64.u64);
 			avt_info(sensor->sd, "%44s: %llu (0x%016llx)", pRegName, val64.u64, val64.u64);
 			break;
 		}
@@ -549,7 +713,7 @@ static void dump_bcrm_reg(struct i2c_client *client, u16 nOffset, const char *pR
 static bool bcrm_get_write_handshake_availibility(struct i2c_client *client)
 {
 	struct avt3_dev *sensor = client_to_avt3_dev(client);
-	u32 value = 0;
+	u8 value = 0;
 	int status;
 
 	if (!sensor)
@@ -558,7 +722,7 @@ static bool bcrm_get_write_handshake_availibility(struct i2c_client *client)
 		return -EINVAL;
 	}
 	/* check of camera supports write_done_handshake register */
-	status = regmap_read(sensor->regmap8, sensor->cci_reg.reg.bcrm_addr + BCRM_WRITE_HANDSHAKE_8RW, &value);
+	status = bcrm_read8(sensor, BCRM_WRITE_HANDSHAKE_8RW, &value);
 
 	if ((status >= 0) && (value & BCRM_HANDSHAKE_AVAILABLE_MASK))
 	{
@@ -572,36 +736,6 @@ static bool bcrm_get_write_handshake_availibility(struct i2c_client *client)
 	}
 }
 
-static inline u16 get_bcrm_addr(struct avt3_dev *camera,u16 reg)
-{
-	return camera->cci_reg.reg.bcrm_addr + reg;
-}
-
-static inline int bcrm_read8(struct avt3_dev *camera,u16 reg,u8 *val)
-{
-	const u16 bcrm_addr = get_bcrm_addr(camera,reg);
-	return regmap_bulk_read(camera->regmap8,bcrm_addr,val,1);
-}
-
-static inline int bcrm_read16(struct avt3_dev *camera,u16 reg,u16 *val)
-{
-	const u16 bcrm_addr = get_bcrm_addr(camera,reg);
-	return regmap_bulk_read(camera->regmap16,bcrm_addr,val,1);
-}
-
-static inline int bcrm_read32(struct avt3_dev *camera,u16 reg,u32 *val)
-{
-	const u16 bcrm_addr = get_bcrm_addr(camera,reg);
-	return regmap_read(camera->regmap32,bcrm_addr,val);
-}
-
-static inline int bcrm_read64(struct avt3_dev *camera,u16 reg,u64 *val)
-{
-	const u16 bcrm_addr = get_bcrm_addr(camera,reg);
-	return regmap_bulk_read(camera->regmap64,bcrm_addr,val,1);
-}
-
-
 static int read_cci_registers(struct i2c_client *client)
 {
 	struct avt3_dev *sensor = client_to_avt3_dev(client);
@@ -613,30 +747,6 @@ static int read_cci_registers(struct i2c_client *client)
 	if (!sensor)
 	{
 		avt_err(sensor->sd, "sensor == NULL!!!");
-		return -EINVAL;
-	}
-
-	if (!sensor->regmap8)
-	{
-		avt_err(sensor->sd, "sensor->regmap8 == NULL!!!");
-		return -EINVAL;
-	}
-
-	if (!sensor->regmap16)
-	{
-		avt_err(sensor->sd, "sensor->regmap16 == NULL!!!");
-		return -EINVAL;
-	}
-
-	if (!sensor->regmap32)
-	{
-		avt_err(sensor->sd, "sensor->regmap32 == NULL!!!");
-		return -EINVAL;
-	}
-
-	if (!sensor->regmap64)
-	{
-		avt_err(sensor->sd, "sensor->regmap64 == NULL!!!");
 		return -EINVAL;
 	}
 
@@ -657,7 +767,7 @@ static int read_cci_registers(struct i2c_client *client)
 			cci_cmd_tbl[CHANGE_MODE].address);
 
 	// read only until CHANGE_MODE because it's writeonly
-	ret = regmap_bulk_read(sensor->regmap8, cci_cmd_tbl[CCI_REGISTER_LAYOUT_VERSION].address,
+	ret = avt3_read_raw(sensor, cci_cmd_tbl[CCI_REGISTER_LAYOUT_VERSION].address,
 						   (char *)&sensor->cci_reg, cci_cmd_tbl[CHANGE_MODE].address);
 
 	avt_info(sensor->sd, "regmap_bulk_read(sensor->regmap8, cci_cmd_tbl[CCI_REGISTER_LAYOUT_VERSION].address ret %d\n", ret);
@@ -757,10 +867,8 @@ static int read_gencp_registers(struct i2c_client *client)
 	crc_byte_count =
 		(uint32_t)((char *)&sensor->gencp_reg.checksum - (char *)&sensor->gencp_reg);
 
-	ret = regmap_bulk_read(sensor->regmap8,
-					 sensor->cci_reg.reg.gcprm_address + 0x0000,
-					 (char *)&sensor->gencp_reg,
-					 sizeof(sensor->gencp_reg));
+	ret = avt3_read_raw(sensor, sensor->cci_reg.reg.gcprm_address + 0x0000, 
+		(char *)&sensor->gencp_reg, sizeof(sensor->gencp_reg));
 
 	if (ret < 0)
 	{
@@ -805,10 +913,10 @@ err_out:
 static int read_current_mode(struct avt3_dev *camera)
 {
 	int ret;
-	uint current_mode;
+	u8 current_mode;
 
-	ret = regmap_read(camera->regmap8, GENCP_CURRENTMODE_8R, &current_mode);
-
+	ret = avt3_read8(camera, GENCP_CURRENTMODE_8R, &current_mode);
+	
 	if (ret < 0)
 		return ret;
 
@@ -844,7 +952,7 @@ static int avt3_set_bcrm(struct i2c_client *client)
 	}
 
 	mode = AVT_BCRM_MODE;
-	ret = regmap_write(sensor->regmap8, GENCP_CHANGEMODE_8W, mode);
+	ret = avt3_write(sensor, GENCP_CHANGEMODE_8W, mode, AV_CAM_DATA_SIZE_8);
 
 	if (ret < 0)
 	{
@@ -888,14 +996,14 @@ static int avt3_set_bcrm(struct i2c_client *client)
 
 static int avt3_set_gencp(struct i2c_client *client)
 {
-	uint8_t mode = 0;
-	uint32_t current_mode = 0;
+	u8 mode = 0;
+	u8 current_mode = 0;
 
 	int ret;
 	struct avt3_dev *sensor = client_to_avt3_dev(client);
 
-	ret = regmap_read(sensor->regmap8,
-					  GENCP_CURRENTMODE_8R, &current_mode);
+	ret = avt3_read8(sensor, GENCP_CURRENTMODE_8R, &current_mode);
+	
 	if (ret < 0)
 	{
 		avt_err(sensor->sd, "Failed to get mode: regmap_read on GENCP_CURRENTMODE_8R failed (%d)", ret);
@@ -913,8 +1021,7 @@ static int avt3_set_gencp(struct i2c_client *client)
 	}
 
 	mode = AVT_GENCP_MODE;
-	ret = bcrm_regmap_write(sensor, sensor->regmap8,
-							GENCP_CHANGEMODE_8W, AVT_GENCP_MODE);
+	ret = avt3_write(sensor, GENCP_CHANGEMODE_8W, AVT_GENCP_MODE, AV_CAM_DATA_SIZE_8);
 
 	if (ret < 0)
 	{
@@ -1062,10 +1169,8 @@ static ssize_t bcrm_feature_inquiry_reg_show(struct device *dev,
 	union bcrm_feature_inquiry_reg feature_inquiry_reg;
 
 	/* reading the Feature inquiry register */
-	ret = regmap_bulk_read(sensor->regmap64,
-						   sensor->cci_reg.reg.bcrm_addr + BCRM_FEATURE_INQUIRY_64R,
-						   &feature_inquiry_reg.value, 1);
-
+	ret = bcrm_read64(sensor, BCRM_FEATURE_INQUIRY_64R, &feature_inquiry_reg.value);
+	
 	if (ret < 0)
 	{
 		avt_err(sensor->sd, "regmap_bulk_read BCRM_FEATURE_INQUIRY_64R failed (%ld)", ret);
@@ -1446,7 +1551,7 @@ static ssize_t mipiclk_show(struct device *dev,
 
 	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
 
-	ret = regmap_read(sensor->regmap32, sensor->cci_reg.reg.bcrm_addr + BCRM_CSI2_CLOCK_32RW, &avt_current_clk);
+	ret = bcrm_read32(sensor, BCRM_CSI2_CLOCK_32RW, &avt_current_clk);
 
 	ret = sprintf(buf, "%d\n", avt_current_clk);
 
@@ -1485,12 +1590,12 @@ static ssize_t mipiclk_store(struct device *dev,
 	}
 	else
 	{
-		ret = bcrm_regmap_write(sensor, sensor->regmap32, sensor->cci_reg.reg.bcrm_addr + BCRM_CSI2_CLOCK_32RW, avt_next_clk);
+		ret = bcrm_write32(sensor, BCRM_CSI2_CLOCK_32RW, avt_next_clk);
 
 		dev_info(&client->dev, "%s[%d]: requested csi clock frequency %u Hz, retval %ld)\n",
 				 __func__, __LINE__, avt_next_clk, ret);
 
-		ret = regmap_read(sensor->regmap32, sensor->cci_reg.reg.bcrm_addr + BCRM_CSI2_CLOCK_32RW, &avt_current_clk);
+		ret = bcrm_read32(sensor, BCRM_CSI2_CLOCK_32RW, &avt_current_clk);
 		dev_info(&client->dev, "%s[%d]: requested csi clock frequency %u Hz, got %u Hz)\n",
 				 __func__, __LINE__, avt_next_clk, avt_current_clk);
 
@@ -1513,7 +1618,7 @@ static ssize_t device_temperature_show(struct device *dev,
 	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
 	MUTEX_LOCK(&sensor->lock);
 
-	ret = regmap_read(sensor->regmap32, sensor->cci_reg.reg.bcrm_addr + BCRM_DEVICE_TEMPERATURE_32R, &device_temperature);
+	ret = bcrm_read32(sensor, BCRM_DEVICE_TEMPERATURE_32R, &device_temperature);
 
 	ret = sprintf(buf, "%d.%d\n", device_temperature / 10, device_temperature % 10);
 
@@ -1601,7 +1706,7 @@ static ssize_t streamon_delay_show(struct device *dev,
 
 	MUTEX_LOCK(&sensor->lock);
 
-	ret = regmap_read(sensor->regmap32, sensor->cci_reg.reg.bcrm_addr + BCRM_STREAM_ON_DELAY_32RW, &sensor->streamon_delay);
+	ret = bcrm_read32(sensor, BCRM_STREAM_ON_DELAY_32RW, &sensor->streamon_delay);
 
 	ret = sprintf(buf, "%u\n", sensor->streamon_delay);
 
@@ -1624,10 +1729,9 @@ static ssize_t streamon_delay_store(struct device *dev,
 		return ret;
 	}
 
-	ret = regmap_write(sensor->regmap32,
-					   sensor->cci_reg.reg.bcrm_addr + BCRM_STREAM_ON_DELAY_32RW,
-					   sensor->streamon_delay);
+	ret = bcrm_write64(sensor, BCRM_STREAM_ON_DELAY_32RW, sensor->streamon_delay);
 
+	
 	MUTEX_UNLOCK(&sensor->lock);
 	return count;
 }
@@ -1637,11 +1741,11 @@ static ssize_t trigger_mode_show(struct device *dev,
 {
 	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
 	ssize_t ret;
-	int itmp;
+	u8 itmp;
 
 	MUTEX_LOCK(&sensor->lock);
 
-	ret = regmap_read(sensor->regmap8, sensor->cci_reg.reg.bcrm_addr + BCRM_FRAME_START_TRIGGER_MODE_8RW, &itmp);
+	ret = bcrm_read8(sensor, BCRM_FRAME_START_TRIGGER_MODE_8RW, &itmp);
 	if (ret < 0)
 	{
 		MUTEX_UNLOCK(&sensor->lock);
@@ -1681,21 +1785,16 @@ static ssize_t trigger_mode_store(struct device *dev,
 
 	if (sensor->avt_trigger_status.trigger_mode_enabled)
 	{
-		ret = bcrm_regmap_write(sensor, sensor->regmap8,
-								sensor->cci_reg.reg.bcrm_addr + BCRM_ACQUISITION_FRAME_RATE_ENABLE_8RW,
-								0);
-		ret = bcrm_regmap_write(sensor, sensor->regmap8,
-								sensor->cci_reg.reg.bcrm_addr + BCRM_FRAME_START_TRIGGER_MODE_8RW,
-								sensor->avt_trigger_status.trigger_mode_enabled);
+		ret = bcrm_write8(sensor, BCRM_ACQUISITION_FRAME_RATE_ENABLE_8RW, 0);
+		ret = bcrm_write8(sensor, BCRM_FRAME_START_TRIGGER_MODE_8RW,
+			sensor->avt_trigger_status.trigger_mode_enabled);
+	
 	}
 	else
 	{
-		ret = bcrm_regmap_write(sensor, sensor->regmap8,
-								sensor->cci_reg.reg.bcrm_addr + BCRM_ACQUISITION_FRAME_RATE_ENABLE_8RW,
-								1);
-		ret = bcrm_regmap_write(sensor, sensor->regmap8,
-								sensor->cci_reg.reg.bcrm_addr + BCRM_FRAME_START_TRIGGER_MODE_8RW,
-								sensor->avt_trigger_status.trigger_mode_enabled);
+		ret = bcrm_write8(sensor, BCRM_ACQUISITION_FRAME_RATE_ENABLE_8RW, 1);
+		ret = bcrm_write8(sensor, BCRM_FRAME_START_TRIGGER_MODE_8RW,
+			sensor->avt_trigger_status.trigger_mode_enabled);
 	}
 
 	dev_info(dev, "%s[%d]: sensor->avt_trigger_status.trigger_mode_enabled: %d\n",
@@ -1711,11 +1810,11 @@ static ssize_t trigger_source_show(struct device *dev,
 {
 	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
 	ssize_t ret;
-	int itmp;
+	u8 itmp;
 
 	MUTEX_LOCK(&sensor->lock);
 
-	ret = regmap_read(sensor->regmap8, sensor->cci_reg.reg.bcrm_addr + BCRM_FRAME_START_TRIGGER_SOURCE_8RW, &itmp);
+	ret = bcrm_read8(sensor, BCRM_FRAME_START_TRIGGER_SOURCE_8RW, &itmp);
 	if (ret < 0)
 	{
 		MUTEX_UNLOCK(&sensor->lock);
@@ -1754,10 +1853,8 @@ static ssize_t trigger_source_store(struct device *dev,
 
 	sensor->avt_trigger_status.trigger_source = itmp;
 
-	ret = bcrm_regmap_write(sensor, sensor->regmap8,
-							sensor->cci_reg.reg.bcrm_addr + BCRM_FRAME_START_TRIGGER_SOURCE_8RW,
-							sensor->avt_trigger_status.trigger_source);
-
+	ret = bcrm_write8(sensor, BCRM_FRAME_START_TRIGGER_SOURCE_8RW, sensor->avt_trigger_status.trigger_source);
+	
 	dev_info(dev, "%s[%d]: sensor->avt_trigger_status.trigger_source: %d\n",
 			 __func__, __LINE__,
 			 sensor->avt_trigger_status.trigger_source);
@@ -1784,9 +1881,8 @@ static ssize_t sw_trigger_store(struct device *dev,
 
 	MUTEX_LOCK(&sensor->lock);
 
-	ret = bcrm_regmap_write(sensor, sensor->regmap8,
-							sensor->cci_reg.reg.bcrm_addr + BCRM_FRAME_START_TRIGGER_SOFTWARE_8W, 1);
-
+	ret = bcrm_write8(sensor, BCRM_FRAME_START_TRIGGER_SOFTWARE_8W, 1);
+	
 	MUTEX_UNLOCK(&sensor->lock);
 	return count;
 }
@@ -1916,17 +2012,13 @@ static struct attribute_group avt3_attr_grp = {
 static int avt3_get_fmt_available(struct i2c_client *client)
 {
 	struct avt3_dev *sensor = client_to_avt3_dev(client);
-	u32 bayer_val = 0;
+	u8 bayer_val = 0;
 	int ret;
-	struct avt_val64 avail_mipi;
-
-	CLEAR(avail_mipi);
-
+	u64 avail_mipi = 0;
+	
 	MUTEX_LOCK(&sensor->lock);
 
-	ret = regmap_bulk_read(sensor->regmap64,
-						   sensor->cci_reg.reg.bcrm_addr + BCRM_IMG_AVAILABLE_MIPI_DATA_FORMATS_64R,
-						   &avail_mipi, 1);
+	ret = bcrm_read64(sensor, BCRM_IMG_AVAILABLE_MIPI_DATA_FORMATS_64R, &avail_mipi);
 
 	if (ret < 0)
 	{
@@ -1935,12 +2027,12 @@ static int avt3_get_fmt_available(struct i2c_client *client)
 		goto out;
 	}
 
-	sensor->avail_mipi_reg.value = avail_mipi.u64;
+	sensor->avail_mipi_reg.value = avail_mipi;
 
 	/* read the Bayer Inquiry register to check whether the camera
 	 * really support the requested RAW format
 	 */
-	ret = regmap_read(sensor->regmap8, sensor->cci_reg.reg.bcrm_addr + BCRM_IMG_BAYER_PATTERN_INQUIRY_8R, &bayer_val);
+	ret = bcrm_read8(sensor, BCRM_IMG_BAYER_PATTERN_INQUIRY_8R, &bayer_val);
 
 	if (ret < 0)
 	{
@@ -1967,8 +2059,7 @@ static int set_bayer_format(struct i2c_client *client, __u8 value)
 
 	avt_dbg(sensor->sd, " %d", (uint32_t)value);
 
-	ret = bcrm_regmap_write(sensor, sensor->regmap8,
-							sensor->cci_reg.reg.bcrm_addr + BCRM_IMG_BAYER_PATTERN_8RW, value);
+	ret = bcrm_write8(sensor, BCRM_IMG_BAYER_PATTERN_8RW, value);
 
 	if (ret < 0)
 	{
@@ -2260,7 +2351,7 @@ static int perform_hard_reset(struct avt3_dev *sensor)
 static const int heartbeat_default = 0x80;
 
 static int heartbeat_write_default(struct avt3_dev *sensor) {
-	int ret = regmap_write(sensor->regmap8, cci_cmd_tbl[HEARTBEAT].address, heartbeat_default);
+	int ret = avt3_write(sensor, cci_cmd_tbl[HEARTBEAT].address, heartbeat_default, AV_CAM_DATA_SIZE_8);
 	if(ret != 0) {
 		avt_err(sensor->sd, "Heartbeat write failed (regmap_write returned %d)", ret);
 		return -1;
@@ -2268,8 +2359,8 @@ static int heartbeat_write_default(struct avt3_dev *sensor) {
 	return 0;
 }
 
-static int heartbeat_read(struct avt3_dev *sensor, int *heartbeat) {
-	int ret = regmap_read(sensor->regmap8, cci_cmd_tbl[HEARTBEAT].address, heartbeat);
+static int heartbeat_read(struct avt3_dev *sensor, u8 *heartbeat) {
+	int ret = avt3_read8(sensor, cci_cmd_tbl[HEARTBEAT].address, heartbeat);
 	if(ret != 0) {
 		avt_err(sensor->sd, "Heartbeat read failed (regmap_read returned %d)", ret);
 		return -1;
@@ -2278,7 +2369,7 @@ static int heartbeat_read(struct avt3_dev *sensor, int *heartbeat) {
 }
 
 static int heartbeat_supported(struct avt3_dev *sensor) {
-	unsigned int heartbeat;
+	u8 heartbeat;
 
 	int ret = heartbeat_write_default(sensor);
 	if(ret != 0) {
@@ -2331,7 +2422,7 @@ static int wait_camera_available(struct avt3_dev *sensor, bool use_heartbeat) {
 		avt_info(sensor->sd, "Done waiting, let's hope for the best...");
 
 	} else {
-		int heartbeat;
+		u8 heartbeat;
 		avt_info(sensor->sd, "Heartbeat supported, waiting for heartbeat to become active");
 
 		do
@@ -2379,7 +2470,7 @@ static int avt3_reset(struct avt3_dev *sensor, enum avt_reset_type reset_type)
 		}
 	} else {
 		sensor->pending_softreset_request = 1;
-		ret = regmap_write(sensor->regmap8, cci_cmd_tbl[SOFT_RESET].address, 1);
+		ret = avt3_write(sensor, cci_cmd_tbl[SOFT_RESET].address, 1, AV_CAM_DATA_SIZE_8);
 		if (ret < 0) {
 			dev_err(&client->dev, "avt3_soft_reset request by calling regmap_write failed (%d)\n", ret);
 			goto out;
@@ -2412,10 +2503,8 @@ static void avt3_dphy_reset(struct avt3_dev *sensor, bool bResetPhy)
 
 	dev_info(&client->dev, "%s[%d]", __func__, __LINE__);
 
-	ret = regmap_write(sensor->regmap32,
-					   sensor->cci_reg.reg.bcrm_addr + BCRM_PHY_RESET_8RW,
-					   ival);
-
+	ret = bcrm_write8(sensor, BCRM_PHY_RESET_8RW, ival);
+	
 	if (ret < 0)
 	{
 		dev_err(&client->dev, "%s[%d]: avt3_dphy_reset request by calling regmap_write CSI2_PHY_RESET_32RW failed (%d)\n",
@@ -2773,10 +2862,9 @@ static int avt3_ctrl_write(struct i2c_client *client, enum avt_ctrl ctrl_id, __u
 
 	case V4L2_AV_CSI2_STREAMON:
     {
-      unsigned int	acquisition_state;
+      u8 acquisition_state;
 
-      ret = regmap_read(sensor->regmap8,
-              BCRM_ACQUISITION_STOP_8RW, &acquisition_state);
+      ret = bcrm_read8(sensor, BCRM_ACQUISITION_STOP_8RW, &acquisition_state);
       if (0 != acquisition_state) {
         adev_info(&client->dev, 
           "V4L2_AV_CSI2_STREAMON called but cam is streaming already. acquisition_state %d, sensor->is_streaming %d",
@@ -2881,44 +2969,28 @@ static int avt3_ctrl_write(struct i2c_client *client, enum avt_ctrl ctrl_id, __u
 		return -EINVAL;
 	}
 
-  avt_dbg(sensor->sd, "reg %x, length %d, vc->value0 0x%x\n", reg, length, value);
+  	avt_dbg(sensor->sd, "reg %x, length %d, vc->value0 0x%x\n", reg, length, value);
 
-  switch (length)
-  {
-  case AV_CAM_DATA_SIZE_8:
-    ret = bcrm_regmap_write(sensor, sensor->regmap8,
-                sensor->cci_reg.reg.bcrm_addr + reg, value);
-    break;
-  case AV_CAM_DATA_SIZE_16:
-    ret = bcrm_regmap_write(sensor, sensor->regmap16,
-                sensor->cci_reg.reg.bcrm_addr + reg, value);
-    break;
-  case AV_CAM_DATA_SIZE_32:
-    ret = bcrm_regmap_write(sensor, sensor->regmap32,
-                sensor->cci_reg.reg.bcrm_addr + reg, value);
-    break;
-  default:
-    dev_err(&client->dev, "%s[%d]: unknown length %d\n", __func__, __LINE__, length);
-  }
+	ret = bcrm_write(sensor, reg, value, length);
 
-  if (ret < 0)
-  {
-    dev_err(&client->dev, "%s[%d]: bcrm_regmap_write failed\n",
-        __func__, __LINE__);
-    return ret;
-  }
+	if (ret < 0)
+	{
+		dev_err(&client->dev, "%s[%d]: bcrm_write failed\n",
+			__func__, __LINE__);
+		return ret;
+	}
 
-  /* set pixelformat followed by set matching bayer format */
-  if (ctrl_id == V4L2_AV_CSI2_PIXELFORMAT && bayer_temp != bayer_ignore)
-  {
-    ret = set_bayer_format(client, bayer_temp);
-    if (ret < 0)
-    {
-      dev_err(&client->dev, "%s[%d]: bcrm_regmap_write failed, ret %d\n",
-          __func__, __LINE__, ret);
-      return ret;
-    }
-  }
+	/* set pixelformat followed by set matching bayer format */
+	if (ctrl_id == V4L2_AV_CSI2_PIXELFORMAT && bayer_temp != bayer_ignore)
+	{
+		ret = set_bayer_format(client, bayer_temp);
+		if (ret < 0)
+		{
+		dev_err(&client->dev, "%s[%d]: bcrm_write failed, ret %d\n",
+			__func__, __LINE__, ret);
+		return ret;
+		}
+	}
 
   return 0;
 }
@@ -2943,19 +3015,19 @@ static int avt3_queryctrl(struct v4l2_subdev *sd,
       if (!available)                                                                                  \
         return -EINVAL;                                                                                \
                                                                                                        \
-      ret = regmap_bulk_read(sensor->regmap ## bits, sensor->cci_reg.reg.bcrm_addr + BCRM_ ## reg_base ## _MIN_ ##  bits ## R, &tmp_min, 1);    \
+      ret = bcrm_read ## bits(sensor, BCRM_ ## reg_base ## _MIN_ ##  bits ## R, &tmp_min);    		   \
       if(ret != 0)                                                                                     \
         return ret;                                                                                    \
                                                                                                        \
-      ret = regmap_bulk_read(sensor->regmap ## bits, sensor->cci_reg.reg.bcrm_addr + BCRM_ ## reg_base ## _MAX_ ##  bits ## R, &tmp_max, 1);    \
+      ret = bcrm_read ## bits(sensor, BCRM_ ## reg_base ## _MAX_ ##  bits ## R, &tmp_max); 			   \
       if(ret != 0)                                                                                     \
         return ret;                                                                                    \
                                                                                                        \
-      ret = regmap_bulk_read(sensor->regmap ## bits, sensor->cci_reg.reg.bcrm_addr + BCRM_ ## reg_base ## _INC_ ##  bits ## R, &tmp_inc, 1);    \
+      ret = bcrm_read ## bits(sensor, BCRM_ ## reg_base ## _INC_ ##  bits ## R, &tmp_inc);     		   \
       if(ret != 0)                                                                                     \
         return ret;                                                                                    \
                                                                                                        \
-      ret = regmap_bulk_read(sensor->regmap ## bits, sensor->cci_reg.reg.bcrm_addr + BCRM_ ## reg_base ## _ ##  bits ## RW, &tmp_val, 1);    \
+      ret = bcrm_read ## bits(sensor, BCRM_ ## reg_base ## _ ##  bits ## RW, &tmp_val);    			   \
       if(ret != 0)                                                                                     \
         return ret;                                                                                    \
                                                                                                        \
@@ -3021,7 +3093,8 @@ static int avt3_queryctrl(struct v4l2_subdev *sd,
     
     handle_query_ctrl_bitmask_inquiry(white_balance_auto_avail, BITMASK, 0, 2, 1, 0, "Auto White Balance", CID_AUTO_WHITE_BALANCE)
     handle_query_ctrl_bitmask_inquiry(gain_auto_avail,          BITMASK, 0, 2, 1, 0, "Auto Gain",          CID_AUTOGAIN)
-    handle_query_ctrl_bitmask_inquiry(white_balance_auto_avail, BITMASK, 0, 7, 1, 0, "Do White Balance",   CID_DO_WHITE_BALANCE)
+    handle_query_ctrl_bitmask_inquiry(white_balance_auto_avail, BITMASK, 0, 7, 1
+	, 0, "Do White Balance",   CID_DO_WHITE_BALANCE)
     handle_query_ctrl_bitmask_inquiry(exposure_auto_avail,      BITMASK, 0, 3, 1, 0, "Exposure Auto",      CID_EXPOSURE_AUTO)
     handle_query_ctrl_bitmask_inquiry(reverse_x_avail,          BOOLEAN, 0, 1, 1, 0, "H-Flip",             CID_HFLIP)
     handle_query_ctrl_bitmask_inquiry(reverse_y_avail,          BOOLEAN, 0, 1, 1, 0, "Y-Flip",             CID_VFLIP)
@@ -3030,29 +3103,25 @@ static int avt3_queryctrl(struct v4l2_subdev *sd,
   // TODO: Forward EXPOSURE_ABSOLUTE to regular EXPOSURE
 	case V4L2_CID_EXPOSURE_ABSOLUTE:
     {
-      s64 vals64;
-      avt_info(sd, "qctrl->id 0x%08X, qctrl->type %d case V4L2_CID_EXPOSURE_ABSOLUTE",
+      	s64 vals64;
+      	avt_info(sd, "qctrl->id 0x%08X, qctrl->type %d case V4L2_CID_EXPOSURE_ABSOLUTE",
            qctrl->id, qctrl->type);
-      ret = regmap_bulk_read(sensor->regmap64,
-                   sensor->cci_reg.reg.bcrm_addr + BCRM_EXPOSURE_TIME_MIN_64R,
-                   &vals64, 1);
-      qctrl->minimum = vals64;
-      ret = regmap_bulk_read(sensor->regmap64,
-                   sensor->cci_reg.reg.bcrm_addr + BCRM_EXPOSURE_TIME_MAX_64R,
-                   &vals64, 1);
-      qctrl->maximum = vals64;
-      ret = regmap_bulk_read(sensor->regmap64,
-                   sensor->cci_reg.reg.bcrm_addr + BCRM_EXPOSURE_TIME_INC_64R,
-                   &vals64, 1);
-      qctrl->step = vals64;
-      ret = regmap_bulk_read(sensor->regmap64,
-                   sensor->cci_reg.reg.bcrm_addr + BCRM_EXPOSURE_TIME_64RW,
-                   &qctrl->default_value, 1);
-      qctrl->default_value = vals64;
+		
+		ret = bcrm_read64(sensor, BCRM_EXPOSURE_TIME_MIN_64R, &vals64);
+      	qctrl->minimum = vals64;
+	  	
+		ret = bcrm_read64(sensor, BCRM_EXPOSURE_TIME_MAX_64R, &vals64);
+      	qctrl->maximum = vals64;
+	  	
+		ret = bcrm_read64(sensor, BCRM_EXPOSURE_TIME_INC_64R, &vals64);
+      	qctrl->step = vals64;
 
-      qctrl->type = V4L2_CTRL_TYPE_INTEGER64;
-      strcpy(qctrl->name, "Exposure Absolute");
-      avt_info(sd, "V4L2_CID_EXPOSURE_ABSOLUTE: \n"
+	  	ret = bcrm_read64(sensor, BCRM_EXPOSURE_TIME_64RW, &vals64);
+      	qctrl->default_value = vals64;
+
+    	qctrl->type = V4L2_CTRL_TYPE_INTEGER64;
+      	strcpy(qctrl->name, "Exposure Absolute");
+      	avt_info(sd, "V4L2_CID_EXPOSURE_ABSOLUTE: \n"
              "   BCRM_EXPOSURE_TIME_MIN_64R       %lld, \n"
              "   BCRM_EXPOSURE_TIME_MAX_64R       %lld, \n"
              "   BCRM_EXPOSURE_TIME_INC_64R %lld, \n"
@@ -3061,7 +3130,7 @@ static int avt3_queryctrl(struct v4l2_subdev *sd,
            qctrl->maximum,
            qctrl->step,
            qctrl->default_value);
-      return 0;
+      	return 0;
     }
 
 	default:
@@ -3082,14 +3151,13 @@ static int avt3_queryctrl(struct v4l2_subdev *sd,
 
 static int avt3_ioctl_g_ctrl(struct v4l2_subdev *sd, struct v4l2_control *vc)
 {
-	struct i2c_client *client = v4l2_get_subdevdata(sd);
 	struct avt3_dev *sensor = to_avt3_dev(sd);
 
 	unsigned int reg = 0;
 	int length = 0;
 	struct v4l2_query_ext_ctrl qctrl;
 	int ret = 0;
-	uint64_t val64 = 0;
+	u64 temp64 = 0;
 
 	vc->value = 0;
 
@@ -3196,33 +3264,17 @@ static int avt3_ioctl_g_ctrl(struct v4l2_subdev *sd, struct v4l2_control *vc)
 		vc->id == V4L2_CID_AUTO_WHITE_BALANCE)
 		qctrl.maximum = 2;
 
-	switch (length)
-	{
-	case AV_CAM_DATA_SIZE_8:
-		ret = regmap_read(sensor->regmap8,
-						  sensor->cci_reg.reg.bcrm_addr + reg, &vc->value);
-		break;
-	case AV_CAM_DATA_SIZE_16:
-		ret = regmap_read(sensor->regmap16,
-						  sensor->cci_reg.reg.bcrm_addr + reg, &vc->value);
-		break;
-	case AV_CAM_DATA_SIZE_32:
-		ret = regmap_read(sensor->regmap32,
-						  sensor->cci_reg.reg.bcrm_addr + reg, &vc->value);
-		break;
-	case AV_CAM_DATA_SIZE_64:
-		ret = regmap_bulk_read(sensor->regmap64,
-							   sensor->cci_reg.reg.bcrm_addr + reg, (char *)&val64, 1);
-		break;
-	default:
-		dev_err(&client->dev, "%s[%d]: unknown length %d\n", __func__, __LINE__, length);
+	ret = bcrm_read(sensor, reg, (u8*)&temp64, length);
+
+	if (length != AV_CAM_DATA_SIZE_64) {
+		vc->value = temp64;
 	}
 
 	if (vc->id == V4L2_CID_EXPOSURE_ABSOLUTE)
 	{
 		dev_info(&sensor->i2c_client->dev, "%s[%d]: V4L2_CID_EXPOSURE_ABSOLUTE values need to be translated\n", __func__, __LINE__);
 		//		/* Absolute (1ns to 100ns) */
-		vc->value = val64 / 100;
+		vc->value = temp64 / 100;
 	}
 
 	/* BCRM Auto Exposure changes -> Refer to BCRM document */
@@ -3450,23 +3502,6 @@ static struct v4l2_ctrl* avt3_ctrl_find(struct avt3_dev *camera,u32 id)
 	return NULL;
 }
 
-static struct regmap* avt3_get_regmap_by_size(struct avt3_dev *camera,u8 data_size)
-{
-	switch (data_size)
-	{
-		case AV_CAM_DATA_SIZE_8:
-   			return camera->regmap8;
-		case AV_CAM_DATA_SIZE_16:
-			return camera->regmap16;
-		case AV_CAM_DATA_SIZE_32:
-			return camera->regmap32;
-		case AV_CAM_DATA_SIZE_64:
-			return camera->regmap64;
-		default:
-			return NULL;
-	}
-}
-
 static void avt3_update_sw_ctrl_state(struct avt3_dev *camera)
 {
 	struct v4l2_ctrl * sw_trigger_ctrl = avt3_ctrl_find(camera,V4L2_CID_TRIGGER_SOFTWARE);
@@ -3638,48 +3673,20 @@ static int write_ctrl_value(struct avt3_dev *camera,struct v4l2_ctrl *ctrl,
 {
 	const u16 reg = ctrl_mapping->reg_offset;
 	const u8 data_size = ctrl_mapping->data_size;
-	struct regmap * const ctrl_regmap
-		= avt3_get_regmap_by_size(camera,data_size);
-	const u16 addr = get_bcrm_addr(camera,reg);
 	s64 temp;
 	int ret = 0;
 
-	if (ctrl_mapping->data_size == AV_CAM_DATA_SIZE_64)
-	{
-		if (ctrl->type == V4L2_CTRL_TYPE_INTEGER64)
-			temp = *ctrl->p_new.p_s64;
-		else
-			temp = ctrl->val;
-
-		avt3_ctrl_to_reg(ctrl->id,&temp);
-
-		if (ctrl_mapping->type == V4L2_CTRL_TYPE_BUTTON)
-		{
-			ret = bcrm_regmap_write64(camera, ctrl_regmap,
-					    addr, 1);
-		}
-		else
-		{
-
-			ret = bcrm_regmap_write64(camera, ctrl_regmap,
-					    addr, temp);
-		}
-	}
+	if (ctrl->type == V4L2_CTRL_TYPE_INTEGER64)
+		temp = *ctrl->p_new.p_s64;
 	else
-	{
 		temp = ctrl->val;
-		avt3_ctrl_to_reg(ctrl->id,&temp);
 
-		if (ctrl_mapping->type == V4L2_CTRL_TYPE_BUTTON)
-		{
-			ret = bcrm_regmap_write(camera, ctrl_regmap,
-					  addr, 1);
-		}
-		else
-		{
-			ret = bcrm_regmap_write(camera, ctrl_regmap,
-					  addr, temp);
-		}
+	avt3_ctrl_to_reg(ctrl->id,&temp);
+
+	if (ctrl_mapping->type == V4L2_CTRL_TYPE_BUTTON) {
+		ret = bcrm_write(camera, reg, 1, data_size);
+	} else {
+		ret = bcrm_write(camera, reg, temp, data_size);
 	}
 
 	if (ret < 0)
@@ -3723,8 +3730,6 @@ static int avt3_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 		struct v4l2_ctrl *sel_ctrl,*invert_ctrl;
 		u8 output_line_shift,invert,active = ctrl->val;
 		u32 line_config;
-		const u16 line_config_addr
-			= get_bcrm_addr(sensor,BCRM_LINE_CONFIGURATION_32RW);
 
 		sel_ctrl = avt3_ctrl_find(sensor,
 					  V4L2_CID_EXPOSURE_ACTIVE_LINE_SELECTOR);
@@ -3746,9 +3751,8 @@ static int avt3_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 
 		line_config = (active ? (1 | invert ) : 0) << output_line_shift;
 
-		ret = bcrm_regmap_write(sensor,sensor->regmap32,
-				  	line_config_addr,line_config);
-
+		ret = bcrm_write32(sensor, BCRM_LINE_CONFIGURATION_32RW, line_config);
+		
 		if (ret < 0)
 			return ret;
 
@@ -4449,9 +4453,8 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 				sensor->mbus_framefmt.code,
 				sensor->hflip, sensor->vflip);
 
-		ret = bcrm_regmap_write(sensor,sensor->regmap8,
-					sensor->cci_reg.reg.bcrm_addr + BCRM_BINNING_SETTING_8RW,binning_info->sel);
-
+		ret = bcrm_write8(sensor, BCRM_BINNING_SETTING_8RW, binning_info->sel);
+		
 		if (ret < 0) {
 			dev_err(&client->dev,"%s[%d]: Writing binning setting failed with: %d",__func__,__LINE__,ret);
 		}
@@ -4465,9 +4468,7 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 
 		ret = avt3_ctrl_write(sensor->i2c_client, V4L2_AV_CSI2_OFFSET_Y, crop_rect.top);
 
-		ret = regmap_bulk_read(sensor->regmap64,
-				       sensor->cci_reg.reg.bcrm_addr + BCRM_ACQUISITION_FRAME_RATE_MIN_64R,
-				       &u64FrMin, 1);
+		ret = bcrm_read64(sensor, BCRM_ACQUISITION_FRAME_RATE_MIN_64R, &u64FrMin);
 
 		if (ret < 0)
 		{
@@ -4475,10 +4476,8 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 			// goto err_out;
 		}
 
-		ret = regmap_bulk_read(sensor->regmap64,
-							   sensor->cci_reg.reg.bcrm_addr + BCRM_ACQUISITION_FRAME_RATE_MAX_64R,
-							   &u64FrMax, 1);
-
+		ret = bcrm_read64(sensor, BCRM_ACQUISITION_FRAME_RATE_MAX_64R, &u64FrMax);
+		
 		if (ret < 0)
 		{
 			dev_err(&client->dev, "regmap_read failed (%d)\n", ret);
@@ -4487,13 +4486,10 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 
 		if (sensor->avt_trigger_status.trigger_mode_enabled)
 		{
-			ret = bcrm_regmap_write(sensor, sensor->regmap8,
-						sensor->cci_reg.reg.bcrm_addr + BCRM_ACQUISITION_FRAME_RATE_ENABLE_8RW, 0);
-			ret = bcrm_regmap_write(sensor, sensor->regmap8,
-						sensor->cci_reg.reg.bcrm_addr + BCRM_FRAME_START_TRIGGER_MODE_8RW,
+			ret = bcrm_write8(sensor, BCRM_ACQUISITION_FRAME_RATE_ENABLE_8RW, 0);
+			ret = bcrm_write8(sensor, BCRM_FRAME_START_TRIGGER_MODE_8RW, 
 						sensor->avt_trigger_status.trigger_mode_enabled);
-			ret = bcrm_regmap_write(sensor, sensor->regmap8,
-						sensor->cci_reg.reg.bcrm_addr + BCRM_FRAME_START_TRIGGER_SOURCE_8RW,
+			ret = bcrm_write8(sensor, BCRM_FRAME_START_TRIGGER_SOURCE_8RW,
 						sensor->avt_trigger_status.trigger_source);
 		}
 		else
@@ -4501,11 +4497,10 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 			u32 temp32;
 
 			/* Enable manual frame rate */
-			ret = bcrm_regmap_write(sensor, sensor->regmap8,
-									sensor->cci_reg.reg.bcrm_addr + BCRM_FRAME_START_TRIGGER_MODE_8RW, 0);
+			ret = bcrm_write8(sensor, BCRM_FRAME_START_TRIGGER_MODE_8RW, 0);
 			if (ret < 0)
 			{
-				dev_err(&client->dev, "%s[%d]: BCRM_FRAME_START_TRIGGER_MODE_8RW: bcrm_regmap_write failed (%d)\n",
+				dev_err(&client->dev, "%s[%d]: BCRM_FRAME_START_TRIGGER_MODE_8RW: bcrm_write8 failed (%d)\n",
 						__func__, __LINE__,
 						ret);
 				goto out;
@@ -4514,11 +4509,11 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 			temp32 = sensor->framerate_auto ? 0 : 1;
 
 			/* Enable manual frame rate */
-			ret = bcrm_regmap_write(sensor, sensor->regmap8,
-						sensor->cci_reg.reg.bcrm_addr + BCRM_ACQUISITION_FRAME_RATE_ENABLE_8RW, temp32);
+			ret = bcrm_write8(sensor, BCRM_ACQUISITION_FRAME_RATE_ENABLE_8RW, temp32);
+			
 			if (ret < 0)
 			{
-				dev_err(&client->dev, "%s[%d]: BCRM_ACQUISITION_FRAME_RATE_ENABLE_8RW: bcrm_regmap_write failed (%d)\n",
+				dev_err(&client->dev, "%s[%d]: BCRM_ACQUISITION_FRAME_RATE_ENABLE_8RW: bcrm_write8 failed (%d)\n",
 					__func__, __LINE__,
 					ret);
 				goto out;
@@ -4538,9 +4533,8 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 
 				vc.value64 = clamp(value64,u64FrMin,u64FrMax);
 
-				ret = bcrm_regmap_write64(sensor, sensor->regmap64,
-									  sensor->cci_reg.reg.bcrm_addr + BCRM_ACQUISITION_FRAME_RATE_64RW,
-									  vc.value64);
+				ret = bcrm_write64(sensor, BCRM_ACQUISITION_FRAME_RATE_64RW, vc.value64);
+			
 				if (ret < 0)
 				{
 					dev_err(&client->dev, "%s[%d]: BCRM_ACQUISITION_FRAME_RATE_64RW: i2c write failed (%d)\n",
@@ -4594,7 +4588,6 @@ int avt3_core_ops_g_register(struct v4l2_subdev *sd, struct v4l2_dbg_register *r
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
 	struct avt3_dev *sensor = to_avt3_dev(sd);
 	int ret = 0;
-	unsigned int val = 0;
 
 	dev_info(&client->dev, "%s[%d]: reg 0x%04llX, size %d",
 			 __func__, __LINE__, reg->reg, reg->size);
@@ -4608,27 +4601,7 @@ int avt3_core_ops_g_register(struct v4l2_subdev *sd, struct v4l2_dbg_register *r
 		ret = -EINVAL;
 	}
 
-	switch (reg->size)
-	{
-	case 8:
-		ret = regmap_bulk_read(sensor->regmap64,
-							   reg->reg, &reg->val, 1);
-		break;
-	case 4:
-		ret = regmap_read(sensor->regmap32, reg->reg, &val);
-		reg->val = (__u64)val;
-		break;
-	case 2:
-		ret = regmap_read(sensor->regmap16, reg->reg, &val);
-		reg->val = (__u64)val;
-		break;
-	case 1:
-		ret = regmap_read(sensor->regmap8, reg->reg, &val);
-		reg->val = (__u64)val;
-		break;
-	default:
-		ret = -EINVAL;
-	}
+	ret = avt3_read(sensor, reg->reg, &reg->val, reg->size);
 
 	return ret;
 }
@@ -4650,11 +4623,8 @@ long avt3_core_ops_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
 	struct avt3_dev *sensor = to_avt3_dev(sd);
 	struct v4l2_capability *cap = arg;
-	struct v4l2_i2c *i2c_reg;
 	struct v4l2_csi_driver_info *info;
 	struct v4l2_csi_config *config;
-
-	char *i2c_reg_buf;
 
 	MUTEX_LOCK(&sensor->lock);
 
@@ -4696,68 +4666,6 @@ long avt3_core_ops_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 		ret = 0;
 		break;
 	}
-		// client->adapter->bus_clk_rate
-	case VIDIOC_R_I2C:
-		//dev_info(&client->dev, "%s[%d]: cmd VIDIOC_R_I2C", __func__, __LINE__);
-		i2c_reg = (struct v4l2_i2c *)arg;
-		i2c_reg_buf = kzalloc(i2c_reg->num_bytes, GFP_KERNEL);
-		if (!i2c_reg_buf)
-			return -ENOMEM;
-
-//		dev_info(&client->dev, "%s[%d]: cmd VIDIOC_R_I2C i2c_reg->reg 0x%04x, i2c_reg->size %d, i2c_reg->num_bytes %d",
-//				 __func__, __LINE__,
-//				 i2c_reg->register_address, i2c_reg->register_size, i2c_reg->num_bytes);
-
-		ret = regmap_bulk_read(sensor->regmap8, i2c_reg->register_address, i2c_reg_buf, i2c_reg->num_bytes);
-
-		if (ret < 0)
-			dev_info(&client->dev, "%s[%d]: i2c read failed (%d), bytes read = %d\n",
-					 __func__, __LINE__, ret, i2c_reg->num_bytes);
-		else
-		{
-			ret = copy_to_user((char *)i2c_reg->ptr_buffer, i2c_reg_buf, i2c_reg->num_bytes);
-
-			if (ret < 0)
-				dev_err(&client->dev, "%s[%d]: i2c read failed (%d), bytes read = %d\n",
-						__func__, __LINE__, ret, i2c_reg->num_bytes);
-		}
-
-		kfree(i2c_reg_buf);
-		break;
-
-	case VIDIOC_W_I2C:
-		i2c_reg = (struct v4l2_i2c *)arg;
-
-		i2c_reg_buf = kzalloc(i2c_reg->num_bytes, GFP_KERNEL);
-		if (!i2c_reg_buf)
-			return -ENOMEM;
-
-		ret = copy_from_user(i2c_reg_buf, (char *)i2c_reg->ptr_buffer, i2c_reg->num_bytes);
-
-		/* TODO: check count, size and endianess!! */
-		ret = regmap_bulk_write(sensor->regmap8, i2c_reg->register_address, i2c_reg_buf, i2c_reg->num_bytes);
-
-		if (ret < 0)
-		{
-			dev_err(&client->dev, "%s[%d]: i2c write failed (%d), bytes written = %d\n",
-					__func__, __LINE__, ret, i2c_reg->num_bytes);
-		}
-		else
-		{
-			// regmap_bulk_write returns 0 on success, but VIDIOC_W_I2C is expected to return number of bytes written
-			ret = i2c_reg->num_bytes + AV_CAM_REG_SIZE;
-		}
-
-		if (i2c_reg->register_address == GENCP_CHANGEMODE_8W)
-		{
-			dev_info(&client->dev,"Switching mode according to ioctl request! New mode %d\n",
-					 (int)i2c_reg_buf[0]);
-
-			sensor->mode = i2c_reg_buf[0];
-		}
-
-		break;
-
 	case VIDIOC_G_DRIVER_INFO:
 		/***************************************
 		 *  better to use values from sysfs as below
@@ -5263,17 +5171,16 @@ static int avt3_get_sensor_capabilities(struct v4l2_subdev *sd)
 	struct i2c_client *client = sensor->i2c_client;
 
 	int ret = 0;
-	uint64_t value64;
-	uint32_t avt_supported_lane_mask = 0;
-	uint32_t avt_current_clk = 0;
-	uint32_t clk;
-	uint8_t bcm_mode = 0;
+	u64 value64;
+	u8 avt_supported_lane_mask = 0;
+	u32 avt_current_clk = 0;
+	u32 clk;
+	u8 bcm_mode = 0;
 	u32 temp;
 
 	/* reading the Feature inquiry register */
-	ret = regmap_bulk_read(sensor->regmap64,
-						   sensor->cci_reg.reg.bcrm_addr + BCRM_FEATURE_INQUIRY_64R,
-						   &sensor->feature_inquiry_reg.value, 1);
+	ret = bcrm_read64(sensor, BCRM_FEATURE_INQUIRY_64R,
+		&sensor->feature_inquiry_reg.value);
 
 	if (ret < 0)
 	{
@@ -5283,10 +5190,9 @@ static int avt3_get_sensor_capabilities(struct v4l2_subdev *sd)
 	avt_dbg(sd, "BCRM_FEATURE_INQUIRY_64R %llu\n", sensor->feature_inquiry_reg.value);
 
 	/* Check if requested number of lanes is supported */
-	ret = regmap_read(sensor->regmap8,
-					  sensor->cci_reg.reg.bcrm_addr + BCRM_SUPPORTED_CSI2_LANE_COUNTS_8R,
-					  &avt_supported_lane_mask);
-
+	ret = bcrm_read8(sensor, BCRM_SUPPORTED_CSI2_LANE_COUNTS_8R,
+		&avt_supported_lane_mask);
+	
 	if (ret < 0)
 	{
 		avt_dbg(sd, "regmap_read failed (%d)\n", ret);
@@ -5307,30 +5213,24 @@ static int avt3_get_sensor_capabilities(struct v4l2_subdev *sd)
 	avt_dbg(sd, "request %u lanes.\n", sensor->v4l2_fwnode_ep.bus.mipi_csi2.num_data_lanes);
 
 	/* Set number of lanes */
-	ret = bcrm_regmap_write(sensor, sensor->regmap8,
-		sensor->cci_reg.reg.bcrm_addr + BCRM_CSI2_LANE_COUNT_8RW,
+	ret = bcrm_write8(sensor, BCRM_CSI2_LANE_COUNT_8RW,
 		sensor->v4l2_fwnode_ep.bus.mipi_csi2.num_data_lanes);
-
+	
 	if (ret < 0)
 	{
-		avt_err(sd, "bcrm_regmap_write failed (%d)\n", ret);
+		avt_err(sd, "bcrm_write8 failed (%d)\n", ret);
 		return ret;
 	}
 
-	ret = regmap_read(sensor->regmap32,
-		sensor->cci_reg.reg.bcrm_addr + BCRM_CSI2_CLOCK_MIN_32R,
-		&sensor->avt_min_clk);
 
+	ret = bcrm_read32(sensor, BCRM_CSI2_CLOCK_MIN_32R, &sensor->avt_min_clk);
 	if (ret < 0)
 	{
 		avt_err(sd, "regmap_read failed (%d)\n", ret);
 		return ret;
 	}
 
-	ret = regmap_read(sensor->regmap32,
-					  sensor->cci_reg.reg.bcrm_addr + BCRM_CSI2_CLOCK_MAX_32R,
-					  &sensor->avt_max_clk);
-
+	ret = bcrm_read32(sensor, BCRM_CSI2_CLOCK_MAX_32R, &sensor->avt_max_clk);
 	if (ret < 0)
 	{
 		avt_err(sd, "regmap_read failed (%d)\n", ret);
@@ -5358,19 +5258,14 @@ static int avt3_get_sensor_capabilities(struct v4l2_subdev *sd)
 
 	clk = sensor->v4l2_fwnode_ep.link_frequencies[0];
 
-	ret = bcrm_regmap_write(sensor, sensor->regmap32,
-							sensor->cci_reg.reg.bcrm_addr + BCRM_CSI2_CLOCK_32RW,
-							clk);
+	ret = bcrm_write32(sensor, BCRM_CSI2_CLOCK_32RW, clk);	
 	if (ret < 0)
 	{
 		avt_err(sd, "regmap_write BCRM_CSI2_CLOCK_32RW failed (%d)\n", ret);
 		return ret;
 	}
 
-	ret = regmap_read(sensor->regmap32,
-					  sensor->cci_reg.reg.bcrm_addr + BCRM_CSI2_CLOCK_32RW,
-					  &avt_current_clk);
-
+	ret = bcrm_read32(sensor, BCRM_CSI2_CLOCK_32RW, &avt_current_clk);
 	if (ret < 0)
 	{
 		avt_err(sd, "regmap_read BCRM_CSI2_CLOCK_32RW failed (%d)\n", ret);
@@ -5389,10 +5284,7 @@ static int avt3_get_sensor_capabilities(struct v4l2_subdev *sd)
 
 	avt_info(sd, "get minimal and maximal resolutions");
 
-	ret = regmap_read(sensor->regmap32,
-					  sensor->cci_reg.reg.bcrm_addr + BCRM_IMG_WIDTH_MIN_32R,
-					  &sensor->min_rect.width);
-
+	ret = bcrm_read32(sensor, BCRM_IMG_WIDTH_MIN_32R, &sensor->min_rect.width);
 	if (ret < 0)
 	{
 		avt_err(sd, "regmap_read failed (%d)\n", ret);
@@ -5400,10 +5292,7 @@ static int avt3_get_sensor_capabilities(struct v4l2_subdev *sd)
 	}
 	avt_dbg(sd, "BCRM_IMG_WIDTH_MIN_32R %u", sensor->min_rect.width);
 
-	ret = regmap_read(sensor->regmap32,
-					  sensor->cci_reg.reg.bcrm_addr + BCRM_IMG_WIDTH_MAX_32R,
-					  &sensor->max_rect.width);
-
+	ret = bcrm_read32(sensor, BCRM_IMG_WIDTH_MAX_32R, &sensor->max_rect.width);
 	if (ret < 0)
 	{
 		avt_err(sd, "regmap_read failed (%d)\n", ret);
@@ -5413,10 +5302,7 @@ static int avt3_get_sensor_capabilities(struct v4l2_subdev *sd)
 
 	sensor->max_rect.left = sensor->max_rect.top = 0;
 
-	ret = regmap_read(sensor->regmap32,
-					  sensor->cci_reg.reg.bcrm_addr + BCRM_IMG_HEIGHT_MIN_32R,
-					  &sensor->min_rect.height);
-
+	ret = bcrm_read32(sensor, BCRM_IMG_HEIGHT_MIN_32R, &sensor->min_rect.height);
 	if (ret < 0)
 	{
 		avt_err(sd, "regmap_read failed (%d)", ret);
@@ -5424,10 +5310,7 @@ static int avt3_get_sensor_capabilities(struct v4l2_subdev *sd)
 	}
 	avt_dbg(sd, "BCRM_IMG_HEIGHT_MIN_32R %u", sensor->min_rect.height);
 
-	ret = regmap_read(sensor->regmap32,
-			  sensor->cci_reg.reg.bcrm_addr + BCRM_IMG_HEIGHT_MAX_32R,
-			  &sensor->max_rect.height);
-
+	ret = bcrm_read32(sensor, BCRM_IMG_HEIGHT_MAX_32R, &sensor->max_rect.height);
 	if (ret < 0)
 	{
 		avt_err(sd, "regmap_read failed (%d)", ret);
@@ -5453,9 +5336,7 @@ static int avt3_get_sensor_capabilities(struct v4l2_subdev *sd)
 
 	avt_dbg(sd, "BCRM_IMG_HEIGHT_MAX_32R %u", sensor->max_rect.height);
 
-	ret = regmap_bulk_read(sensor->regmap64,
-			       sensor->cci_reg.reg.bcrm_addr + BCRM_GAIN_MIN_64R,
-			       &value64, 1);
+	ret = bcrm_read64(sensor, BCRM_GAIN_MIN_64R, &value64);
 
 	if (ret < 0)
 	{
@@ -5464,10 +5345,8 @@ static int avt3_get_sensor_capabilities(struct v4l2_subdev *sd)
 	}
 	avt_dbg(sd, "BCRM_GAIN_MIN_64R %llu", value64);
 
-	ret = regmap_bulk_read(sensor->regmap64,
-			       sensor->cci_reg.reg.bcrm_addr + BCRM_GAIN_MAX_64R,
-			       &value64, 1);
-
+	ret = bcrm_read64(sensor, BCRM_GAIN_MAX_64R, &value64);
+	
 	if (ret < 0)
 	{
 		avt_err(sd, "regmap_read failed (%d)", ret);
@@ -5494,7 +5373,7 @@ static int avt3_get_sensor_capabilities(struct v4l2_subdev *sd)
 	sensor->curr_rect.left = 0;
 	sensor->curr_rect.top = 0;
 
-	ret = regmap_write(sensor->regmap8,GENCP_CHANGEMODE_8W,bcm_mode);
+	ret = avt3_write(sensor, GENCP_CHANGEMODE_8W, bcm_mode, AV_CAM_DATA_SIZE_8);
 
 	if (ret < 0)
 	{
@@ -5754,56 +5633,22 @@ static int avt3_streamon_thread_disable(struct v4l2_subdev *sd)
 }
 #endif
 
-static const struct regmap_config alvium_reg8_config = {
-	.reg_bits = AV_CAM_REG_SIZE * 8,
-	.val_bits = AV_CAM_DATA_SIZE_8 * 8,
-	.reg_stride = AV_CAM_DATA_SIZE_8,
-	.max_register = ALVIUM_MAX_REG_ADDR,
+static const struct regmap_config alvium_regmap_config = {
+	.reg_bits = 16,
+	.val_bits = 8,
+	.reg_stride = 1,
+	.max_register = 0xffff,
 	.reg_format_endian = REGMAP_ENDIAN_BIG,
 	.val_format_endian = REGMAP_ENDIAN_BIG,
-	.name = "alvium_regmap8",
+	.name = "alvium_regmap",
 	.cache_type = REGCACHE_NONE,
 };
 
-static const struct regmap_config alvium_reg16_config = {
-	.reg_bits = AV_CAM_REG_SIZE * 8,
-	.val_bits = AV_CAM_DATA_SIZE_16 * 8,
-	.reg_stride = AV_CAM_DATA_SIZE_16,
-	.max_register = ALVIUM_MAX_REG_ADDR,
-	.reg_format_endian = REGMAP_ENDIAN_BIG,
-	.val_format_endian = REGMAP_ENDIAN_BIG,
-	.name = "alvium_regmap16",
-	.cache_type = REGCACHE_NONE,
-};
-
-static const struct regmap_config alvium_reg32_config = {
-	.reg_bits = AV_CAM_REG_SIZE * 8,
-	.val_bits = AV_CAM_DATA_SIZE_32 * 8,
-	.reg_stride = AV_CAM_DATA_SIZE_32,
-	.max_register = ALVIUM_MAX_REG_ADDR,
-	.reg_format_endian = REGMAP_ENDIAN_BIG,
-	.val_format_endian = REGMAP_ENDIAN_BIG,
-	.name = "alvium_regmap32",
-	.cache_type = REGCACHE_NONE,
-};
-
-static const struct regmap_config alvium_reg64_config = {
-	.reg_bits = AV_CAM_REG_SIZE * 8,
-	.val_bits = AV_CAM_DATA_SIZE_64 * 8,
-	.reg_stride = AV_CAM_DATA_SIZE_64,
-	.max_register = ALVIUM_MAX_REG_ADDR,
-	.reg_format_endian = REGMAP_ENDIAN_BIG,
-	.val_format_endian = REGMAP_ENDIAN_BIG,
-	.name = "alvium_regmap64",
-	.cache_type = REGCACHE_NONE,
-};
 
 static int prepare_write_handshake(struct avt3_dev *camera)
 {
 	int ret;
 	u8 handshake_val;
-	u16 const handshake_addr =
-		camera->cci_reg.reg.bcrm_addr + BCRM_WRITE_HANDSHAKE_8RW;
 
 	ret = bcrm_read8(camera,BCRM_WRITE_HANDSHAKE_8RW,&handshake_val);
 
@@ -5823,9 +5668,9 @@ static int prepare_write_handshake(struct avt3_dev *camera)
 	}
 
 	/* reset only handshake status */
-	ret = regmap_write(camera->regmap8,handshake_addr,
-			   handshake_val & ~BCRM_HANDSHAKE_STATUS_MASK);
-
+	ret = avt3_write(camera, get_bcrm_addr(camera, BCRM_WRITE_HANDSHAKE_8RW), 
+		handshake_val & ~BCRM_HANDSHAKE_STATUS_MASK, 1);
+	
 	if (ret < 0)
 	{
 		dev_err(&camera->i2c_client->dev,"%s[%d]: Clearing handshake status failed with: %d\n",__func__, __LINE__,ret);
@@ -5870,77 +5715,39 @@ static int wait_for_write_handshake(struct avt3_dev *camera)
 	return -EIO;
 }
 
-static int bcrm_regmap_write64(struct avt3_dev *sensor,struct regmap *map,
-			       unsigned int reg,unsigned long long val)
+static int bcrm_write(struct avt3_dev *camera, u16 reg, u64 val, size_t len)
 {
+	struct device *dev = &camera->i2c_client->dev;
 	int ret;
 
-
-	ret = prepare_write_handshake(sensor);
+	ret = prepare_write_handshake(camera);
 
 	if (ret < 0)
 		return ret;
 
-	ret = regmap_bulk_write(map, reg, &val, 1);
+	ret = avt3_write(camera, get_bcrm_addr(camera, reg), val, len);
 
 	if (ret < 0)
 	{
-		dev_err(&sensor->i2c_client->dev,"%s[%d]: Writing value failed with: %d\n",__func__, __LINE__,ret);
+		dev_err(dev,"%s[%d]: Writing value failed with: %d\n",__func__, __LINE__,ret);
 		return ret;
 	}
 
-	if (!sensor->bcrm_write_handshake)
+	if (!camera->bcrm_write_handshake)
 	{
-		dev_info(&sensor->i2c_client->dev,
+		dev_info(dev,
 				 "%s[%d]: bcrm_write_handshake not supported. Use msleep(%u) at as fallback.",
-				 __func__, __LINE__, sensor->bcrm_handshake_timeout_ms);
+				 __func__, __LINE__, camera->bcrm_handshake_timeout_ms);
 		/* Handshake not supported. Use static sleep at least once as fallback */
-		msleep(sensor->bcrm_handshake_timeout_ms);
+		msleep(camera->bcrm_handshake_timeout_ms);
 	}
 
-	return wait_for_write_handshake(sensor);
-}
-
-static int bcrm_regmap_write(struct avt3_dev *sensor,
-							 struct regmap *map,
-							 unsigned int reg,
-							 unsigned int val)
-{
-
-	int ret;
-
-	ret = prepare_write_handshake(sensor);
-
-	if (ret < 0)
-		return ret;
-
-	ret = regmap_write(map, reg, val);
-
-	if (ret < 0)
-	{
-		dev_err(&sensor->i2c_client->dev,"%s[%d]: Writing value failed with: %d\n",__func__, __LINE__,ret);
-		return ret;
-	}
-
-	msleep(10);
-
-	if (!sensor->bcrm_write_handshake)
-	{
-		dev_info(&sensor->i2c_client->dev,
-				 "%s[%d]: bcrm_write_handshake not supported. Use msleep(%u) at as fallback.",
-				 __func__, __LINE__, sensor->bcrm_handshake_timeout_ms);
-		/* Handshake not supported. Use static sleep at least once as fallback */
-		msleep(sensor->bcrm_handshake_timeout_ms);
-
-		return ret;
-	}
-
-	return wait_for_write_handshake(sensor);
+	return wait_for_write_handshake(camera);
 }
 
 static void bcrm_wrhs_work_func(struct work_struct *work)
 {
-	u32 handshake_val = 0;
+	u8 handshake_val = 0;
 	static const int poll_interval_ms = 5;
 	int ret = 0;
 	int i = 0;
@@ -5953,14 +5760,17 @@ static void bcrm_wrhs_work_func(struct work_struct *work)
 	do
 	{
 		//TODO: Must we check the return value here ?
-		ret = regmap_read(sensor->regmap8, sensor->cci_reg.reg.bcrm_addr + BCRM_WRITE_HANDSHAKE_8RW, &handshake_val);
-
+		ret = bcrm_read8(sensor, BCRM_WRITE_HANDSHAKE_8RW, &handshake_val);
+	
 		if (handshake_val & BCRM_HANDSHAKE_STATUS_MASK)
 		{
 			//TODO: Must we check the return value here ?
-			ret = regmap_write(sensor->regmap8, sensor->cci_reg.reg.bcrm_addr + BCRM_WRITE_HANDSHAKE_8RW, handshake_val & ~BCRM_HANDSHAKE_STATUS_MASK); /* reset only handshake status */
+			ret = avt3_write(sensor, 
+				get_bcrm_addr(sensor, BCRM_WRITE_HANDSHAKE_8RW),
+				handshake_val & ~BCRM_HANDSHAKE_STATUS_MASK,
+				AV_CAM_DATA_SIZE_8);
 
-					complete(&sensor->bcrm_wrhs_completion);
+			complete(&sensor->bcrm_wrhs_completion);
 
 			dev_dbg(&sensor->i2c_client->dev, "%s[%d]: Handshake ok\n",
 						__func__, __LINE__);
@@ -6011,6 +5821,105 @@ static int avt3_detect(struct i2c_client *client)
 	}
 
 	return 0;
+}
+
+static ssize_t avt3_fw_transfer_read(struct file *filp, struct kobject *kobj,
+	struct bin_attribute *battr, char *buf, loff_t off, size_t len)
+{
+	struct avt3_dev *camera = battr->private;
+	struct avt3_fw_transfer *xfer = &camera->next_fw_rd_transfer;
+	int ret = -EINVAL; 
+
+	WARN_ON(off != 0);
+
+	mutex_lock(&camera->lock);
+
+	if (xfer->len == len) {
+		ret = avt3_read_raw(camera, xfer->addr,
+			buf, xfer->len);
+
+		memset(xfer, 0, sizeof(*xfer));
+	}
+
+	mutex_unlock(&camera->lock);
+
+	return ret;
+}
+
+static ssize_t avt3_fw_transfer_write(struct file *filp, struct kobject *kobj,
+	struct bin_attribute *battr, char *buf, loff_t off, size_t len)
+{
+	const struct {
+		struct avt3_fw_transfer xfer;
+		u8 buf[];
+	} __packed *payload;
+	const struct avt3_fw_transfer *xfer;
+	struct avt3_dev *camera = battr->private;
+	ssize_t ret = -EINVAL;
+
+	WARN_ON(off != 0);
+
+	if (len < sizeof(payload)) 
+		return -EINVAL;
+	
+
+	payload = (typeof(payload))buf;
+	xfer = &payload->xfer;
+
+	if (xfer->len + sizeof(*xfer) > battr->size)
+		return -EINVAL;
+
+	mutex_lock(&camera->lock);
+
+	if (payload->xfer.rd) {
+		memcpy(&camera->next_fw_rd_transfer, xfer, sizeof(*xfer));
+
+		ret = 0;
+	} else {
+		if (xfer->len + sizeof(*xfer) != len)
+			goto out;
+		
+		ret = avt3_write_raw(camera, xfer->addr, payload->buf, xfer->len);
+		if (ret < 0) 
+			goto out;	
+
+		ret = xfer->len;
+	}
+
+out:	
+	mutex_unlock(&camera->lock);
+
+	return ret;
+}
+
+static int avt3_fw_transfer_init(struct avt3_dev *camera) 
+{
+	struct device *dev = &camera->i2c_client->dev;
+	struct bin_attribute *fw_transfer_attr;
+	int ret = 0;
+
+	fw_transfer_attr = devm_kzalloc(dev, sizeof(*fw_transfer_attr), GFP_KERNEL);
+	if (!fw_transfer_attr) 
+		return -ENOMEM;
+
+	sysfs_bin_attr_init(fw_transfer_attr);
+	fw_transfer_attr->attr.name = "fw_transfer";
+	fw_transfer_attr->attr.mode = 0666; // Other read 
+	fw_transfer_attr->private = camera;
+	// TODO: Change to dynamic size
+	fw_transfer_attr->size = sizeof(struct avt3_fw_transfer) + 1024; 
+	fw_transfer_attr->read = avt3_fw_transfer_read;
+	fw_transfer_attr->write = avt3_fw_transfer_write;
+
+	ret = device_create_bin_file(dev, fw_transfer_attr);
+	if (ret) {
+		devm_kfree(dev, fw_transfer_attr);
+		return ret;
+	}
+
+	camera->fw_transfer_attr = fw_transfer_attr;
+
+	return ret;
 }
 
 
@@ -6192,41 +6101,15 @@ static int avt3_probe(struct i2c_client *client)
 	dev_info(dev, "%s[%d]: sensor->ignore_avail_mipi_reg.avail_mipi 0x%08llx",
 			 __func__, __LINE__, sensor->ignore_avail_mipi_reg.value);
 
-	sensor->regmap8 = devm_regmap_init_i2c(client, &alvium_reg8_config);
-	if (IS_ERR(sensor->regmap16))
+	sensor->regmap = devm_regmap_init_i2c(client, &alvium_regmap_config);
+	if (IS_ERR(sensor->regmap))
 	{
-		dev_err(dev, "%s[%d]: regmap8 init failed: %ld\n", __func__, __LINE__,
-				PTR_ERR(sensor->regmap8));
+		dev_err(dev, "%s[%d]: regmap init failed: %ld\n", __func__, __LINE__,
+				PTR_ERR(sensor->regmap));
 		ret = -ENODEV;
 		goto err_exit;
 	}
 
-	sensor->regmap16 = devm_regmap_init_i2c(client, &alvium_reg16_config);
-	if (IS_ERR(sensor->regmap16))
-	{
-		dev_err(dev, "%s[%d]: regmap16 init failed: %ld\n", __func__, __LINE__,
-				PTR_ERR(sensor->regmap16));
-		ret = -ENODEV;
-		goto err_exit;
-	}
-
-	sensor->regmap32 = devm_regmap_init_i2c(client, &alvium_reg32_config);
-	if (IS_ERR(sensor->regmap32))
-	{
-		dev_err(dev, "%s[%d]: regmap32 init failed: %ld\n", __func__, __LINE__,
-				PTR_ERR(sensor->regmap32));
-		ret = -ENODEV;
-		goto err_exit;
-	}
-
-	sensor->regmap64 = devm_regmap_init_i2c(client, &alvium_reg64_config);
-	if (IS_ERR(sensor->regmap64))
-	{
-		dev_err(dev, "%s[%d]: regmap64 init failed: %ld\n", __func__, __LINE__,
-				PTR_ERR(sensor->regmap64));
-		ret = -ENODEV;
-		goto err_exit;
-	}
 
 	ret = fwnode_property_read_u32(dev_fwnode(&client->dev),
 								   "bcrm_wait_timeout",
@@ -6490,7 +6373,7 @@ static int avt3_probe(struct i2c_client *client)
 	}
 	dev_info(&client->dev, "sensor %s registered\n", sensor->sd->name);
 
-	ret = sysfs_create_group(&dev->kobj, &avt3_attr_grp);
+	ret = device_add_group(dev, &avt3_attr_grp);
 	dev_info(dev, " -> %s[%d]: sysfs group created! (%d)\n", __func__, __LINE__, ret);
 	if (ret)
 	{
@@ -6498,6 +6381,11 @@ static int avt3_probe(struct i2c_client *client)
 		goto free_ctrls;
 	}
 
+	ret = avt3_fw_transfer_init(sensor);
+	if (ret) {
+		dev_err(dev, "Failed to create fw_transfer attribute!\n");
+		goto sysfs_cleanup;
+	}
 
 
 #ifdef DPHY_RESET_WORKAROUND
@@ -6505,11 +6393,14 @@ static int avt3_probe(struct i2c_client *client)
 	avt3_streamon_thread_enable(sensor->sd);
 #endif
 
-	ret = bcrm_regmap_write(sensor, sensor->regmap32, sensor->cci_reg.reg.bcrm_addr + BCRM_STREAM_ON_DELAY_32RW, sensor->streamon_delay);
+	ret = bcrm_write32(sensor, BCRM_STREAM_ON_DELAY_32RW, sensor->streamon_delay);
 
 	dev_info(&client->dev, "%s[%d]: probe success !\n", __func__, __LINE__);
 
 	return 0;
+
+sysfs_cleanup:
+	device_remove_group(dev, &avt3_attr_grp);
 
 free_ctrls:
 
@@ -6542,13 +6433,16 @@ static void avt3_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct avt3_dev *sensor = to_avt3_dev(sd);
+	struct device *dev = &client->dev;
 
 	avt_dbg(sd, "+");
 
 	v4l2_fwnode_endpoint_free(&sensor->v4l2_fwnode_ep);
 	fwnode_handle_put(sensor->endpoint);
 
-	sysfs_remove_group(&client->dev.kobj, &avt3_attr_grp);
+	device_remove_bin_file(dev, sensor->fw_transfer_attr);
+
+	device_remove_group(dev, &avt3_attr_grp);
 	media_entity_cleanup(&sensor->sd->entity);
 
 	v4l2_ctrl_handler_free(&sensor->v4l2_ctrl_hdl);

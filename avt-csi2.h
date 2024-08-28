@@ -617,10 +617,7 @@ struct avt3_dev
 	void *platform_data;
 	struct mutex lock;
 
-	struct regmap *regmap8;
-	struct regmap *regmap16;
-	struct regmap *regmap32;
-	struct regmap *regmap64;
+	struct regmap *regmap;
 	
 	struct media_pad pad;
 	union device_firmware_version_reg cam_firmware_version;
@@ -709,6 +706,10 @@ struct avt3_dev
 	bool framerate_auto;
 
 	atomic_t  bcrm_wrhs_enabled;
+
+	struct bin_attribute *fw_transfer_attr;
+
+	struct avt3_fw_transfer	next_fw_rd_transfer;
 };
 
 enum avt_ctrl {
