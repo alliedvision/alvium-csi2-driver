@@ -1458,13 +1458,10 @@ static ssize_t mipiclk_show(struct device *dev,
 							struct device_attribute *attr, char *buf)
 {
 	ssize_t ret;
-	uint32_t avt_current_clk = 0;
 
 	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
 
-	ret = bcrm_read32(sensor, BCRM_CSI2_CLOCK_32RW, &avt_current_clk);
-
-	ret = sprintf(buf, "%d\n", avt_current_clk);
+	ret = sysfs_emit(buf, "%llu\n", sensor->v4l2_fwnode_ep.link_frequencies[0]);
 
 	return ret;
 }
@@ -4553,112 +4550,6 @@ int avt3_core_ops_s_register(struct v4l2_subdev *sd, const struct v4l2_dbg_regis
 	return 0;
 }
 
-
-long avt3_core_ops_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
-{
-	int ret = -ENOTTY;
-	struct i2c_client *client = v4l2_get_subdevdata(sd);
-	struct avt3_dev *sensor = to_avt3_dev(sd);
-	struct v4l2_capability *cap = arg;
-	struct v4l2_csi_driver_info *info;
-	struct v4l2_csi_config *config;
-
-	MUTEX_LOCK(&sensor->lock);
-
-	avt_dbg(sd, "cmd 0x%08x %d %s", cmd, cmd & 0xff, __FILE__);
-
-	switch (cmd)
-	{
-		/* ToDo: check to remove that code */
-	case VIDIOC_QUERYCAP:
-		dev_info(&client->dev, "%s[%d]: cmd VIDIOC_QUERYCAP", __func__, __LINE__);
-
-		strcpy(cap->driver, AVT3_DRIVER_NAME);
-		cap->version = KERNEL_VERSION(0, 1, 1);
-		cap->capabilities = V4L2_CAP_VIDEO_CAPTURE |
-							V4L2_CAP_VIDEO_CAPTURE_MPLANE |
-							V4L2_CAP_STREAMING |
-							V4L2_CAP_READWRITE;
-		cap->card[0] = '\0';
-		cap->bus_info[0] = '\0';
-		ret = 0;
-		break;
-
-	case VIDIOC_DBG_S_REGISTER:
-	{
-		struct v4l2_dbg_register *v4l2_dbg_reg = (struct v4l2_dbg_register *)arg;
-		dev_info(&client->dev, "%s[%d]: cmd VIDIOC_DBG_S_REGISTER reg 0x%04llX, size %u",
-				 __func__, __LINE__,
-				 v4l2_dbg_reg->reg, v4l2_dbg_reg->size);
-		ret = 0;
-		break;
-	}
-
-	case VIDIOC_DBG_G_REGISTER:
-	{
-		struct v4l2_dbg_register *v4l2_dbg_reg = (struct v4l2_dbg_register *)arg;
-		dev_info(&client->dev, "%s[%d]: cmd VIDIOC_DBG_G_REGISTER reg 0x%04llX, size %u",
-				 __func__, __LINE__,
-				 v4l2_dbg_reg->reg, v4l2_dbg_reg->size);
-		ret = 0;
-		break;
-	}
-	case VIDIOC_G_DRIVER_INFO:
-		/***************************************
-		 *  better to use values from sysfs as below
-		 *	/sys/devices/soc0/
-		 *	|-- family
-		 *	|-- machine
-		 *	|-- revision
-		 *	|-- serial_number
-		 *	|-- soc_id
-		 ***************************************/
-
-		dev_warn(&client->dev, "%s[%d]: cmd VIDIOC_G_DRIVER_INFO, better to read back from "
-							   "/sys/devices/soc0/",
-				 __func__, __LINE__);
-		info = (struct v4l2_csi_driver_info *)arg;
-
-		info->id.manufacturer_id = MANUFACTURER_ID_NXP;
-		info->id.soc_family_id = SOC_FAMILY_ID_IMX8MP;
-		info->id.driver_id = IMX8_DRIVER_ID_DEFAULT;
-
-		info->driver_version = (DRV_VER_MAJOR << 16) + (DRV_VER_MINOR << 8) + DRV_VER_PATCH;
-		info->driver_interface_version = (LIBCSI_DRV_SPEC_VERSION_MAJOR << 16) + (LIBCSI_DRV_SPEC_VERSION_MINOR << 8) + LIBCSI_DRV_SPEC_VERSION_PATCH;
-		info->driver_caps = AVT_DRVCAP_MMAP;
-		info->usrptr_alignment = dma_get_cache_alignment();
-
-		ret = 0;
-		break;
-
-	case VIDIOC_G_CSI_CONFIG:
-		dev_info(&client->dev, "%s[%d]: cmd VIDIOC_G_CSI_CONFIG", __func__, __LINE__);
-		config = (struct v4l2_csi_config *)arg;
-
-		config->lane_count = sensor->v4l2_fwnode_ep.bus.mipi_csi2.num_data_lanes;
-		config->csi_clock = sensor->v4l2_fwnode_ep.link_frequencies[0];
-
-		ret = 0;
-		break;
-
-	case VIDIOC_S_CSI_CONFIG:
-		// TBC: D-PHY configuration will be defined by devicetree
-		config = (struct v4l2_csi_config *)arg;
-		dev_warn(&client->dev, "%s[%d]: cmd VIDIOC_S_CSI_CONFIG. CSI-Config is set by devicetree.", __func__, __LINE__);
-
-		ret = -EINVAL;
-		break;
-	default:
-		dev_info(&client->dev, "%s[%d]: VIDIOC command %d 0x%08X not implemented yet", __func__, __LINE__, cmd & 0x0ff, cmd);
-		ret = -ENOTTY;
-		break;
-	}
-
-	MUTEX_UNLOCK(&sensor->lock);
-
-	return ret;
-}
-
 static int avt3_core_ops_subscribe_event(struct v4l2_subdev *sd, struct v4l2_fh *fh,
 										 struct v4l2_event_subscription *sub)
 {
@@ -4678,7 +4569,6 @@ static int avt3_core_ops_subscribe_event(struct v4l2_subdev *sd, struct v4l2_fh 
 static const struct v4l2_subdev_core_ops avt3_core_ops = {
 	.s_power = avt3_core_ops_s_power,
 	.log_status = v4l2_ctrl_subdev_log_status,
-	.ioctl = avt3_core_ops_ioctl,
 	.reset = avt3_core_ops_reset,
 	.subscribe_event = avt3_core_ops_subscribe_event,
 	.unsubscribe_event = v4l2_event_subdev_unsubscribe,
