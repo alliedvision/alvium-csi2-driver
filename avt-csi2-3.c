@@ -4769,7 +4769,7 @@ long avt3_core_ops_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 		 *	|-- soc_id
 		 ***************************************/
 
-		dev_warn(&client->dev, "%s[%d]: cmd VIDIOC_G_DRIVER_INFO, better to read back from "
+		dev_warn_once(&client->dev, "%s[%d]: cmd VIDIOC_G_DRIVER_INFO, better to read back from "
 							   "/sys/devices/soc0/",
 				 __func__, __LINE__);
 		info = (struct v4l2_csi_driver_info *)arg;
@@ -4781,6 +4781,10 @@ long avt3_core_ops_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 		info->driver_version = (DRV_VER_MAJOR << 16) + (DRV_VER_MINOR << 8) + DRV_VER_PATCH;
 		info->driver_interface_version = (LIBCSI_DRV_SPEC_VERSION_MAJOR << 16) + (LIBCSI_DRV_SPEC_VERSION_MINOR << 8) + LIBCSI_DRV_SPEC_VERSION_PATCH;
 		info->driver_caps = AVT_DRVCAP_MMAP;
+		if (device_property_read_bool(&client->dev, "avt3,userptr")) 
+			info->driver_caps |= AVT_DRVCAP_USRPTR;
+
+
 		info->usrptr_alignment = dma_get_cache_alignment();
 
 		ret = 0;
@@ -6023,6 +6027,9 @@ static int avt3_probe(struct i2c_client *client)
 	struct fwnode_handle *fwnode = dev_fwnode(dev);
 	const struct avt3_platform_ops *pops;
 	int ret;
+
+	//XXX: Override client name
+	strncpy(client->name, AVT3_DRIVER_NAME, sizeof(client->name));
 
 	dev_info(&client->dev, "%s[%d]: %s",
 			 __func__, __LINE__, __FILE__);
