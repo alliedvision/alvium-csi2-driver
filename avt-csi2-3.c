@@ -2175,6 +2175,51 @@ static int avt3_init_avail_formats(struct v4l2_subdev *sd)
 	return sensor->available_fmts_cnt;
 }
 
+static int avt3_init_current_format(struct avt3_dev *camera, struct v4l2_mbus_framefmt *fmt)
+{
+	u32 current_mipi_format;
+	u8 current_bayer_pattern;
+	int ret, i;
+	
+	ret = bcrm_read32(camera, BCRM_IMG_MIPI_DATA_FORMAT_32RW, &current_mipi_format);
+	if (unlikely(ret))
+	{
+		dev_err(&camera->i2c_client->dev, "Failed to read current mipi format!");
+		return ret;
+	}
+
+	ret = bcrm_read8(camera, BCRM_IMG_BAYER_PATTERN_8RW, &current_bayer_pattern);
+	if (unlikely(ret))
+	{
+		dev_err(&camera->i2c_client->dev, "Failed to read current bayer pattern!");
+		return ret;
+	}
+
+	for (i = 0;i < camera->available_fmts_cnt; i++)
+	{
+		const struct avt_csi_mipi_mode_mapping *mapping = &camera->available_fmts[i];
+		bool const bayer_correct = 
+			mapping->bayer_pattern == current_bayer_pattern
+			|| mapping->bayer_pattern == bayer_ignore;
+
+		if (mapping->mipi_fmt == current_mipi_format && bayer_correct)
+		{
+			fmt->code = mapping->mbus_code;
+			fmt->colorspace = V4L2_COLORSPACE_SRGB;
+			fmt->ycbcr_enc = V4L2_MAP_YCBCR_ENC_DEFAULT(fmt->colorspace);
+			fmt->quantization = V4L2_QUANTIZATION_FULL_RANGE;
+			fmt->xfer_func = V4L2_XFER_FUNC_DEFAULT;
+			fmt->width = camera->max_rect.width;
+			fmt->height = camera->max_rect.height;
+			fmt->field = V4L2_FIELD_NONE;
+
+			return 0;
+		}
+	}
+
+	return -EINVAL;
+}
+
 /* hard reset depends on gpio-pins, needs to be completed on
    suitable board instead of imx8mp-evk */
 static int perform_hard_reset(struct avt3_dev *sensor)
@@ -6417,14 +6462,12 @@ static int avt3_probe(struct i2c_client *client)
 	sensor->exposure_mode = EMODE_MANUAL;
 
 	fmt = &sensor->mbus_framefmt;
-	fmt->code = sensor->available_fmts[0].mbus_code;
-	fmt->colorspace = V4L2_COLORSPACE_SRGB;
-	fmt->ycbcr_enc = V4L2_MAP_YCBCR_ENC_DEFAULT(fmt->colorspace);
-	fmt->quantization = V4L2_QUANTIZATION_FULL_RANGE;
-	fmt->xfer_func = V4L2_XFER_FUNC_DEFAULT;
-	fmt->width = sensor->max_rect.width;
-	fmt->height = sensor->max_rect.height;
-	fmt->field = V4L2_FIELD_NONE;
+
+	ret = avt3_init_current_format(sensor, fmt);
+	if (ret)
+	{
+		goto entity_cleanup;
+	}
 
 	sensor->streamcap.capability = V4L2_CAP_TIMEPERFRAME;
 	sensor->streamcap.capturemode = V4L2_MODE_HIGHQUALITY;
