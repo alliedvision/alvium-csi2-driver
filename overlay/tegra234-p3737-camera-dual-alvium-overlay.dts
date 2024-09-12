@@ -143,6 +143,7 @@
 				reg = <0x3c>;
 
 				devnode = "video0";
+				avt3,userptr;
 
 				ports {
 					#address-cells = <1>;
@@ -181,6 +182,7 @@
                 reg = <0x3c>;
 
 				devnode = "video1";
+				avt3,userptr;
 			
 				ports {
 					#address-cells = <1>;
