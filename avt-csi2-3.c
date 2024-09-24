@@ -5836,6 +5836,9 @@ static int avt3_probe(struct i2c_client *client)
 	const struct avt3_platform_ops *pops;
 	int ret;
 
+	//XXX: Override client name
+	strncpy(client->name, AVT3_DRIVER_NAME, sizeof(client->name));
+
 	dev_info(&client->dev, "%s[%d]: %s",
 			 __func__, __LINE__, __FILE__);
 

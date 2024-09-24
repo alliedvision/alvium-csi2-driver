@@ -155,6 +155,7 @@
                         compatible =  "alliedvision,avt3-nv";
 
 						devnode = "video0";
+						avt3,userptr;
 
 						ports {
 							#address-cells = <1>;
@@ -197,7 +198,8 @@
                         reg = <0x3c>;
                         compatible =  "alliedvision,avt3-nv";
                                                 
-						devnode = "video1";						
+						devnode = "video1";				
+						avt3,userptr;		
 
 						ports {
 							#address-cells = <1>;
@@ -277,7 +279,7 @@
 							proc-device-tree = "/proc/device-tree/bus@0/i2c@3180000/avt_csi2_a@3c";
 						};
 					};
-                                        module1 {
+                    module1 {
 						status = "okay";
 						badge = "avt_csi2_b";
 						position = "rear";
