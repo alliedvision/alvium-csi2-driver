@@ -1,20 +1,18 @@
 # Alvium CSI2 driver
 
 ## Overview
-This repository contains the source code of the Linux Alvium CSI2 driver module release 1.1.0. 
+This repository contains the source code of the Linux Alvium CSI2 driver module. 
 
 ## Compatibility
 This release is tested with:
-- i.MX 8M Plus EVK with i.MX Yocto Project BSP Rev. 5.15.72-2.2.0
-- AMD Xilinx ZCU106 Evaluation Kit with Xilinx Yocto 2023.1
-- AMD Xilinx Kria KV260 Vision AI with Xilinx Yocto 2023.1
-- Alvium MIPI CSI-2 cameras with firmware 12
+- Alvium MIPI CSI-2 cameras with firmware 13
 
 ## Getting started
-For getting started please use one of the reference image manifest repositories:
+For getting started please use one of the reference repositories:
 - i.MX 8M Plus EVK: [alvium-manifest-imx8mpevk](https://github.com/alliedvision/alvium-manifest-imx8mpevk)
 - AMD Xilinx ZCU106: [alvium-manifest-zcu106](https://github.com/alliedvision/alvium-manifest-zcu106)
 - AMD Xilinx Kria KV260: [alvium-manifest-kv260](https://github.com/alliedvision/alvium-manifest-kv260)
+- NVIDIA Jetson Orin: [alvium-jetson-driver-release](https://github.com/alliedvision/alvium-jetson-driver-release.git)
 
 # Beta Disclaimer
 
