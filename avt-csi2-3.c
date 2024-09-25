@@ -1405,9 +1405,7 @@ static ssize_t user_defined_name_show(struct device *dev,
 static ssize_t driver_version_show(struct device *dev,
 								   struct device_attribute *attr, char *buf)
 {
-	return sprintf(buf, "%d:%d:%d:%d\n",
-				   DRV_VER_MAJOR, DRV_VER_MINOR,
-				   DRV_VER_PATCH, DRV_VER_BUILD);
+	return sprintf(buf, "%s\n", DRIVER_VERSION);
 }
 
 static ssize_t debug_en_show(struct device *dev,
@@ -4778,7 +4776,7 @@ long avt3_core_ops_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 		info->id.soc_family_id = SOC_FAMILY_ID_IMX8MP;
 		info->id.driver_id = IMX8_DRIVER_ID_DEFAULT;
 
-		info->driver_version = (DRV_VER_MAJOR << 16) + (DRV_VER_MINOR << 8) + DRV_VER_PATCH;
+		info->driver_version = (1 << 16);
 		info->driver_interface_version = (LIBCSI_DRV_SPEC_VERSION_MAJOR << 16) + (LIBCSI_DRV_SPEC_VERSION_MINOR << 8) + LIBCSI_DRV_SPEC_VERSION_PATCH;
 		info->driver_caps = AVT_DRVCAP_MMAP;
 		if (device_property_read_bool(&client->dev, "avt3,userptr")) 
@@ -6704,4 +6702,4 @@ module_i2c_driver(avt3_i2c_driver);
 MODULE_DESCRIPTION("Allied Vision's MIPI-CSI2 Camera Driver");
 MODULE_AUTHOR("Allied Vision Inc.");
 MODULE_LICENSE("GPL");
-MODULE_VERSION("1.1.0");
+MODULE_VERSION(DRIVER_VERSION);
