@@ -3021,8 +3021,7 @@ static int avt3_queryctrl(struct v4l2_subdev *sd,
     
     handle_query_ctrl_bitmask_inquiry(white_balance_auto_avail, BITMASK, 0, 2, 1, 0, "Auto White Balance", CID_AUTO_WHITE_BALANCE)
     handle_query_ctrl_bitmask_inquiry(gain_auto_avail,          BITMASK, 0, 2, 1, 0, "Auto Gain",          CID_AUTOGAIN)
-    handle_query_ctrl_bitmask_inquiry(white_balance_auto_avail, BITMASK, 0, 7, 1
-	, 0, "Do White Balance",   CID_DO_WHITE_BALANCE)
+    handle_query_ctrl_bitmask_inquiry(white_balance_auto_avail, BITMASK, 0, 7, 1, 0, "Do White Balance",   CID_DO_WHITE_BALANCE)
     handle_query_ctrl_bitmask_inquiry(exposure_auto_avail,      BITMASK, 0, 3, 1, 0, "Exposure Auto",      CID_EXPOSURE_AUTO)
     handle_query_ctrl_bitmask_inquiry(reverse_x_avail,          BOOLEAN, 0, 1, 1, 0, "H-Flip",             CID_HFLIP)
     handle_query_ctrl_bitmask_inquiry(reverse_y_avail,          BOOLEAN, 0, 1, 1, 0, "Y-Flip",             CID_VFLIP)
@@ -4593,11 +4592,6 @@ static int avt3_subdev_internal_ops_close(struct v4l2_subdev *sd, struct v4l2_su
 		avt_err(sd, "sensor->is_streaming %d",
 				sensor->is_streaming);
 		// ret = avt3_video_ops_s_stream(sd, false);
-	}
-
-	if (!sensor->is_streaming)
-	{
-		//avt3_change_mode(sensor)
 	}
 
 	sensor->open_refcnt--;
