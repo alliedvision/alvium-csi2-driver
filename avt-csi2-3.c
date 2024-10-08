@@ -2472,8 +2472,6 @@ static int avt3_pad_ops_get_fmt(struct v4l2_subdev *sd,
 
 	format->format = *fmt;
 
-	
-
 	MUTEX_UNLOCK(&sensor->lock);
 
 	return 0;
@@ -2590,7 +2588,6 @@ static int avt3_update_format(struct avt3_dev *camera,
 
 	return ret;
 }
-
 
 static int avt3_try_fmt_internal(struct v4l2_subdev *sd,
 				 struct v4l2_mbus_framefmt *fmt,
