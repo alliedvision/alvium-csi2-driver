@@ -1421,9 +1421,7 @@ static ssize_t user_defined_name_show(struct device *dev,
 static ssize_t driver_version_show(struct device *dev,
 								   struct device_attribute *attr, char *buf)
 {
-	return sprintf(buf, "%d:%d:%d:%d\n",
-				   DRV_VER_MAJOR, DRV_VER_MINOR,
-				   DRV_VER_PATCH, DRV_VER_BUILD);
+	return sprintf(buf, "%s\n", DRIVER_VERSION);
 }
 
 static ssize_t debug_en_show(struct device *dev,
@@ -6497,4 +6495,4 @@ module_i2c_driver(avt3_i2c_driver);
 MODULE_DESCRIPTION("Allied Vision's MIPI-CSI2 Camera Driver");
 MODULE_AUTHOR("Allied Vision Inc.");
 MODULE_LICENSE("GPL");
-MODULE_VERSION("1.1.0");
+MODULE_VERSION(DRIVER_VERSION);
