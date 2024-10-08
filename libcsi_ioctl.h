@@ -351,5 +351,12 @@ struct v4l2_trigger_rate
 /* Execute a software trigger */
 #define VIDIOC_TRIGGER_SOFTWARE             _IO('V', BASE_VIDIOC_PRIVATE + 26)
 
+struct avt3_fw_transfer {
+    u16 addr;
+    u16 len;
+    u8  rd;
+    u8  reserved[3];
+} __packed;
+
 
 #endif /* LIBCSI_IOCTL_H */
