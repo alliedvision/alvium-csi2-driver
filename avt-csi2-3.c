@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright (C) 2022 Avnet EMG GmbH 
- * Copyright (C) 2022 - 2023 Allied Vision Technologies
-  */
+ * Copyright (C) 2022 - 2024 Allied Vision Technologies GmbH
+ */
 
 /*
  * Allied Vision CSI2 Camera

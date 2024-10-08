@@ -1,3 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+/* 
+ * Allied Vision Alvium camera driver
+ * 
+ * Copyright (C) 2022 - 2024 Allied Vision Technologies GmbH
+ */
+
 #ifndef __AVT_CSI2_H__
 #define __AVT_CSI2_H__
 
