@@ -265,4 +265,16 @@
 	};
 
 
+	fragment@5 {
+		target-path = "/bus@0";
+		__overlay__ {
+			/* The alvium adapter pcb allows to use the pwdn pins for triggering,
+			   so make them available to the user. */
+			gpio@2200000 {
+				camera-control-output-low {
+					gpios = <>;
+				};
+			};
+		};
+	};
 };

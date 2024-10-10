@@ -79,7 +79,6 @@
 #include <linux/dma-mapping.h>
 
 #include "avt-csi2.h"
-#include "libcsi_ioctl.h"
 
 static int debug = 0;
 module_param(debug, int, 0644); /* S_IRUGO */
@@ -1642,159 +1641,9 @@ static ssize_t streamon_delay_store(struct device *dev,
 	return count;
 }
 
-static ssize_t trigger_mode_show(struct device *dev,
-								 struct device_attribute *attr, char *buf)
-{
-	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
-	ssize_t ret;
-	u8 itmp;
-
-	MUTEX_LOCK(&sensor->lock);
-
-	ret = bcrm_read8(sensor, BCRM_FRAME_START_TRIGGER_MODE_8RW, &itmp);
-	if (ret < 0)
-	{
-		MUTEX_UNLOCK(&sensor->lock);
-		return ret;
-	}
-
-	sensor->avt_trigger_status.trigger_mode_enabled = itmp;
-
-	ret = sprintf(buf, "%d\n", (int)sensor->avt_trigger_status.trigger_mode_enabled);
-
-	MUTEX_UNLOCK(&sensor->lock);
-
-	return ret;
-}
-
-static ssize_t trigger_mode_store(struct device *dev,
-								  struct device_attribute *attr, const char *buf, size_t count)
-{
-	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
-	ssize_t ret;
-	int itmp;
-
-	if (sensor->is_streaming)
-	{
-		return -EBUSY;
-	}
-	MUTEX_LOCK(&sensor->lock);
-	ret = kstrtoint(buf, 10, &itmp);
-
-	if (ret < 0)
-	{
-		MUTEX_UNLOCK(&sensor->lock);
-		return ret;
-	}
-
-	sensor->avt_trigger_status.trigger_mode_enabled = itmp ? 1 : 0;
-
-	if (sensor->avt_trigger_status.trigger_mode_enabled)
-	{
-		ret = bcrm_write8(sensor, BCRM_ACQUISITION_FRAME_RATE_ENABLE_8RW, 0);
-		ret = bcrm_write8(sensor, BCRM_FRAME_START_TRIGGER_MODE_8RW,
-			sensor->avt_trigger_status.trigger_mode_enabled);
-	
-	}
-	else
-	{
-		ret = bcrm_write8(sensor, BCRM_ACQUISITION_FRAME_RATE_ENABLE_8RW, 1);
-		ret = bcrm_write8(sensor, BCRM_FRAME_START_TRIGGER_MODE_8RW,
-			sensor->avt_trigger_status.trigger_mode_enabled);
-	}
-
-	dev_info(dev, "%s[%d]: sensor->avt_trigger_status.trigger_mode_enabled: %d\n",
-			 __func__, __LINE__,
-			 sensor->avt_trigger_status.trigger_mode_enabled);
-
-	MUTEX_UNLOCK(&sensor->lock);
-	return count;
-}
-
-static ssize_t trigger_source_show(struct device *dev,
-								   struct device_attribute *attr, char *buf)
-{
-	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
-	ssize_t ret;
-	u8 itmp;
-
-	MUTEX_LOCK(&sensor->lock);
-
-	ret = bcrm_read8(sensor, BCRM_FRAME_START_TRIGGER_SOURCE_8RW, &itmp);
-	if (ret < 0)
-	{
-		MUTEX_UNLOCK(&sensor->lock);
-		return ret;
-	}
-
-	sensor->avt_trigger_status.trigger_source = itmp;
-
-	ret = sprintf(buf, "%d\n", (int)sensor->avt_trigger_status.trigger_source);
-
-	MUTEX_UNLOCK(&sensor->lock);
-
-	return ret;
-}
-
-static ssize_t trigger_source_store(struct device *dev,
-									struct device_attribute *attr, const char *buf, size_t count)
-{
-	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
-	ssize_t ret;
-	int itmp;
-
-	if (sensor->is_streaming)
-	{
-		return -EINVAL;
-	}
-
-	MUTEX_LOCK(&sensor->lock);
-	ret = kstrtoint(buf, 10, &itmp);
-
-	if (ret < 0)
-	{
-		MUTEX_UNLOCK(&sensor->lock);
-		return ret;
-	}
-
-	sensor->avt_trigger_status.trigger_source = itmp;
-
-	ret = bcrm_write8(sensor, BCRM_FRAME_START_TRIGGER_SOURCE_8RW, sensor->avt_trigger_status.trigger_source);
-	
-	dev_info(dev, "%s[%d]: sensor->avt_trigger_status.trigger_source: %d\n",
-			 __func__, __LINE__,
-			 sensor->avt_trigger_status.trigger_source);
-
-	MUTEX_UNLOCK(&sensor->lock);
-	return count;
-}
-
-static ssize_t sw_trigger_store(struct device *dev,
-								struct device_attribute *attr, const char *buf, size_t count)
-{
-	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
-	ssize_t ret;
-
-	if (!sensor->is_streaming)
-	{
-		dev_err(dev, "%s[%d]: sensor->is_streaming: %d, sensor->avt_trigger_status.trigger_mode_enabled %d, sensor->avt_trigger_status.trigger_source %d\n",
-				__func__, __LINE__,
-				sensor->is_streaming,
-				sensor->avt_trigger_status.trigger_mode_enabled,
-				sensor->avt_trigger_status.trigger_source);
-		return -EINVAL;
-	}
-
-	MUTEX_LOCK(&sensor->lock);
-
-	ret = bcrm_write8(sensor, BCRM_FRAME_START_TRIGGER_SOFTWARE_8W, 1);
-	
-	MUTEX_UNLOCK(&sensor->lock);
-	return count;
-}
 
 static ssize_t hardreset_show(struct device *dev,
-							  struct device_attribute *attr, char *buf)
+	struct device_attribute *attr, char *buf)
 {
 	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
 	ssize_t ret;
@@ -1809,7 +1658,7 @@ static ssize_t hardreset_show(struct device *dev,
 }
 
 static ssize_t hardreset_store(struct device *dev,
-							   struct device_attribute *attr, const char *buf, size_t count)
+	struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
 	ssize_t ret;
@@ -1871,9 +1720,6 @@ static DEVICE_ATTR_RW(streamon_delay);
 static DEVICE_ATTR_RW(hardreset);
 static DEVICE_ATTR_RO(device_temperature);
 static DEVICE_ATTR_RW(mipiclk);
-static DEVICE_ATTR_RW(trigger_mode);
-static DEVICE_ATTR_RW(trigger_source);
-static DEVICE_ATTR_WO(sw_trigger);
 
 static struct attribute *avt3_attrs[] = {
 	&dev_attr_availability.attr,
@@ -1907,9 +1753,6 @@ static struct attribute *avt3_attrs[] = {
 	&dev_attr_hardreset.attr,
 	&dev_attr_device_temperature.attr,
 	&dev_attr_mipiclk.attr,
-	&dev_attr_trigger_mode.attr,
-	&dev_attr_trigger_source.attr,
-	&dev_attr_sw_trigger.attr,
 	NULL};
 
 static struct attribute_group avt3_attr_grp = {
@@ -2654,8 +2497,10 @@ static int avt_update_exposure_limits(struct v4l2_subdev *sd) {
 	}
 
 	{
-		struct v4l2_ctrl *exp_auto_min_ctrl = avt3_ctrl_find(sensor, V4L2_CID_EXPOSURE_AUTO_MIN);
-		struct v4l2_ctrl *exp_auto_max_ctrl = avt3_ctrl_find(sensor, V4L2_CID_EXPOSURE_AUTO_MAX);
+		struct v4l2_ctrl *exp_auto_min_ctrl = 
+			avt3_ctrl_find(sensor, AVT_CID_EXPOSURE_AUTO_MIN);
+		struct v4l2_ctrl *exp_auto_max_ctrl =
+			avt3_ctrl_find(sensor, AVT_CID_EXPOSURE_AUTO_MAX);
 
 		if(exp_auto_min_ctrl != NULL && exp_auto_max_ctrl != NULL) {
 			__v4l2_ctrl_modify_range(exp_auto_min_ctrl, exp_min, exp_max, exp_inc, exp_min);
@@ -3391,7 +3236,7 @@ static int avt3_g_volatile_ctrl(struct v4l2_ctrl *ctrl)
 		return -EBUSY;
 	}
 
-	if (ctrl->id == V4L2_CID_BINNING_SETTING) {
+	if (ctrl->id == AVT_CID_BINNING_SETTING) {
 		ctrl->p_new.p_area->width = sensor->curr_binning_info->hfact;
 		ctrl->p_new.p_area->height = sensor->curr_binning_info->vfact;
 		return 0;
@@ -3430,21 +3275,69 @@ static struct v4l2_ctrl* avt3_ctrl_find(struct avt3_dev *camera,u32 id)
 	return NULL;
 }
 
+static inline int avt3_trigger_mode_enabled(struct avt3_dev *camera)
+{
+	u8 tmp;
+	int ret;
+	const struct v4l2_ctrl * trigger_mode_ctrl = 
+			avt3_ctrl_find(camera, AVT_CID_TRIGGER_MODE);
+	
+	if (trigger_mode_ctrl) {
+		return trigger_mode_ctrl->val != 0;
+	}
+
+	ret = bcrm_read8(camera, BCRM_FRAME_START_TRIGGER_MODE_8RW, &tmp);
+
+	if (unlikely(ret)) {
+		return ret;
+	}
+
+	return tmp != 0;
+}
+
+static inline int avt3_test_trigger_source(struct avt3_dev *camera, int source)
+{
+	u8 tmp;
+	int ret;
+	const struct v4l2_ctrl * trigger_source_ctrl = 
+		avt3_ctrl_find(camera, AVT_CID_TRIGGER_SOURCE);
+
+	if (trigger_source_ctrl) {
+		return trigger_source_ctrl->val == source;
+	}
+
+	ret = bcrm_read8(camera, BCRM_FRAME_START_TRIGGER_SOURCE_8RW, &tmp);
+
+	if (unlikely(ret)) {
+		return ret;
+	}
+
+	return tmp == source;
+}
+
 static void avt3_update_sw_ctrl_state(struct avt3_dev *camera)
 {
-	struct v4l2_ctrl * sw_trigger_ctrl = avt3_ctrl_find(camera,V4L2_CID_TRIGGER_SOFTWARE);
+	int trigger_en, trigger_sw_source;
+	struct v4l2_ctrl * sw_trigger_ctrl =
+		avt3_ctrl_find(camera, AVT_CID_TRIGGER_SOFTWARE);
 
-	if (sw_trigger_ctrl)
-	{
-		bool sw_trigger_enabled = (camera->avt_trigger_status.trigger_source == 4)
-                && camera->avt_trigger_status.trigger_mode_enabled;
-
-		v4l2_ctrl_activate(sw_trigger_ctrl,sw_trigger_enabled);
-	}
-	else
-	{
+	if (!sw_trigger_ctrl) {
 		avt_warn(camera->sd,"Software trigger control not found!");
+		return;
 	}
+
+	trigger_en = avt3_trigger_mode_enabled(camera);
+	if (trigger_en < 0) {
+		return;
+	}
+
+	trigger_sw_source =
+		avt3_test_trigger_source(camera, AVT_TRIGGER_SOURCE_SOFTWARE);
+	if (trigger_sw_source < 0) {
+		return;
+	}
+	
+	v4l2_ctrl_activate(sw_trigger_ctrl, trigger_en && trigger_sw_source);
 }
 
 static const struct v4l2_event avt3_source_change_event = {
@@ -3457,21 +3350,16 @@ static void avt3_ctrl_changed(struct avt3_dev *camera,
 {
 	switch (ctrl->id)
 	{
-	case V4L2_CID_TRIGGER_MODE:
-		camera->avt_trigger_status.trigger_mode_enabled = ctrl->val;
+	case AVT_CID_TRIGGER_MODE:
 		avt3_update_sw_ctrl_state(camera);
 		break;
-	case V4L2_CID_TRIGGER_SOURCE:
-		camera->avt_trigger_status.trigger_source = ctrl->val;
+	case AVT_CID_TRIGGER_SOURCE:
 		avt3_update_sw_ctrl_state(camera);
 		break;
-	case V4L2_CID_TRIGGER_ACTIVATION:
-		camera->avt_trigger_status.trigger_activation = ctrl->val;
-		break;
-	case V4L2_CID_EXPOSURE_AUTO_MIN: {
+	case AVT_CID_EXPOSURE_AUTO_MIN: {
 		struct v4l2_ctrl *max_ctrl;
 
-		max_ctrl = avt3_ctrl_find(camera,V4L2_CID_EXPOSURE_AUTO_MAX);
+		max_ctrl = avt3_ctrl_find(camera, AVT_CID_EXPOSURE_AUTO_MAX);
 
 		if (max_ctrl == NULL)
 			break;
@@ -3482,10 +3370,10 @@ static void avt3_ctrl_changed(struct avt3_dev *camera,
 
 		break;
 	}
-	case V4L2_CID_EXPOSURE_AUTO_MAX: {
+	case AVT_CID_EXPOSURE_AUTO_MAX: {
 		struct v4l2_ctrl *min_ctrl;
 
-		min_ctrl = avt3_ctrl_find(camera,V4L2_CID_EXPOSURE_AUTO_MIN);
+		min_ctrl = avt3_ctrl_find(camera, AVT_CID_EXPOSURE_AUTO_MIN);
 
 		if (min_ctrl == NULL)
 			break;
@@ -3496,10 +3384,10 @@ static void avt3_ctrl_changed(struct avt3_dev *camera,
 
 		break;
 	}
-	case V4L2_CID_GAIN_AUTO_MIN: {
+	case AVT_CID_GAIN_AUTO_MIN: {
 		struct v4l2_ctrl *max_ctrl;
 
-		max_ctrl = avt3_ctrl_find(camera,V4L2_CID_GAIN_AUTO_MAX);
+		max_ctrl = avt3_ctrl_find(camera, AVT_CID_GAIN_AUTO_MAX);
 
 		if (max_ctrl == NULL)
 			break;
@@ -3510,10 +3398,10 @@ static void avt3_ctrl_changed(struct avt3_dev *camera,
 
 		break;
 	}
-	case V4L2_CID_GAIN_AUTO_MAX: {
+	case AVT_CID_GAIN_AUTO_MAX: {
 		struct v4l2_ctrl *min_ctrl;
 
-		min_ctrl = avt3_ctrl_find(camera,V4L2_CID_GAIN_AUTO_MIN);
+		min_ctrl = avt3_ctrl_find(camera, AVT_CID_GAIN_AUTO_MIN);
 
 		if (min_ctrl == NULL)
 			break;
@@ -3573,7 +3461,8 @@ static void avt3_ctrl_changed(struct avt3_dev *camera,
 						 &avt3_source_change_event);
 		}
 
-		binning_mode_ctrl = avt3_ctrl_find(camera,V4L2_CID_BINNING_MODE);
+		binning_mode_ctrl =
+			avt3_ctrl_find(camera, AVT_CID_BINNING_MODE);
 		if (binning_mode_ctrl != NULL)
 		{
 			const long modes_enabled = binning_modes_enabled[ctrl->val];
@@ -3656,14 +3545,14 @@ static int avt3_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 		avt_info(sensor->sd, "ctrl->id 0x%08X, sensor->power_count %d", ctrl->id, sensor->power_count);
 	}
 
-	if (ctrl->id == V4L2_CID_EXPOSURE_ACTIVE_LINE_MODE)
+	if (ctrl->id == AVT_CID_EXPOSURE_ACTIVE_LINE_MODE)
 	{
 		struct v4l2_ctrl *sel_ctrl,*invert_ctrl;
 		u8 output_line_shift,invert,active = ctrl->val;
 		u32 line_config;
 
 		sel_ctrl = avt3_ctrl_find(sensor,
-					  V4L2_CID_EXPOSURE_ACTIVE_LINE_SELECTOR);
+					  AVT_CID_EXPOSURE_ACTIVE_LINE_SELECTOR);
 
 		if (sel_ctrl == NULL) {
 			return -EINVAL;
@@ -3672,7 +3561,7 @@ static int avt3_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 		output_line_shift = sel_ctrl->val * 8;
 
 		invert_ctrl = avt3_ctrl_find(sensor,
-					     V4L2_CID_EXPOSURE_ACTIVE_INVERT);
+					     AVT_CID_EXPOSURE_ACTIVE_INVERT);
 
 		if (invert_ctrl == NULL) {
 			return -EINVAL;
@@ -3830,18 +3719,13 @@ static void avt3_ctrl_added(struct avt3_dev *camera,struct v4l2_ctrl *ctrl)
 {
 	switch (ctrl->id)
 	{
-	case V4L2_CID_TRIGGER_MODE:
-		camera->avt_trigger_status.trigger_mode_enabled = ctrl->val;
+	case AVT_CID_TRIGGER_MODE:
 		avt3_update_sw_ctrl_state(camera);
 		break;
-	case V4L2_CID_TRIGGER_SOURCE:
-		camera->avt_trigger_status.trigger_source = ctrl->val;
+	case AVT_CID_TRIGGER_SOURCE:
 		avt3_update_sw_ctrl_state(camera);
 		break;
-	case V4L2_CID_TRIGGER_ACTIVATION:
-		camera->avt_trigger_status.trigger_activation = ctrl->val;
-		break;
-	case V4L2_CID_TRIGGER_SOFTWARE:
+	case AVT_CID_TRIGGER_SOFTWARE:
 		avt3_update_sw_ctrl_state(camera);
 		break;
 	case AVT_CID_FIRMWARE_VERSION: {
@@ -3868,10 +3752,10 @@ static void avt3_ctrl_added(struct avt3_dev *camera,struct v4l2_ctrl *ctrl)
 
 		break;
 	}
-	case V4L2_CID_EXPOSURE_AUTO_MIN: {
+	case AVT_CID_EXPOSURE_AUTO_MIN: {
 		struct v4l2_ctrl *max_ctrl = NULL;
 
-		max_ctrl = avt3_ctrl_find(camera,V4L2_CID_EXPOSURE_AUTO_MAX);
+		max_ctrl = avt3_ctrl_find(camera, AVT_CID_EXPOSURE_AUTO_MAX);
 
 		if (max_ctrl == NULL)
 			return;
@@ -3882,10 +3766,10 @@ static void avt3_ctrl_added(struct avt3_dev *camera,struct v4l2_ctrl *ctrl)
 
 		break;
 	}
-	case V4L2_CID_EXPOSURE_AUTO_MAX: {
+	case AVT_CID_EXPOSURE_AUTO_MAX: {
 		struct v4l2_ctrl *min_ctrl = NULL;
 
-		min_ctrl = avt3_ctrl_find(camera,V4L2_CID_EXPOSURE_AUTO_MIN);
+		min_ctrl = avt3_ctrl_find(camera, AVT_CID_EXPOSURE_AUTO_MIN);
 
 		if (min_ctrl == NULL) {
 			avt_warn(camera->sd,"V4L2_CID_EXPOSURE_AUTO_MIN not found!");
@@ -3898,10 +3782,10 @@ static void avt3_ctrl_added(struct avt3_dev *camera,struct v4l2_ctrl *ctrl)
 
 		break;
 	}
-	case V4L2_CID_GAIN_AUTO_MIN: {
+	case AVT_CID_GAIN_AUTO_MIN: {
 		struct v4l2_ctrl *max_ctrl = NULL;
 
-		max_ctrl = avt3_ctrl_find(camera,V4L2_CID_GAIN_AUTO_MAX);
+		max_ctrl = avt3_ctrl_find(camera, AVT_CID_GAIN_AUTO_MAX);
 
 		if (max_ctrl == NULL)
 			return;
@@ -3912,10 +3796,10 @@ static void avt3_ctrl_added(struct avt3_dev *camera,struct v4l2_ctrl *ctrl)
 
 		break;
 	}
-	case V4L2_CID_GAIN_AUTO_MAX: {
+	case AVT_CID_GAIN_AUTO_MAX: {
 		struct v4l2_ctrl *min_ctrl = NULL;
 
-		min_ctrl = avt3_ctrl_find(camera,V4L2_CID_GAIN_AUTO_MIN);
+		min_ctrl = avt3_ctrl_find(camera, AVT_CID_GAIN_AUTO_MIN);
 
 		if (min_ctrl == NULL) {
 			avt_warn(camera->sd,"V4L2_CID_EXPOSURE_AUTO_MIN not found!");
@@ -4012,8 +3896,10 @@ free_ctrls:
 	return ret;
 }
 
-static void set_frameinterval(struct v4l2_fract *interval,const u64 framerate,const u64 factor)
+static void set_frameinterval(struct v4l2_fract *interval,const u64 framerate)
 {
+	const u64 factor = UHZ_TO_HZ;
+
 	interval->denominator = (framerate * interval->numerator) / factor;
 
 	// If the denominator and minimal framerate is not zero, try to increase the numerator by 1000
@@ -4024,13 +3910,19 @@ static void set_frameinterval(struct v4l2_fract *interval,const u64 framerate,co
 	}
 }
 
+static inline u64 frame_interval_to_rate_uhz(struct v4l2_fract *interval)
+{
+	const u64 fac = UHZ_TO_HZ;
+	return mult_frac(fac, interval->denominator, interval->numerator);
+}
+
 static int avt3_pad_ops_enum_frame_size(struct v4l2_subdev *sd,
 #if (LINUX_VERSION_CODE > KERNEL_VERSION(5, 14, 0))
-										struct v4l2_subdev_state *sd_state,
+	struct v4l2_subdev_state *sd_state,
 #else
-										struct v4l2_subdev_pad_config *cfg,
+	struct v4l2_subdev_pad_config *cfg,
 #endif
-										struct v4l2_subdev_frame_size_enum *fse)
+	struct v4l2_subdev_frame_size_enum *fse)
 {
 	struct avt3_dev *sensor = to_avt3_dev(sd);
 	const struct v4l2_rect *min = &sensor->min_rect;
@@ -4157,17 +4049,20 @@ static int avt3_pad_ops_enum_frame_interval(
 		return ret;
 
 	fie->interval.numerator = 1;
-	set_frameinterval(&fie->interval,max_framerate,1000000);
+	set_frameinterval(&fie->interval,max_framerate);
 
 	return 0;
 }
+
 
 static int avt3_video_ops_g_frame_interval(struct v4l2_subdev *sd,
 					   struct v4l2_subdev_frame_interval *fi)
 {
 	struct avt3_dev *sensor = to_avt3_dev(sd);
 
-	if (sensor->avt_trigger_status.trigger_mode_enabled) {
+	mutex_lock(&sensor->lock);
+	
+	if (avt3_trigger_mode_enabled(sensor)) {
 		return -EINVAL;
 	}
 
@@ -4175,6 +4070,9 @@ static int avt3_video_ops_g_frame_interval(struct v4l2_subdev *sd,
 	avt_dbg(sd, "sensor->frame_interval.denom %u, sensor->frame_interval.num %u, fi->num %d fi->denom %u",
 			sensor->frame_interval.denominator, sensor->frame_interval.numerator,
 			fi->interval.numerator, fi->interval.denominator);
+
+	mutex_unlock(&sensor->lock);
+
 	return 0;
 }
 
@@ -4185,7 +4083,6 @@ static int avt3_video_ops_s_frame_interval(struct v4l2_subdev *sd,
 {
 	struct avt3_dev *camera = to_avt3_dev(sd);
 	int ret = 0;
-	const u64 factor = 1000000L;
 	u64 framerate_req,framerate_min,framerate_max;
 
 
@@ -4199,7 +4096,7 @@ static int avt3_video_ops_s_frame_interval(struct v4l2_subdev *sd,
 		goto out;
 	}
 
-	if (camera->avt_trigger_status.trigger_mode_enabled) {
+	if (avt3_trigger_mode_enabled(camera)) {
 		ret = -EINVAL;
 		goto out;
 	}
@@ -4226,10 +4123,10 @@ static int avt3_video_ops_s_frame_interval(struct v4l2_subdev *sd,
 		camera->framerate_auto = true;
 	}
 	else {
-		framerate_req = (fi->interval.denominator * factor) / fi->interval.numerator;
+		framerate_req = frame_interval_to_rate_uhz(&fi->interval);
 		framerate_req = clamp(framerate_req,framerate_min,framerate_max);
 
-		set_frameinterval(&fi->interval,framerate_req,factor);
+		set_frameinterval(&fi->interval, framerate_req);
 
 		camera->framerate_auto = false;
 	}
@@ -4317,6 +4214,35 @@ static void avt3_controls_stream_grab(struct avt3_dev *camera,bool grabbed)
 	}
 }
 
+static inline int set_auto_framerate(struct avt3_dev *camera, bool enabled)
+{
+	const u8 val = enabled ? 0 : 1;
+	return bcrm_write8(camera, BCRM_ACQUISITION_FRAME_RATE_ENABLE_8RW, val);
+}
+
+static int write_framerate(struct avt3_dev *camera)
+{
+	int ret = 0;
+
+	if (camera->framerate_auto) {
+		ret = set_auto_framerate(camera, true);
+	} else {
+		struct v4l2_fract *interval = &camera->frame_interval;
+		u64 rate_uhz = frame_interval_to_rate_uhz(interval);
+
+		ret = set_auto_framerate(camera, false);
+		if (unlikely(ret)) {
+			goto exit;
+		}
+
+		ret = bcrm_write64(camera, BCRM_ACQUISITION_FRAME_RATE_64RW, 
+			rate_uhz);
+	}
+
+exit:
+	return ret;
+}
+
 static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 {
 	struct avt3_dev *sensor = to_avt3_dev(sd);
@@ -4350,17 +4276,9 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 
 	if (enable && !sensor->is_streaming)
 	{
-		struct v4l2_ext_control vc;
 		struct v4l2_rect crop_rect = sensor->curr_rect;
 		struct v4l2_rect binning_rect = {0};
 		const struct avt3_binning_info *binning_info = sensor->curr_binning_info;
-
-
-		u64 u64FrMin = 0;
-		u64 u64FrMax = 0;
-		u64 value64;
-
-
 
 		binning_rect.width = binning_info->max_width;
 		binning_rect.height = binning_info->max_height;
@@ -4399,83 +4317,11 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 
 		ret = avt3_ctrl_write(sensor->i2c_client, V4L2_AV_CSI2_OFFSET_Y, crop_rect.top);
 
-		ret = bcrm_read64(sensor, BCRM_ACQUISITION_FRAME_RATE_MIN_64R, &u64FrMin);
-
-		if (ret < 0)
-		{
-			dev_err(&client->dev, "regmap_read failed (%d)\n", ret);
-			// goto err_out;
-		}
-
-		ret = bcrm_read64(sensor, BCRM_ACQUISITION_FRAME_RATE_MAX_64R, &u64FrMax);
-		
-		if (ret < 0)
-		{
-			dev_err(&client->dev, "regmap_read failed (%d)\n", ret);
-			// goto err_out;
-		}
-
-		if (sensor->avt_trigger_status.trigger_mode_enabled)
-		{
-			ret = bcrm_write8(sensor, BCRM_ACQUISITION_FRAME_RATE_ENABLE_8RW, 0);
-			ret = bcrm_write8(sensor, BCRM_FRAME_START_TRIGGER_MODE_8RW, 
-						sensor->avt_trigger_status.trigger_mode_enabled);
-			ret = bcrm_write8(sensor, BCRM_FRAME_START_TRIGGER_SOURCE_8RW,
-						sensor->avt_trigger_status.trigger_source);
-		}
-		else
-		{
-			u32 temp32;
-
-			/* Enable manual frame rate */
-			ret = bcrm_write8(sensor, BCRM_FRAME_START_TRIGGER_MODE_8RW, 0);
-			if (ret < 0)
-			{
-				dev_err(&client->dev, "%s[%d]: BCRM_FRAME_START_TRIGGER_MODE_8RW: bcrm_write8 failed (%d)\n",
-						__func__, __LINE__,
-						ret);
+		if (!avt3_trigger_mode_enabled(sensor)) {
+			ret = write_framerate(sensor);
+			if (unlikely(ret))
 				goto out;
-			}
-
-			temp32 = sensor->framerate_auto ? 0 : 1;
-
-			/* Enable manual frame rate */
-			ret = bcrm_write8(sensor, BCRM_ACQUISITION_FRAME_RATE_ENABLE_8RW, temp32);
-			
-			if (ret < 0)
-			{
-				dev_err(&client->dev, "%s[%d]: BCRM_ACQUISITION_FRAME_RATE_ENABLE_8RW: bcrm_write8 failed (%d)\n",
-					__func__, __LINE__,
-					ret);
-				goto out;
-			}
-
-			if (!sensor->framerate_auto) {
-				dev_info(&client->dev, "%s[%d]: BCRM_ACQUISITION_FRAME_RATE: sensor->frame_interval.numerator %u, sensor->frame_interval.denominator %u\n",
-				 	__func__, __LINE__,
-				 	sensor->frame_interval.numerator, sensor->frame_interval.denominator);
-
-				/* Save new frame rate to camera register */
-				value64 = (((u64)sensor->frame_interval.denominator) * 1000000) / ((u64)sensor->frame_interval.numerator);
-
-				dev_info(&client->dev, "%s[%d]: BCRM_ACQUISITION_FRAME_RATE_64RW (min: %llu req: %llu max: %llu) uHz\n",
-					 __func__, __LINE__,
-					 u64FrMin, value64, u64FrMax);
-
-				vc.value64 = clamp(value64,u64FrMin,u64FrMax);
-
-				ret = bcrm_write64(sensor, BCRM_ACQUISITION_FRAME_RATE_64RW, vc.value64);
-			
-				if (ret < 0)
-				{
-					dev_err(&client->dev, "%s[%d]: BCRM_ACQUISITION_FRAME_RATE_64RW: i2c write failed (%d)\n",
-						__func__, __LINE__,
-						ret);
-					goto out;
-				}
-			}
 		}
-
 
 		if (debug >= 2)
 			bcrm_dump(client);
