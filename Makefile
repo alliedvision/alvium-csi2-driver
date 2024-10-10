@@ -14,7 +14,7 @@ overlay_install:
 
 header_install:
 	install -d $(INSTALL_MOD_PATH)/usr/include/linux
-	install -m 0644 $(SRC)/include/uapi/linux/avt-csi.h $(INSTALL_MOD_PATH)/usr/include/linux/
+	install -m 0644 $(SRC)/include/uapi/linux/avt-csi2.h $(INSTALL_MOD_PATH)/usr/include/linux/
 
 install: modules_install overlay_install header_install
 
