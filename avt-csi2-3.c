@@ -2767,364 +2767,39 @@ static int avt3_ctrl_write(struct i2c_client *client, enum avt_ctrl ctrl_id, __u
 }
 
 
-
-static int avt3_queryctrl(struct v4l2_subdev *sd,
-						  struct v4l2_query_ext_ctrl *qctrl)
+static int read_control_value(struct avt3_dev *camera,s64 *value, const u16 reg,
+			      const u8 size)
 {
-	struct avt3_dev *sensor = to_avt3_dev(sd);
-
 	int ret = 0;
+	u8 tmp[8];
 
-	avt_info(sd, "qctrl->id 0x%08X, qctrl->type %d - code should be rewritten",
-			 qctrl->id, qctrl->type);
-
-  #define handle_query_ctrl_integer(available, bits, cname, cid, reg_base)                             \
-    case V4L2_ ## cid:                                                                                 \
-    {                                                                                                  \
-      s ## bits tmp_min, tmp_max, tmp_inc, tmp_val;                                                    \
-                                                                                                       \
-      if (!available)                                                                                  \
-        return -EINVAL;                                                                                \
-                                                                                                       \
-      ret = bcrm_read ## bits(sensor, BCRM_ ## reg_base ## _MIN_ ##  bits ## R, &tmp_min);    		   \
-      if(ret != 0)                                                                                     \
-        return ret;                                                                                    \
-                                                                                                       \
-      ret = bcrm_read ## bits(sensor, BCRM_ ## reg_base ## _MAX_ ##  bits ## R, &tmp_max); 			   \
-      if(ret != 0)                                                                                     \
-        return ret;                                                                                    \
-                                                                                                       \
-      ret = bcrm_read ## bits(sensor, BCRM_ ## reg_base ## _INC_ ##  bits ## R, &tmp_inc);     		   \
-      if(ret != 0)                                                                                     \
-        return ret;                                                                                    \
-                                                                                                       \
-      ret = bcrm_read ## bits(sensor, BCRM_ ## reg_base ## _ ##  bits ## RW, &tmp_val);    			   \
-      if(ret != 0)                                                                                     \
-        return ret;                                                                                    \
-                                                                                                       \
-      qctrl->minimum = tmp_min;                                                                        \
-      qctrl->maximum = tmp_max;                                                                        \
-      qctrl->step = tmp_inc;                                                                           \
-      qctrl->default_value = tmp_val;                                                                  \
-                                                                                                       \
-      qctrl->flags = V4L2_CTRL_FLAG_SLIDER;                                                            \
-      qctrl->type = (bits == 32) ? V4L2_CTRL_TYPE_INTEGER : V4L2_CTRL_TYPE_INTEGER64;                  \
-      strcpy(qctrl->name, cname);                                                                      \
-                                                                                                       \
-      avt_info(sd, "qctrl->id 0x%08X, qctrl->type %d case V4L2_" #cid " [%lld, %lld]:%lld %lld",       \
-           qctrl->id, qctrl->type, qctrl->minimum, qctrl->maximum, qctrl->step, qctrl->default_value); \
-                                                                                                       \
-      return 0;                                                                                        \
-    }
-
-  #define handle_query_ctrl_integer_inquiry(inquiry_flag, bits, name, id, reg_base) \
-    handle_query_ctrl_integer(sensor->feature_inquiry_reg.feature_inq.inquiry_flag, bits, name, id, reg_base)
-
-  #define handle_query_ctrl_integer_always(bits, name, id, reg_base) \
-    handle_query_ctrl_integer(true, bits, name, id, reg_base)
-
-
-  #define handle_query_ctrl_bitmask(available, ctype, min, max, inc, def, cname, cid)                  \
-    case V4L2_ ## cid:                                                                                 \
-      if (!available)                                                                                  \
-        return -EINVAL;                                                                                \
-                                                                                                       \
-      qctrl->flags = 0;                                                                                \
-      qctrl->minimum = min;                                                                            \
-      qctrl->maximum = max;                                                                            \
-      qctrl->step = inc;                                                                               \
-      qctrl->default_value = def;                                                                      \
-      qctrl->type = V4L2_CTRL_TYPE_ ## ctype;                                                          \
-      strcpy(qctrl->name, cname);                                                                      \
-                                                                                                       \
-      avt_info(sd, "qctrl->id 0x%08X, qctrl->type %d case V4L2_" #cid " [%lld, %lld]:%lld %lld",       \
-           qctrl->id, qctrl->type, qctrl->minimum, qctrl->maximum, qctrl->step, qctrl->default_value); \
-                                                                                                       \
-      return 0;
-
-  #define handle_query_ctrl_bitmask_inquiry(inquiry_flag, type, min, max, inc, def, name, id) \
-    handle_query_ctrl_bitmask(sensor->feature_inquiry_reg.feature_inq.inquiry_flag, type, min, max, inc, def, name, id)
-
-  #define handle_query_ctrl_bitmask_always(type, min, max, inc, def, name, id) \
-    handle_query_ctrl_bitmask(true, type, min, max, inc, def, name, id)
-
-
-	switch (qctrl->id)
-	{
-    handle_query_ctrl_integer_always(64, "Exposure", CID_EXPOSURE, EXPOSURE_TIME)
-    handle_query_ctrl_integer_inquiry(black_level_avail,   32, "Brightness",   CID_BRIGHTNESS,   BLACK_LEVEL)
-    handle_query_ctrl_integer_inquiry(contrast_avail,      32, "Contrast",     CID_CONTRAST,     CONTRAST_VALUE)
-    handle_query_ctrl_integer_inquiry(hue_avail,           32, "Hue",          CID_HUE,          HUE)
-    handle_query_ctrl_integer_inquiry(saturation_avail,    32, "Saturation",   CID_SATURATION,   SATURATION)
-    handle_query_ctrl_integer_inquiry(white_balance_avail, 64, "Red Balance",  CID_RED_BALANCE,  RED_BALANCE_RATIO)
-    handle_query_ctrl_integer_inquiry(white_balance_avail, 64, "Blue Balance", CID_BLUE_BALANCE, BLUE_BALANCE_RATIO)
-    handle_query_ctrl_integer_inquiry(gain_avail,          64, "Gain",         CID_GAIN,         GAIN)
-    handle_query_ctrl_integer_inquiry(sharpness_avail,     32, "Sharpness",    CID_SHARPNESS,    SHARPNESS)
-    handle_query_ctrl_integer_inquiry(gamma_avail,         64, "Gamma",        CID_GAMMA,        GAMMA)
-    
-    handle_query_ctrl_bitmask_inquiry(white_balance_auto_avail, BITMASK, 0, 2, 1, 0, "Auto White Balance", CID_AUTO_WHITE_BALANCE)
-    handle_query_ctrl_bitmask_inquiry(gain_auto_avail,          BITMASK, 0, 2, 1, 0, "Auto Gain",          CID_AUTOGAIN)
-    handle_query_ctrl_bitmask_inquiry(white_balance_auto_avail, BITMASK, 0, 7, 1, 0, "Do White Balance",   CID_DO_WHITE_BALANCE)
-    handle_query_ctrl_bitmask_inquiry(exposure_auto_avail,      BITMASK, 0, 3, 1, 0, "Exposure Auto",      CID_EXPOSURE_AUTO)
-    handle_query_ctrl_bitmask_inquiry(reverse_x_avail,          BOOLEAN, 0, 1, 1, 0, "H-Flip",             CID_HFLIP)
-    handle_query_ctrl_bitmask_inquiry(reverse_y_avail,          BOOLEAN, 0, 1, 1, 0, "Y-Flip",             CID_VFLIP)
-    handle_query_ctrl_bitmask_always(BITMASK, 0, 0x0111, 0, 0, "3A Lock", CID_3A_LOCK)
-
-  // TODO: Forward EXPOSURE_ABSOLUTE to regular EXPOSURE
-	case V4L2_CID_EXPOSURE_ABSOLUTE:
-    {
-      	s64 vals64;
-      	avt_info(sd, "qctrl->id 0x%08X, qctrl->type %d case V4L2_CID_EXPOSURE_ABSOLUTE",
-           qctrl->id, qctrl->type);
-		
-		ret = bcrm_read64(sensor, BCRM_EXPOSURE_TIME_MIN_64R, &vals64);
-      	qctrl->minimum = vals64;
-	  	
-		ret = bcrm_read64(sensor, BCRM_EXPOSURE_TIME_MAX_64R, &vals64);
-      	qctrl->maximum = vals64;
-	  	
-		ret = bcrm_read64(sensor, BCRM_EXPOSURE_TIME_INC_64R, &vals64);
-      	qctrl->step = vals64;
-
-	  	ret = bcrm_read64(sensor, BCRM_EXPOSURE_TIME_64RW, &vals64);
-      	qctrl->default_value = vals64;
-
-    	qctrl->type = V4L2_CTRL_TYPE_INTEGER64;
-      	strcpy(qctrl->name, "Exposure Absolute");
-      	avt_info(sd, "V4L2_CID_EXPOSURE_ABSOLUTE: \n"
-             "   BCRM_EXPOSURE_TIME_MIN_64R       %lld, \n"
-             "   BCRM_EXPOSURE_TIME_MAX_64R       %lld, \n"
-             "   BCRM_EXPOSURE_TIME_INC_64R %lld, \n"
-             "   BCRM_EXPOSURE_TIME_64RW          %lld",
-           qctrl->minimum,
-           qctrl->maximum,
-           qctrl->step,
-           qctrl->default_value);
-      	return 0;
-    }
-
-	default:
-		avt_info(sd, "not supported qctrl->id 0x%08X qctrl->type %d", qctrl->id, qctrl->type);
-		qctrl->flags = V4L2_CTRL_FLAG_DISABLED;
-    return -EINVAL;
-	}
-
-  #undef handle_query_ctrl_bitmask_always
-  #undef handle_query_ctrl_bitmask_inquiry
-  #undef handle_query_ctrl_bitmask
-  #undef handle_query_ctrl_integer_inquiry
-  #undef handle_query_ctrl_integer_always
-  #undef handle_query_ctrl_integer
-
-	return 0;
-}
-
-static int avt3_ioctl_g_ctrl(struct v4l2_subdev *sd, struct v4l2_control *vc)
-{
-	struct avt3_dev *sensor = to_avt3_dev(sd);
-
-	unsigned int reg = 0;
-	int length = 0;
-	struct v4l2_query_ext_ctrl qctrl;
-	int ret = 0;
-	u64 temp64 = 0;
-
-	vc->value = 0;
-
-	switch (vc->id)
-	{
-		/* BLACK LEVEL is deprecated and thus we use Brightness */
-	case V4L2_CID_BRIGHTNESS:
-		avt_info(sd, "V4L2_CID_BRIGHTNESS");
-		reg = BCRM_BLACK_LEVEL_32RW;
-		length = AV_CAM_DATA_SIZE_32;
-		break;
-	case V4L2_CID_GAMMA:
-		avt_info(sd, "V4L2_CID_GAMMA");
-		reg = BCRM_GAMMA_64RW;
-		length = AV_CAM_DATA_SIZE_64;
-		break;
-	case V4L2_CID_CONTRAST:
-		avt_info(sd, "V4L2_CID_CONTRAST");
-		reg = BCRM_CONTRAST_VALUE_32RW;
-		length = AV_CAM_DATA_SIZE_32;
-		break;
-	case V4L2_CID_DO_WHITE_BALANCE:
-		avt_info(sd, "V4L2_CID_DO_WHITE_BALANCE");
-		reg = BCRM_WHITE_BALANCE_AUTO_8RW;
-		length = AV_CAM_DATA_SIZE_8;
-		break;
-	case V4L2_CID_AUTO_WHITE_BALANCE:
-		avt_info(sd, "V4L2_CID_AUTO_WHITE_BALANCE");
-		reg = BCRM_WHITE_BALANCE_AUTO_8RW;
-		length = AV_CAM_DATA_SIZE_8;
-		break;
-	case V4L2_CID_SATURATION:
-		avt_info(sd, "V4L2_CID_SATURATION");
-		reg = BCRM_SATURATION_32RW;
-		length = AV_CAM_DATA_SIZE_32;
-		break;
-
-	case V4L2_CID_HUE:
-		avt_info(sd, "V4L2_CID_HUE");
-		reg = BCRM_HUE_32RW;
-		length = AV_CAM_DATA_SIZE_32;
-		break;
-
-	case V4L2_CID_RED_BALANCE:
-		avt_info(sd, "V4L2_CID_RED_BALANCE");
-		reg = BCRM_RED_BALANCE_RATIO_64RW;
-		length = AV_CAM_DATA_SIZE_64;
-		break;
-	case V4L2_CID_BLUE_BALANCE:
-		avt_info(sd, "V4L2_CID_BLUE_BALANCE");
-		reg = BCRM_BLUE_BALANCE_RATIO_64RW;
-		length = AV_CAM_DATA_SIZE_64;
-		break;
-
-	case V4L2_CID_EXPOSURE_ABSOLUTE:
-		avt_info(sd, "V4L2_CID_EXPOSURE_ABSOLUTE");
-		reg = BCRM_EXPOSURE_TIME_64RW;
-		length = AV_CAM_DATA_SIZE_64;
-		break;
-
-	case V4L2_CID_EXPOSURE:
-		avt_info(sd, "V4L2_CID_EXPOSURE");
-		reg = BCRM_EXPOSURE_TIME_64RW;
-		length = AV_CAM_DATA_SIZE_64;
-		break;
-
-	case V4L2_CID_GAIN:
-		avt_info(sd, "V4L2_CID_GAIN");
-		reg = BCRM_GAIN_64RW;
-		length = AV_CAM_DATA_SIZE_64;
-		break;
-
-	case V4L2_CID_AUTOGAIN:
-		avt_info(sd, "V4L2_CID_AUTOGAIN");
-		reg = BCRM_GAIN_AUTO_8RW;
-		length = AV_CAM_DATA_SIZE_8;
-		break;
-
-	case V4L2_CID_SHARPNESS:
-		avt_info(sd, "V4L2_CID_SHARPNESS");
-		reg = BCRM_SHARPNESS_32RW;
-		length = AV_CAM_DATA_SIZE_32;
-		break;
-
-	default:
-		dev_err(&sensor->i2c_client->dev, "%s[%d]: default or not supported %d 0x%08X\n",
-				__func__, __LINE__, vc->id, vc->id);
+	if (size > AV_CAM_DATA_SIZE_64) 
 		return -EINVAL;
-	}
 
-	CLEAR(qctrl);
-
-	qctrl.id = vc->id;
-	ret = avt3_queryctrl(sd, &qctrl);
+	ret = avt3_read_raw(camera, get_bcrm_addr(camera, reg), tmp, size);
 
 	if (ret < 0)
-	{
-		dev_err(&sensor->i2c_client->dev, "%s[%d]: avt3_queryctrl failed: ret %d\n", __func__, __LINE__, ret);
 		return ret;
-	}
 
-	/* overwrite the queryctrl max value for auto features by 2 because 1 is value for do */
-	if (vc->id == V4L2_CID_AUTOGAIN ||
-		vc->id == V4L2_CID_AUTO_WHITE_BALANCE)
-		qctrl.maximum = 2;
-
-	ret = bcrm_read(sensor, reg, (u8*)&temp64, length);
-
-	if (length != AV_CAM_DATA_SIZE_64) {
-		vc->value = temp64;
-	}
-
-	if (vc->id == V4L2_CID_EXPOSURE_ABSOLUTE)
+	switch (size)
 	{
-		dev_info(&sensor->i2c_client->dev, "%s[%d]: V4L2_CID_EXPOSURE_ABSOLUTE values need to be translated\n", __func__, __LINE__);
-		//		/* Absolute (1ns to 100ns) */
-		vc->value = temp64 / 100;
-	}
-
-	/* BCRM Auto Exposure changes -> Refer to BCRM document */
-	if (vc->id == V4L2_CID_EXPOSURE_AUTO)
-	{
-
-		if (vc->value && 0x02 == 2)
-			/* continous mode, Refer BCRM doc */
-			vc->value = V4L2_EXPOSURE_AUTO;
-		else
-			/* OFF for off & once mode, Refer BCRM doc */
-			vc->value = V4L2_EXPOSURE_MANUAL;
-	}
-
-	/* BCRM Auto Gain/WB changes -> Refer to BCRM document */
-	if (vc->id == V4L2_CID_AUTOGAIN ||
-		vc->id == V4L2_CID_AUTO_WHITE_BALANCE)
-	{
-
-		if (vc->value && 0x02 == 2)
-			/* continous mode, Refer BCRM doc */
-			vc->value = true;
-		else
-			/* OFF for off & once mode, Refer BCRM doc */
-			vc->value = false;
+	case AV_CAM_DATA_SIZE_8:
+		*value = tmp[0];
+		break;
+	case AV_CAM_DATA_SIZE_16:
+		*value = get_unaligned_be16(tmp);
+		break;
+	case AV_CAM_DATA_SIZE_32:
+		*value = (s32)get_unaligned_be32(tmp);
+		break;
+	case AV_CAM_DATA_SIZE_64:
+		*value = (s64)get_unaligned_be64(tmp);
+		break;
+	default:
+		return -EINVAL;
 	}
 
 	return ret;
-}
-
-static int read_control_value(struct avt3_dev *camera,s64 *value,
-			      const u16 reg,const u8 size)
-{
-	int ret;
-	switch (size) {
-	case AV_CAM_DATA_SIZE_8: {
-		s8 temp;
-		ret = bcrm_read8(camera,reg,&temp);
-		if (ret < 0)
-			return ret;
-
-		*value = temp;
-
-		break;
-	}
-	case AV_CAM_DATA_SIZE_16: {
-		s16 temp;
-		ret = bcrm_read16(camera,reg,&temp);
-		if (ret < 0)
-			return ret;
-
-		*value = temp;
-
-		break;
-	}
-	case AV_CAM_DATA_SIZE_32: {
-		s32 temp;
-		ret = bcrm_read32(camera,reg,&temp);
-		if (ret < 0)
-			return ret;
-
-		*value = temp;
-
-		break;
-	}
-	case AV_CAM_DATA_SIZE_64: {
-		s64 temp;
-		ret = bcrm_read64(camera,reg,&temp);
-		if (ret < 0)
-			return ret;
-
-		*value = temp;
-
-		break;
-	}
-	default:
-		return -EINVAL;
-	}
-
-	return 0;
 }
 
 static void avt3_ctrl_to_reg(const u32 cid,s64 * value)
@@ -3176,15 +2851,15 @@ static void avt3_ctrl_from_reg(const u32 cid,s64 * value)
 }
 
 static int avt3_update_ctrl_value(struct avt3_dev *camera,
-				  struct v4l2_ctrl *ctrl,const u16 reg,
-				  const u8 data_size )
+				  struct v4l2_ctrl *ctrl,
+				  const struct avt_ctrl_mapping *mapping)
 {
+	const u16 reg = mapping->reg_offset;
+	const u8 len = mapping->reg_length;
 	int ret;
 	s64 value;
 
-	ret = read_control_value(camera,&value,
-				 reg,
-				 data_size);
+	ret = read_control_value(camera, &value, reg, len);
 
 	if (ret < 0) {
 		avt_err(camera->sd,"Reading ctrl %x (reg: %x) failed with: %d",
@@ -3225,10 +2900,8 @@ static int avt3_update_ctrl_value(struct avt3_dev *camera,
 
 static int avt3_g_volatile_ctrl(struct v4l2_ctrl *ctrl)
 {
-
+	const struct avt_ctrl_mapping * const ctrl_mapping = ctrl->priv;
 	struct avt3_dev *sensor = container_of(ctrl->handler, struct avt3_dev, v4l2_ctrl_hdl);
-	struct v4l2_control c;
-	int ret = 0;
 
 	avt_dbg(sensor->sd, "ctrl->id %d", ctrl->id);
 
@@ -3242,20 +2915,12 @@ static int avt3_g_volatile_ctrl(struct v4l2_ctrl *ctrl)
 		return 0;
 	}
 
-	if (ctrl->priv) {
-		const struct avt_ctrl_mapping * const ctrl_mapping = ctrl->priv;
-
-
-		return avt3_update_ctrl_value(sensor,ctrl,
-					      ctrl_mapping->reg_offset,
-					      ctrl_mapping->data_size);
+	if (unlikely(!ctrl_mapping)) {
+		avt_warn(sensor->sd, "Invalid control mapping!\n");
+		return -EINVAL;
 	}
 
-	c.id = ctrl->id;
-	ret = avt3_ioctl_g_ctrl(sensor->sd, &c);
-	ctrl->val = c.value;
-
-	return ret;
+	return avt3_update_ctrl_value(sensor, ctrl, ctrl_mapping);
 }
 
 static struct v4l2_ctrl* avt3_ctrl_find(struct avt3_dev *camera,u32 id)
@@ -3489,7 +3154,7 @@ static int write_ctrl_value(struct avt3_dev *camera,struct v4l2_ctrl *ctrl,
 		      const struct avt_ctrl_mapping * const ctrl_mapping)
 {
 	const u16 reg = ctrl_mapping->reg_offset;
-	const u8 data_size = ctrl_mapping->data_size;
+	const u8 reg_length = ctrl_mapping->reg_length;
 	s64 temp;
 	int ret = 0;
 
@@ -3501,17 +3166,16 @@ static int write_ctrl_value(struct avt3_dev *camera,struct v4l2_ctrl *ctrl,
 	avt3_ctrl_to_reg(ctrl->id,&temp);
 
 	if (ctrl_mapping->type == V4L2_CTRL_TYPE_BUTTON) {
-		ret = bcrm_write(camera, reg, 1, data_size);
+		ret = bcrm_write(camera, reg, 1, reg_length);
 	} else {
-		ret = bcrm_write(camera, reg, temp, data_size);
+		ret = bcrm_write(camera, reg, temp, reg_length);
 	}
 
 	if (ret < 0)
 		return ret;
 
 	if (ctrl_mapping->avt_flags & AVT_CTRL_FLAG_READ_BACK) {
-		ret =  avt3_update_ctrl_value(camera,ctrl,
-					     reg,data_size);
+		ret =  avt3_update_ctrl_value(camera, ctrl, ctrl_mapping);
 		if (ret < 0)
 			dev_err(&camera->i2c_client->dev,
 				"Control read back failed with %d",
@@ -3588,8 +3252,7 @@ static int avt3_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 		dev_dbg(&client->dev, "%s[%d]: Write custom ctrl %s (%x)\n",
 			 __func__, __LINE__, ctrl_mapping->attr.name, ctrl->id);
 
-		if (ctrl_mapping->data_size != 0
-		    && ctrl_mapping->reg_size != 0) {
+		if (ctrl_mapping->reg_length != 0) {
 			ret = write_ctrl_value(sensor,ctrl,ctrl_mapping);
 		}
 
@@ -3636,7 +3299,7 @@ static int avt3_fill_ctrl_config(struct avt3_dev *camera,
 		config->qmenu = mapping->qmenu;
 		ret = read_control_value(camera, &config->def,
 					 mapping->reg_offset,
-					 mapping->data_size);
+					 mapping->reg_length);
 		if (ret < 0)
 			return ret;
 
@@ -3656,7 +3319,7 @@ static int avt3_fill_ctrl_config(struct avt3_dev *camera,
 		else {
 			ret = read_control_value(camera, &config->min,
 						 mapping->min_offset,
-						 mapping->data_size);
+						 mapping->reg_length);
 			if (ret < 0)
 				return ret;
 
@@ -3668,7 +3331,7 @@ static int avt3_fill_ctrl_config(struct avt3_dev *camera,
 		else {
 			ret = read_control_value(camera, &config->max,
 						 mapping->max_offset,
-						 mapping->data_size);
+						 mapping->reg_length);
 			if (ret < 0)
 				return ret;
 
@@ -3680,7 +3343,7 @@ static int avt3_fill_ctrl_config(struct avt3_dev *camera,
 		else {
 			ret = read_control_value(camera, &config->step,
 						 mapping->step_offset,
-						 mapping->data_size);
+						 mapping->reg_length);
 			if (ret < 0)
 				return ret;
 
@@ -3692,7 +3355,7 @@ static int avt3_fill_ctrl_config(struct avt3_dev *camera,
 		else {
 			ret = read_control_value(camera, &config->def,
 						 mapping->reg_offset,
-						 mapping->data_size);
+						 mapping->reg_length);
 			if (ret < 0)
 				return ret;
 
