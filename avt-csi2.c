@@ -34,8 +34,6 @@
 #define AVT3_DEFAULT_GAIN 1000
 #define AVT3_MAX_FORMAT_ENTRIES 40
 
-#define AVT3_DRIVER_NAME "avt3"
-
 #include <asm/unaligned.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -5261,9 +5259,6 @@ static int avt3_probe(struct i2c_client *client)
 	const struct avt3_platform_ops *pops;
 	int ret;
 
-	//XXX: Override client name
-	strncpy(client->name, AVT3_DRIVER_NAME, sizeof(client->name));
-
 	dev_info(&client->dev, "%s[%d]: %s",
 			 __func__, __LINE__, __FILE__);
 
@@ -5864,7 +5859,7 @@ static struct v4l2_subdev* avt3_platform_nvidia_init(void *pdata, struct avt3_de
 	common_data->dev = &camera->i2c_client->dev;
 	common_data->ctrl_handler = &camera->v4l2_ctrl_hdl;
 
-	ret = camera_common_initialize(common_data, "avt_csi2_3");
+	ret = camera_common_initialize(common_data, "avt_csi2");
 	if (ret < 0) 
 	{
 		return ERR_PTR(ret);
@@ -5893,19 +5888,19 @@ static const struct avt3_platform_ops platform_nvidia_ops = {
 #endif //#ifdef NVIDIA
 
 static const struct i2c_device_id avt3_id[] = {
-	{AVT3_DRIVER_NAME, 0},
+	{"avt_csi2", 0},
 	{},
 };
 MODULE_DEVICE_TABLE(i2c, avt3_id);
 
 static const struct of_device_id avt3_dt_ids[] = {
 	{
-		.compatible = "alliedvision,avt3",
+		.compatible = "alliedvision,avt_csi2",
 		.data = &platform_default_ops,
 	},
 #ifdef NVIDIA
 	{
-		.compatible = "alliedvision,avt3-nv",
+		.compatible = "alliedvision,avt_csi2-nv",
 		.data = &platform_nvidia_ops,
 	},
 #endif //#ifdef NVIDIA
@@ -5914,7 +5909,7 @@ MODULE_DEVICE_TABLE(of, avt3_dt_ids);
 
 static struct i2c_driver avt3_i2c_driver = {
 	.driver = {
-		.name = AVT3_DRIVER_NAME,
+		.name = "avt_csi2",
 		.owner = THIS_MODULE,
 		.of_match_table = avt3_dt_ids,
 	},

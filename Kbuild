@@ -1,4 +1,4 @@
-obj-m := avt-csi2-3.o
+obj-m := avt-csi2.o
 
 ccflags-y += -Werror -I $(M)/include/uapi
 
