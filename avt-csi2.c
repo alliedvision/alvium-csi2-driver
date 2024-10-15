@@ -1225,51 +1225,6 @@ static ssize_t bcrm_mipi_formats_text_show(struct device *dev,
 				   sensor->avail_mipi_reg.avail_mipi.jpeg_avail);
 }
 
-static ssize_t ignore_mipi_formats_text_show(struct device *dev,
-											 struct device_attribute *attr, char *buf)
-{
-	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
-
-	return sprintf(buf, "yuv420_8_leg_avail   %d\n"
-						"yuv420_8_avail       %d\n"
-						"yuv420_10_avail      %d\n"
-						"yuv420_8_csps_avail  %d\n"
-						"yuv420_10_csps_avail %d\n"
-						"yuv422_8_avail       %d\n"
-						"yuv422_10_avail      %d\n"
-						"rgb888_avail         %d\n"
-						"rgb666_avail         %d\n"
-						"rgb565_avail         %d\n"
-						"rgb555_avail         %d\n"
-						"rgb444_avail         %d\n"
-						"raw6_avail           %d\n"
-						"raw7_avail           %d\n"
-						"raw8_avail           %d\n"
-						"raw10_avail          %d\n"
-						"raw12_avail          %d\n"
-						"raw14_avail          %d\n"
-						"jpeg_avail           %d\n",
-				   sensor->ignore_avail_mipi_reg.avail_mipi.yuv420_8_leg_avail,
-				   sensor->ignore_avail_mipi_reg.avail_mipi.yuv420_8_avail,
-				   sensor->ignore_avail_mipi_reg.avail_mipi.yuv420_10_avail,
-				   sensor->ignore_avail_mipi_reg.avail_mipi.yuv420_8_csps_avail,
-				   sensor->ignore_avail_mipi_reg.avail_mipi.yuv420_10_csps_avail,
-				   sensor->ignore_avail_mipi_reg.avail_mipi.yuv422_8_avail,
-				   sensor->ignore_avail_mipi_reg.avail_mipi.yuv422_10_avail,
-				   sensor->ignore_avail_mipi_reg.avail_mipi.rgb888_avail,
-				   sensor->ignore_avail_mipi_reg.avail_mipi.rgb666_avail,
-				   sensor->ignore_avail_mipi_reg.avail_mipi.rgb565_avail,
-				   sensor->ignore_avail_mipi_reg.avail_mipi.rgb555_avail,
-				   sensor->ignore_avail_mipi_reg.avail_mipi.rgb444_avail,
-				   sensor->ignore_avail_mipi_reg.avail_mipi.raw6_avail,
-				   sensor->ignore_avail_mipi_reg.avail_mipi.raw7_avail,
-				   sensor->ignore_avail_mipi_reg.avail_mipi.raw8_avail,
-				   sensor->ignore_avail_mipi_reg.avail_mipi.raw10_avail,
-				   sensor->ignore_avail_mipi_reg.avail_mipi.raw12_avail,
-				   sensor->ignore_avail_mipi_reg.avail_mipi.raw14_avail,
-				   sensor->ignore_avail_mipi_reg.avail_mipi.jpeg_avail);
-}
-
 static ssize_t device_capabilities_show(struct device *dev,
 										struct device_attribute *attr, char *buf)
 {
@@ -1707,7 +1662,6 @@ static DEVICE_ATTR_RO(serial_number);
 static DEVICE_ATTR_RO(user_defined_name);
 static DEVICE_ATTR_RO(bcrm_mipi_formats);
 static DEVICE_ATTR_RO(bcrm_mipi_formats_text);
-static DEVICE_ATTR_RO(ignore_mipi_formats_text);
 static DEVICE_ATTR_RO(bcrm_bayer_formats);
 static DEVICE_ATTR_RO(bcrm_bayer_formats_text);
 static DEVICE_ATTR_RW(debug_en);
@@ -1740,7 +1694,6 @@ static struct attribute *avt3_attrs[] = {
 	&dev_attr_user_defined_name.attr,
 	&dev_attr_bcrm_mipi_formats.attr,
 	&dev_attr_bcrm_mipi_formats_text.attr,
-	&dev_attr_ignore_mipi_formats_text.attr,
 	&dev_attr_bcrm_bayer_formats.attr,
 	&dev_attr_bcrm_bayer_formats_text.attr,
 	&dev_attr_debug_en.attr,
@@ -1923,9 +1876,9 @@ static int avt3_init_avail_formats(struct v4l2_subdev *sd)
     pfmt++;
 
   #define add_format_gen(avail_field_name, mbus_code, mipi_fmt, colorspace, fourcc, bayer_pattern) \
-    if(sensor->avail_mipi_reg.avail_mipi.avail_field_name && !sensor->ignore_avail_mipi_reg.avail_mipi.avail_field_name) { \
-      adev_info(&client->dev, "add MEDIA_BUS_FMT_" #mbus_code "/V4L2_PIX_FMT_" #fourcc "/MIPI_CSI2_DT_" #mipi_fmt " to list of available formats %d - %d:%d", bayer_pattern, \
-                sensor->avail_mipi_reg.avail_mipi.avail_field_name, sensor->ignore_avail_mipi_reg.avail_mipi.avail_field_name); \
+    if(sensor->avail_mipi_reg.avail_mipi.avail_field_name) { \
+      adev_info(&client->dev, "add MEDIA_BUS_FMT_" #mbus_code "/V4L2_PIX_FMT_" #fourcc "/MIPI_CSI2_DT_" #mipi_fmt " to list of available formats %d - %d", bayer_pattern, \
+                sensor->avail_mipi_reg.avail_mipi.avail_field_name); \
       add_format_unconditional(MEDIA_BUS_FMT_ ## mbus_code, MIPI_CSI2_DT_ ## mipi_fmt, colorspace, V4L2_PIX_FMT_ ## fourcc, bayer_pattern); \
     }
 
@@ -5321,99 +5274,6 @@ static int avt3_probe(struct i2c_client *client)
 	else
 		dev_info(dev, "%s[%d]: fwnode_property_present failed to find mipi_csi\n", __func__, __LINE__);
 
-	sensor->ignore_avail_mipi_reg.avail_mipi.yuv420_8_leg_avail =
-		fwnode_property_present(dev_fwnode(&client->dev), "avt-ignore-yuv420_8_leg_avail");
-	dev_info(dev, "%s[%d]: avt-ignore-yuv420_8_leg_avail   %d",
-			 __func__, __LINE__, sensor->ignore_avail_mipi_reg.avail_mipi.yuv420_8_leg_avail);
-
-	sensor->ignore_avail_mipi_reg.avail_mipi.yuv420_8_avail =
-		fwnode_property_present(dev_fwnode(&client->dev), "avt-ignore-yuv420_8_avail");
-	dev_info(dev, "%s[%d]: avt-ignore-yuv420_8_avail       %d",
-			 __func__, __LINE__, sensor->ignore_avail_mipi_reg.avail_mipi.yuv420_8_avail);
-
-	sensor->ignore_avail_mipi_reg.avail_mipi.yuv420_10_avail =
-		fwnode_property_present(dev_fwnode(&client->dev), "avt-ignore-yuv420_10_avail") ? 1 : 0;
-	dev_info(dev, "%s[%d]: avt-ignore-yuv420_10_avail      %d",
-			 __func__, __LINE__, sensor->ignore_avail_mipi_reg.avail_mipi.yuv420_10_avail);
-
-	sensor->ignore_avail_mipi_reg.avail_mipi.yuv420_8_csps_avail =
-		fwnode_property_present(dev_fwnode(&client->dev), "avt-ignore-yuv420_8_csps_avail") ? 1 : 0;
-	dev_info(dev, "%s[%d]: avt-ignore-yuv420_8_csps_avail  %d",
-			 __func__, __LINE__, sensor->ignore_avail_mipi_reg.avail_mipi.yuv420_8_csps_avail);
-
-	sensor->ignore_avail_mipi_reg.avail_mipi.yuv420_10_csps_avail =
-		fwnode_property_present(dev_fwnode(&client->dev), "avt-ignore-yuv420_10_csps_avail") ? 1 : 0;
-	dev_info(dev, "%s[%d]: avt-ignore-yuv420_10_csps_avail %d",
-			 __func__, __LINE__, sensor->ignore_avail_mipi_reg.avail_mipi.yuv420_10_csps_avail);
-
-	sensor->ignore_avail_mipi_reg.avail_mipi.yuv422_8_avail =
-		fwnode_property_present(dev_fwnode(&client->dev), "avt-ignore-yuv422_8_avail") ? 1 : 0;
-	dev_info(dev, "%s[%d]: avt-ignore-yuv422_8_avail       %d",
-			 __func__, __LINE__, sensor->ignore_avail_mipi_reg.avail_mipi.yuv422_8_avail);
-
-	sensor->ignore_avail_mipi_reg.avail_mipi.yuv422_10_avail =
-		fwnode_property_present(dev_fwnode(&client->dev), "avt-ignore-yuv422_10_avail") ? 1 : 0;
-	dev_info(dev, "%s[%d]: avt-ignore-yuv422_10_avail      %d",
-			 __func__, __LINE__, sensor->ignore_avail_mipi_reg.avail_mipi.yuv422_10_avail);
-
-	sensor->ignore_avail_mipi_reg.avail_mipi.rgb888_avail =
-		fwnode_property_present(dev_fwnode(&client->dev), "avt-ignore-rgb888_avail") ? 1 : 0;
-	dev_info(dev, "%s[%d]: avt-ignore-rgb888_avail         %d",
-			 __func__, __LINE__, sensor->ignore_avail_mipi_reg.avail_mipi.rgb888_avail);
-
-	sensor->ignore_avail_mipi_reg.avail_mipi.rgb666_avail =
-		fwnode_property_present(dev_fwnode(&client->dev), "avt-ignore-rgb666_avail") ? 1 : 0;
-	dev_info(dev, "%s[%d]: avt-ignore-rgb666_avail         %d",
-			 __func__, __LINE__, sensor->ignore_avail_mipi_reg.avail_mipi.rgb666_avail);
-
-	sensor->ignore_avail_mipi_reg.avail_mipi.rgb565_avail =
-		fwnode_property_present(dev_fwnode(&client->dev), "avt-ignore-rgb565_avail") ? 1 : 0;
-	dev_info(dev, "%s[%d]: avt-ignore-rgb565_avail         %d",
-			 __func__, __LINE__, sensor->ignore_avail_mipi_reg.avail_mipi.rgb565_avail);
-
-	sensor->ignore_avail_mipi_reg.avail_mipi.rgb555_avail =
-		fwnode_property_present(dev_fwnode(&client->dev), "avt-ignore-rgb555_avail") ? 1 : 0;
-	dev_info(dev, "%s[%d]: avt-ignore-rgb555_avail         %d",
-			 __func__, __LINE__, sensor->ignore_avail_mipi_reg.avail_mipi.rgb555_avail);
-
-	sensor->ignore_avail_mipi_reg.avail_mipi.rgb444_avail =
-		fwnode_property_present(dev_fwnode(&client->dev), "avt-ignore-rgb444_avail") ? 1 : 0;
-	dev_info(dev, "%s[%d]: avt-ignore-rgb444_avail         %d",
-			 __func__, __LINE__, sensor->ignore_avail_mipi_reg.avail_mipi.rgb444_avail);
-
-	sensor->ignore_avail_mipi_reg.avail_mipi.raw6_avail =
-		fwnode_property_present(dev_fwnode(&client->dev), "avt-ignore-raw6_avail") ? 1 : 0;
-	dev_info(dev, "%s[%d]: avt-ignore-raw6_avail           %d",
-			 __func__, __LINE__, sensor->ignore_avail_mipi_reg.avail_mipi.raw6_avail);
-
-	sensor->ignore_avail_mipi_reg.avail_mipi.raw7_avail =
-		fwnode_property_present(dev_fwnode(&client->dev), "avt-ignore-raw7_avail") ? 1 : 0;
-	dev_info(dev, "%s[%d]: avt-ignore-raw7_avail           %d",
-			 __func__, __LINE__, sensor->ignore_avail_mipi_reg.avail_mipi.raw7_avail);
-
-	sensor->ignore_avail_mipi_reg.avail_mipi.raw8_avail =
-		fwnode_property_present(dev_fwnode(&client->dev), "avt-ignore-raw8_avail") ? 1 : 0;
-	dev_info(dev, "%s[%d]: avt-ignore-raw8_avail           %d",
-			 __func__, __LINE__, sensor->ignore_avail_mipi_reg.avail_mipi.raw8_avail);
-
-	sensor->ignore_avail_mipi_reg.avail_mipi.raw10_avail =
-		fwnode_property_present(dev_fwnode(&client->dev), "avt-ignore-raw10_avail") ? 1 : 0;
-	dev_info(dev, "%s[%d]: avt-ignore-raw10_avail          %d",
-			 __func__, __LINE__, sensor->ignore_avail_mipi_reg.avail_mipi.raw10_avail);
-
-	sensor->ignore_avail_mipi_reg.avail_mipi.raw12_avail =
-		fwnode_property_present(dev_fwnode(&client->dev), "avt-ignore-raw12_avail") ? 1 : 0;
-	dev_info(dev, "%s[%d]: avt-ignore-raw12_avail          %d",
-			 __func__, __LINE__, sensor->ignore_avail_mipi_reg.avail_mipi.raw12_avail);
-
-	sensor->ignore_avail_mipi_reg.avail_mipi.raw14_avail =
-		fwnode_property_present(dev_fwnode(&client->dev), "avt-ignore-raw14_avail") ? 1 : 0;
-	dev_info(dev, "%s[%d]: avt-ignore-raw14_avail          %d",
-			 __func__, __LINE__, sensor->ignore_avail_mipi_reg.avail_mipi.raw14_avail);
-
-	dev_info(dev, "%s[%d]: sensor->ignore_avail_mipi_reg.avail_mipi 0x%08llx",
-			 __func__, __LINE__, sensor->ignore_avail_mipi_reg.value);
-
 	sensor->regmap = devm_regmap_init_i2c(client, &alvium_regmap_config);
 	if (IS_ERR(sensor->regmap))
 	{
@@ -5425,8 +5285,7 @@ static int avt3_probe(struct i2c_client *client)
 
 
 	ret = fwnode_property_read_u32(dev_fwnode(&client->dev),
-								   "bcrm_wait_timeout",
-								   &sensor->bcrm_handshake_timeout_ms);
+		"bcrm_wait_timeout", &sensor->bcrm_handshake_timeout_ms);
 
 	if (ret)
 	{
@@ -5443,45 +5302,9 @@ static int avt3_probe(struct i2c_client *client)
 		goto err_exit;
 	}
 
-	switch (sensor->v4l2_fwnode_ep.bus_type)
-	{
-	case V4L2_MBUS_CSI2_DPHY:
-		dev_info(dev, "%s[%d]: endpoint->bus_type V4L2_MBUS_CSI2_DPHY", __func__, __LINE__);
-		break;
-
-	case V4L2_MBUS_UNKNOWN:
-		dev_err(dev, "%s[%d]: endpoint->bus_type V4L2_MBUS_UNKNOWN", __func__, __LINE__);
-		ret = -EINVAL;
-		goto fwnode_cleanup;
-
-	case V4L2_MBUS_PARALLEL:
-		dev_err(dev, "%s[%d]: endpoint->bus_type V4L2_MBUS_PARALLEL", __func__, __LINE__);
-		ret = -EINVAL;
-		goto fwnode_cleanup;
-
-	case V4L2_MBUS_BT656:
-		dev_err(dev, "%s[%d]: endpoint->bus_type V4L2_MBUS_BT656", __func__, __LINE__);
-		ret = -EINVAL;
-		goto fwnode_cleanup;
-
-	case V4L2_MBUS_CSI1:
-		dev_err(dev, "%s[%d]: endpoint->bus_type V4L2_MBUS_CSI1", __func__, __LINE__);
-		ret = -EINVAL;
-		goto fwnode_cleanup;
-
-	case V4L2_MBUS_CCP2:
-		dev_err(dev, "%s[%d]: endpoint->bus_type V4L2_MBUS_CCP2", __func__, __LINE__);
-		ret = -EINVAL;
-		goto fwnode_cleanup;
-
-	case V4L2_MBUS_CSI2_CPHY:
-		dev_err(dev, "%s[%d]: endpoint->bus_type V4L2_MBUS_CSI2_CPHY", __func__, __LINE__);
-		ret = -EINVAL;
-		goto fwnode_cleanup;
-
-	default:
-		dev_err(dev, "%s[%d]: endpoint->bus_type unknown 0x%04X",
-				__func__, __LINE__, sensor->v4l2_fwnode_ep.bus_type);
+	if (sensor->v4l2_fwnode_ep.bus_type != V4L2_MBUS_CSI2_DPHY) {
+		dev_err(dev, "%s[%d]: invalid bus type %d specified\n",
+			__func__, __LINE__, sensor->v4l2_fwnode_ep.bus_type);
 		ret = -EINVAL;
 		goto fwnode_cleanup;
 	}

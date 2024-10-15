@@ -631,7 +631,6 @@ struct avt3_dev
 
 	union bcrm_feature_inquiry_reg feature_inquiry_reg;
 	union bcrm_avail_mipi_reg avail_mipi_reg;
-	union bcrm_avail_mipi_reg ignore_avail_mipi_reg;
 	union bcrm_bayer_inquiry_reg bayer_inquiry_reg;
 	union bcrm_supported_lanecount_reg lane_capabilities;
 
