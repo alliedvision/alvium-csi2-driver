@@ -5029,11 +5029,11 @@ static int avt_detect(struct i2c_client *client)
 	return 0;
 }
 
-static ssize_t avt_fw_transfer_read(struct file *filp, struct kobject *kobj,
+static ssize_t avt_i2c_xfer_read(struct file *filp, struct kobject *kobj,
 	struct bin_attribute *battr, char *buf, loff_t off, size_t len)
 {
 	struct avt_dev *camera = battr->private;
-	struct avt_fw_transfer *xfer = &camera->next_fw_rd_transfer;
+	struct avt_i2c_xfer *xfer = &camera->next_fw_rd_transfer;
 	int ret = -EINVAL; 
 
 	WARN_ON(off != 0);
@@ -5052,14 +5052,14 @@ static ssize_t avt_fw_transfer_read(struct file *filp, struct kobject *kobj,
 	return ret;
 }
 
-static ssize_t avt_fw_transfer_write(struct file *filp, struct kobject *kobj,
+static ssize_t avt_i2c_xfer_write(struct file *filp, struct kobject *kobj,
 	struct bin_attribute *battr, char *buf, loff_t off, size_t len)
 {
 	const struct {
-		struct avt_fw_transfer xfer;
+		struct avt_i2c_xfer xfer;
 		u8 buf[];
 	} __packed *payload;
-	const struct avt_fw_transfer *xfer;
+	const struct avt_i2c_xfer *xfer;
 	struct avt_dev *camera = battr->private;
 	ssize_t ret = -EINVAL;
 
@@ -5098,30 +5098,30 @@ out:
 	return ret;
 }
 
-static int avt_fw_transfer_init(struct avt_dev *camera) 
+static int avt_i2c_xfer_init(struct avt_dev *camera) 
 {
 	struct device *dev = &camera->i2c_client->dev;
-	struct bin_attribute *fw_transfer_attr;
+	struct bin_attribute *i2c_xfer_attr;
 	int ret;
 
-	fw_transfer_attr = devm_kzalloc(dev, sizeof(*fw_transfer_attr), GFP_KERNEL);
-	if (!fw_transfer_attr) 
+	i2c_xfer_attr = devm_kzalloc(dev, sizeof(*i2c_xfer_attr), GFP_KERNEL);
+	if (!i2c_xfer_attr) 
 		return -ENOMEM;
 
-	sysfs_bin_attr_init(fw_transfer_attr);
-	fw_transfer_attr->attr.name = "fw_transfer";
-	fw_transfer_attr->attr.mode = 0666; // Other read 
-	fw_transfer_attr->private = camera;
+	sysfs_bin_attr_init(i2c_xfer_attr);
+	i2c_xfer_attr->attr.name = "i2c_xfer";
+	i2c_xfer_attr->attr.mode = 0666; // Other read 
+	i2c_xfer_attr->private = camera;
 	// TODO: Change to dynamic size
-	fw_transfer_attr->size = sizeof(struct avt_fw_transfer) + 1024; 
-	fw_transfer_attr->read = avt_fw_transfer_read;
-	fw_transfer_attr->write = avt_fw_transfer_write;
+	i2c_xfer_attr->size = sizeof(struct avt_i2c_xfer) + 1024; 
+	i2c_xfer_attr->read = avt_i2c_xfer_read;
+	i2c_xfer_attr->write = avt_i2c_xfer_write;
 
-	ret = device_create_bin_file(dev, fw_transfer_attr);
+	ret = device_create_bin_file(dev, i2c_xfer_attr);
 	if (ret) {
-		devm_kfree(dev, fw_transfer_attr);
+		devm_kfree(dev, i2c_xfer_attr);
 	} else {
-		camera->fw_transfer_attr = fw_transfer_attr;
+		camera->i2c_xfer_attr = i2c_xfer_attr;
 	}
 	
 	return ret;
@@ -5529,7 +5529,7 @@ static int avt_probe(struct i2c_client *client)
 		goto sysfs_cleanup;
 	}
 
-	ret = avt_fw_transfer_init(sensor);
+	ret = avt_i2c_xfer_init(sensor);
 	if (ret) {
 		dev_err(dev, "Failed to create fw_transfer attribute!\n");
 		goto sysfs_cleanup;
@@ -5588,7 +5588,7 @@ static void avt_remove(struct i2c_client *client)
 	v4l2_fwnode_endpoint_free(&sensor->v4l2_fwnode_ep);
 	fwnode_handle_put(sensor->endpoint);
 
-	device_remove_bin_file(dev, sensor->fw_transfer_attr);
+	device_remove_bin_file(dev, sensor->i2c_xfer_attr);
 
 	device_remove_group(dev, &avt_attr_grp);
 	media_entity_cleanup(&get_sd(sensor)->entity);

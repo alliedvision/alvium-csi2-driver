@@ -667,9 +667,9 @@ struct avt_dev
 
 	atomic_t  bcrm_wrhs_enabled;
 
-	struct bin_attribute *fw_transfer_attr;
+	struct bin_attribute *i2c_xfer_attr;
 
-	struct avt_fw_transfer	next_fw_rd_transfer;
+	struct avt_i2c_xfer	next_fw_rd_transfer;
 
 	struct device_attribute	*mode_attr;
 };
