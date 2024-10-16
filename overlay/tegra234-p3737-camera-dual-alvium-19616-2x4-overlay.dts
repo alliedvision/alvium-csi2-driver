@@ -14,7 +14,7 @@
 #include "alvium-default-mode.h"
 
 / {
-	overlay-name = "Allied Vision Alvium Dual";
+	overlay-name = "DevKit Alvium Dual 19616 (2x4)";
 	jetson-header-name = "Jetson AGX CSI Connector";
 	compatible = "nvidia,p3737-0000+p3701-0000", "nvidia,p3737-0000+p3701-0004", "nvidia,p3737-0000+p3701-0005", "nvidia,p3737-0000+p3701-0008";
 

@@ -16,7 +16,7 @@
 #define CAM_I2C_MUX 	TEGRA234_AON_GPIO(CC, 3)
 
 / {
-	overlay-name = "Allied Vision Alvium Dual";
+	overlay-name = "DevKit Alvium Dual 19623 (1x2,1x4)";
 	jetson-header-name = "Jetson 24pin CSI Connector";
 	compatible = "nvidia,p3768-0000+p3767-0000", "nvidia,p3768-0000+p3767-0001", "nvidia,p3768-0000+p3767-0003", "nvidia,p3768-0000+p3767-0004", "nvidia,p3768-0000+p3767-0005";
 
