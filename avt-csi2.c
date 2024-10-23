@@ -23,16 +23,7 @@
  */
 
 #define ENABLE_STEPWISE_IMAGE_SIZE
-#define AUTO_ACQUISITION_FRAME_RATE
-#define xI2C_READ_COMPATIBLE_MODE
-#define xMUTEX_DEBUG_MODE
-
-#define avt_DEFAULT_FPS avt_10_FPS
-#define avt_DEFAULT_MODE avt_MODE_NTSC_720_480
-
-#define avt_DEFAULT_EXPOSURETIME 25000000
-#define avt_DEFAULT_GAIN 1000
-#define avt_MAX_FORMAT_ENTRIES 40
+#define AVT_MAX_FORMAT_ENTRIES 40
 
 #include <asm/unaligned.h>
 #include <linux/kernel.h>
@@ -115,66 +106,6 @@ struct avt_val64
 		__u64 u64;
 	};
 } __attribute__((packed));
-
-#ifdef MUTEX_DEBUG_MODE
-#define MUTEX_LOCK(a)                                  \
-	{                                                  \
-		printk("l+ %s[%d]\n", __func__, __LINE__);     \
-		if (!(a))                                      \
-		{                                              \
-			printk("%s[%d]: MUTEX_LOCK(NULL)!!!\n",    \
-				   __func__, __LINE__);                \
-			dump_stack();                              \
-		}                                              \
-		else                                           \
-		{                                              \
-			mutex_lock((a));                           \
-			printk("l- %s[%d]\n", __func__, __LINE__); \
-		}                                              \
-	}
-
-#define MUTEX_UNLOCK(a)                                \
-	{                                                  \
-		printk("u+ %s[%d]\n", __func__, __LINE__);     \
-		if (!(a))                                      \
-		{                                              \
-			printk("%s[%d]: MUTEX_UNLOCK(NULL)!!!\n",  \
-				   __func__, __LINE__);                \
-		}                                              \
-		else                                           \
-		{                                              \
-			mutex_unlock((a));                         \
-			printk("u- %s[%d]\n", __func__, __LINE__); \
-		}                                              \
-	}
-#else
-#define MUTEX_LOCK(a)                               \
-	{                                               \
-		if (!(a))                                   \
-		{                                           \
-			printk("%s[%d]: MUTEX_LOCK(NULL)!!!\n", \
-				   __func__, __LINE__);             \
-			dump_stack();                           \
-		}                                           \
-		else                                        \
-		{                                           \
-			mutex_lock((a));                        \
-		}                                           \
-	}
-
-#define MUTEX_UNLOCK(a)                               \
-	{                                                 \
-		if (!(a))                                     \
-		{                                             \
-			printk("%s[%d]: MUTEX_UNLOCK(NULL)!!!\n", \
-				   __func__, __LINE__);               \
-		}                                             \
-		else                                          \
-		{                                             \
-			mutex_unlock((a));                        \
-		}                                             \
-	}
-#endif
 
 #define BCRM_WAIT_HANDSHAKE_TIMEOUT_MS 3000000
 
@@ -779,7 +710,7 @@ static int read_cci_registers(struct i2c_client *client)
 		return -EINVAL;
 	}
 
-	MUTEX_LOCK(&sensor->lock);
+	mutex_lock(&sensor->lock);
 
 	/*
 	 * ToDO: Check against latest spec!!
@@ -865,7 +796,7 @@ static int read_cci_registers(struct i2c_client *client)
 	ret = 0;
 err_out:
 
-	MUTEX_UNLOCK(&sensor->lock);
+	mutex_unlock(&sensor->lock);
 
 	return ret;
 }
@@ -884,7 +815,7 @@ static int read_gencp_registers(struct i2c_client *client)
 
 	char *i2c_reg_buf;
 
-	MUTEX_LOCK(&sensor->lock);
+	mutex_lock(&sensor->lock);
 	avt_dbg(get_sd(sensor), "+");
 
 	i2c_reg = sensor->cci_reg.reg.gcprm_address + 0x0000;
@@ -934,7 +865,7 @@ static int read_gencp_registers(struct i2c_client *client)
 			sensor->gencp_reg.gencp_in_buffer_size);
 
 err_out:
-	MUTEX_UNLOCK(&sensor->lock);
+	mutex_unlock(&sensor->lock);
 
 	return ret;
 }
@@ -945,7 +876,7 @@ static int cci_version_check(struct i2c_client *client)
 	uint32_t cci_minver, cci_majver;
 	int ret = 0;
 
-	MUTEX_LOCK(&sensor->lock);
+	mutex_lock(&sensor->lock);
 
 	cci_minver = (sensor->cci_reg.reg.layout_version & CCI_REG_LAYOUT_MINVER_MASK) >> CCI_REG_LAYOUT_MINVER_SHIFT;
 
@@ -978,7 +909,7 @@ static int cci_version_check(struct i2c_client *client)
 	}
 
 err_out:
-	MUTEX_UNLOCK(&sensor->lock);
+	mutex_unlock(&sensor->lock);
 
 	return ret;
 }
@@ -989,7 +920,7 @@ static int bcrm_version_check(struct i2c_client *client)
 	u32 value = 0;
 	int ret;
 
-	MUTEX_LOCK(&sensor->lock);
+	mutex_lock(&sensor->lock);
 	/* reading the BCRM version */
 	ret = bcrm_read32(sensor,BCRM_VERSION_32R,&value);
 
@@ -1012,7 +943,7 @@ static int bcrm_version_check(struct i2c_client *client)
 	ret = (value >> 16) == BCRM_MAJOR_VERSION ? 1 : 0;
 
 err_out:
-	MUTEX_UNLOCK(&sensor->lock);
+	mutex_unlock(&sensor->lock);
 
 	return ret;
 }
@@ -1022,7 +953,7 @@ static int gcprm_version_check(struct i2c_client *client)
 	struct avt_dev *sensor = client_to_avt_dev(client);
 	u32 value = sensor->gencp_reg.gcprm_layout_version;
 
-	MUTEX_LOCK(&sensor->lock);
+	mutex_lock(&sensor->lock);
 	avt_dbg(get_sd(sensor), "gcprm version (driver): 0x%x (maj: 0x%x min: 0x%x)\n",
 			GCPRM_DEVICE_VERSION,
 			GCPRM_MAJOR_VERSION,
@@ -1032,7 +963,7 @@ static int gcprm_version_check(struct i2c_client *client)
 			value,
 			(value & 0xffff0000) >> 16,
 			(value & 0x0000ffff));
-	MUTEX_UNLOCK(&sensor->lock);
+	mutex_unlock(&sensor->lock);
 
 	return (value & 0xffff0000) >> 16 == GCPRM_MAJOR_VERSION ? 1 : 0;
 }
@@ -1045,12 +976,12 @@ static ssize_t availability_show(struct device *dev,
 	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 	ssize_t ret;
 
-	MUTEX_LOCK(&sensor->lock);
+	mutex_lock(&sensor->lock);
 
 	dev_info(dev, "%s[%d]: %s", __func__, __LINE__, __FILE__);
 	ret = sprintf(buf, "%d\n", sensor->open_refcnt == 0 ? 1 : 0);
 
-	MUTEX_UNLOCK(&sensor->lock);
+	mutex_unlock(&sensor->lock);
 
 	return ret;
 }
@@ -1061,9 +992,9 @@ static ssize_t cci_register_layout_version_show(struct device *dev,
 	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 	ssize_t ret;
 
-	MUTEX_LOCK(&sensor->lock);
+	mutex_lock(&sensor->lock);
 	ret = sprintf(buf, "%d\n", sensor->cci_reg.reg.layout_version);
-	MUTEX_UNLOCK(&sensor->lock);
+	mutex_unlock(&sensor->lock);
 
 	return ret;
 }
@@ -1173,9 +1104,9 @@ static ssize_t bcrm_mipi_formats_show(struct device *dev,
 	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 	ssize_t ret;
 
-	MUTEX_LOCK(&sensor->lock);
+	mutex_lock(&sensor->lock);
 	ret = sprintf(buf, "0x%016llX\n", sensor->avail_mipi_reg.value);
-	MUTEX_UNLOCK(&sensor->lock);
+	mutex_unlock(&sensor->lock);
 
 	return ret;
 }
@@ -1239,7 +1170,7 @@ static ssize_t device_capabilities_text_show(struct device *dev,
 	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 	ssize_t ret;
 
-	MUTEX_LOCK(&sensor->lock);
+	mutex_lock(&sensor->lock);
 
 	ret = sprintf(buf, "user_name        %d\n"
 					   "bcrm             %d\n"
@@ -1254,7 +1185,7 @@ static ssize_t device_capabilities_text_show(struct device *dev,
 																																																 : "unknown string encoding",
 				  sensor->cci_reg.reg.device_capabilities.caps.family_name);
 
-	MUTEX_UNLOCK(&sensor->lock);
+	mutex_unlock(&sensor->lock);
 
 	return ret;
 }
@@ -1388,17 +1319,17 @@ static ssize_t debug_en_store(struct device *dev,
 	ssize_t ret;
 
 	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
-	MUTEX_LOCK(&sensor->lock);
+	mutex_lock(&sensor->lock);
 
 	ret = kstrtoint(buf, 10, &debug);
 	if (ret < 0)
 	{
 
-		MUTEX_UNLOCK(&sensor->lock);
+		mutex_unlock(&sensor->lock);
 		return ret;
 	}
 
-	MUTEX_UNLOCK(&sensor->lock);
+	mutex_unlock(&sensor->lock);
 
 	return count;
 }
@@ -1424,7 +1355,7 @@ static ssize_t mipiclk_store(struct device *dev,
 
 	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 	struct i2c_client *client = to_i2c_client(dev);
-	MUTEX_LOCK(&sensor->lock);
+	mutex_lock(&sensor->lock);
 
 	ret = kstrtouint(buf, 10, &avt_next_clk);
 	if (ret < 0)
@@ -1461,7 +1392,7 @@ static ssize_t mipiclk_store(struct device *dev,
 	}
 
 out:
-	MUTEX_UNLOCK(&sensor->lock);
+	mutex_unlock(&sensor->lock);
 
 	return count;
 }
@@ -1473,13 +1404,13 @@ static ssize_t device_temperature_show(struct device *dev,
 	int device_temperature;
 
 	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
-	MUTEX_LOCK(&sensor->lock);
+	mutex_lock(&sensor->lock);
 
 	ret = bcrm_read32(sensor, BCRM_DEVICE_TEMPERATURE_32R, &device_temperature);
 
 	ret = sprintf(buf, "%d.%d\n", device_temperature / 10, device_temperature % 10);
 
-	MUTEX_UNLOCK(&sensor->lock);
+	mutex_unlock(&sensor->lock);
 	return ret;
 }
 
@@ -1523,11 +1454,11 @@ static ssize_t dphyreset_show(struct device *dev,
 	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 	ssize_t ret;
 
-	MUTEX_LOCK(&sensor->lock);
+	mutex_lock(&sensor->lock);
 
 	ret = sprintf(buf, "%d\n", sensor->pending_dphyreset_request);
 
-	MUTEX_UNLOCK(&sensor->lock);
+	mutex_unlock(&sensor->lock);
 
 	return ret;
 }
@@ -1538,11 +1469,11 @@ static ssize_t dphyreset_store(struct device *dev,
 	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 	ssize_t ret;
 
-	MUTEX_LOCK(&sensor->lock);
+	mutex_lock(&sensor->lock);
 	ret = kstrtoint(buf, 10, &sensor->pending_dphyreset_request);
 	if (ret < 0)
 	{
-		MUTEX_UNLOCK(&sensor->lock);
+		mutex_unlock(&sensor->lock);
 		return ret;
 	}
 
@@ -1551,7 +1482,7 @@ static ssize_t dphyreset_store(struct device *dev,
 		avt_dphy_reset(sensor, true);
 		avt_dphy_reset(sensor, false);
 	}
-	MUTEX_UNLOCK(&sensor->lock);
+	mutex_unlock(&sensor->lock);
 	return count;
 }
 
@@ -1561,13 +1492,13 @@ static ssize_t streamon_delay_show(struct device *dev,
 	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 	ssize_t ret;
 
-	MUTEX_LOCK(&sensor->lock);
+	mutex_lock(&sensor->lock);
 
 	ret = bcrm_read32(sensor, BCRM_STREAM_ON_DELAY_32RW, &sensor->streamon_delay);
 
 	ret = sprintf(buf, "%u\n", sensor->streamon_delay);
 
-	MUTEX_UNLOCK(&sensor->lock);
+	mutex_unlock(&sensor->lock);
 
 	return ret;
 }
@@ -1578,18 +1509,18 @@ static ssize_t streamon_delay_store(struct device *dev,
 	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 	ssize_t ret;
 
-	MUTEX_LOCK(&sensor->lock);
+	mutex_lock(&sensor->lock);
 	ret = kstrtoint(buf, 10, &sensor->streamon_delay);
 	if (ret < 0)
 	{
-		MUTEX_UNLOCK(&sensor->lock);
+		mutex_unlock(&sensor->lock);
 		return ret;
 	}
 
 	ret = bcrm_write64(sensor, BCRM_STREAM_ON_DELAY_32RW, sensor->streamon_delay);
 
 	
-	MUTEX_UNLOCK(&sensor->lock);
+	mutex_unlock(&sensor->lock);
 	return count;
 }
 
@@ -1600,11 +1531,11 @@ static ssize_t hardreset_show(struct device *dev,
 	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 	ssize_t ret;
 
-	MUTEX_LOCK(&sensor->lock);
+	mutex_lock(&sensor->lock);
 
 	ret = sprintf(buf, "%d\n", sensor->pending_softreset_request);
 
-	MUTEX_UNLOCK(&sensor->lock);
+	mutex_unlock(&sensor->lock);
 
 	return ret;
 }
@@ -1716,7 +1647,7 @@ static int avt_get_fmt_available(struct i2c_client *client)
 	int ret;
 	u64 avail_mipi = 0;
 	
-	MUTEX_LOCK(&sensor->lock);
+	mutex_lock(&sensor->lock);
 
 	ret = bcrm_read64(sensor, BCRM_IMG_AVAILABLE_MIPI_DATA_FORMATS_64R, &avail_mipi);
 
@@ -1748,7 +1679,7 @@ out:
 			sensor->avail_mipi_reg.value,
 			sensor->bayer_inquiry_reg.value, ret);
 
-	MUTEX_UNLOCK(&sensor->lock);
+	mutex_unlock(&sensor->lock);
 	return ret;
 }
 
@@ -1858,7 +1789,7 @@ static int avt_init_avail_formats(struct v4l2_subdev *sd)
 			sensor->avail_mipi_reg.avail_mipi.raw14_avail,
 			sensor->avail_mipi_reg.avail_mipi.jpeg_avail);
 
-	sensor->available_fmts = kmalloc(sizeof(sensor->available_fmts[0]) * avt_MAX_FORMAT_ENTRIES, GFP_KERNEL);
+	sensor->available_fmts = kmalloc(sizeof(sensor->available_fmts[0]) * AVT_MAX_FORMAT_ENTRIES, GFP_KERNEL);
 
 	if (!sensor->available_fmts)
 	{
@@ -2134,7 +2065,7 @@ static int avt_reset(struct avt_dev *sensor, enum avt_reset_type reset_type)
 	dev_info(&client->dev, "%s[%d]",
 			 __func__, __LINE__);
 
-	MUTEX_LOCK(&sensor->lock);
+	mutex_lock(&sensor->lock);
 
 	heartbeat = heartbeat_supported(sensor);
 	if(heartbeat < 0) {
@@ -2173,7 +2104,7 @@ static int avt_reset(struct avt_dev *sensor, enum avt_reset_type reset_type)
 	}
 
 out:
-	MUTEX_UNLOCK(&sensor->lock);
+	mutex_unlock(&sensor->lock);
 	return ret;
 }
 
@@ -2205,7 +2136,7 @@ static int avt_core_ops_s_power(struct v4l2_subdev *sd, int on)
 	struct avt_dev *sensor = to_avt_dev(sd);
 	int ret = 0;
 
-	MUTEX_LOCK(&sensor->lock);
+	mutex_lock(&sensor->lock);
 
 	dev_info(&sensor->i2c_client->dev, "%s[%d]+: on %d, sensor->power_count %d",
 			 __func__, __LINE__, on, sensor->power_count);
@@ -2219,7 +2150,7 @@ static int avt_core_ops_s_power(struct v4l2_subdev *sd, int on)
 	WARN_ON(sensor->power_count < 0);
 	WARN_ON(sensor->power_count > 1);
 
-	MUTEX_UNLOCK(&sensor->lock);
+	mutex_unlock(&sensor->lock);
 
 	return ret;
 }
@@ -2244,7 +2175,7 @@ static int avt_pad_ops_get_fmt(struct v4l2_subdev *sd,
 		return -EINVAL;
 	}
 
-	MUTEX_LOCK(&sensor->lock);
+	mutex_lock(&sensor->lock);
 
 	if (format->which == V4L2_SUBDEV_FORMAT_TRY)
 	{
@@ -2265,7 +2196,7 @@ static int avt_pad_ops_get_fmt(struct v4l2_subdev *sd,
 
 	format->format = *fmt;
 
-	MUTEX_UNLOCK(&sensor->lock);
+	mutex_unlock(&sensor->lock);
 
 	return 0;
 }
@@ -2617,7 +2548,7 @@ static int avt_pad_ops_set_fmt(struct v4l2_subdev *sd,
 	if (format->pad != 0)
 		return -EINVAL;
 
-	MUTEX_LOCK(&sensor->lock);
+	mutex_lock(&sensor->lock);
 	if (sensor->is_streaming) {
 		ret = -EBUSY;
 		goto out;
@@ -2632,7 +2563,7 @@ static int avt_pad_ops_set_fmt(struct v4l2_subdev *sd,
 	}
 
 out:
-	MUTEX_UNLOCK(&sensor->lock);
+	mutex_unlock(&sensor->lock);
 
 	return ret;
 }
@@ -3623,7 +3554,7 @@ static int avt_video_ops_s_frame_interval(struct v4l2_subdev *sd,
 	avt_dbg(sd, "fie->num %d fie->denom %d",
 			fi->interval.numerator, fi->interval.denominator);
 
-	MUTEX_LOCK(&camera->lock);
+	mutex_lock(&camera->lock);
 	if (camera->is_streaming)
 	{
 		ret = -EBUSY;
@@ -3672,7 +3603,7 @@ static int avt_video_ops_s_frame_interval(struct v4l2_subdev *sd,
 			fi->interval.numerator, fi->interval.denominator);
 
 out:
-	MUTEX_UNLOCK(&camera->lock);
+	mutex_unlock(&camera->lock);
 
 	avt_dbg(get_sd(camera), "- fie->num %d fie->denom %d --> idx",
 			fi->interval.numerator, fi->interval.denominator);
@@ -3798,7 +3729,7 @@ static int avt_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 	if (sensor->mode == AVT_GENCP_MODE)
 		return 0;
 
-	MUTEX_LOCK(&sensor->lock);
+	mutex_lock(&sensor->lock);
 
 	if (!enable && sensor->is_streaming)
 	{
@@ -3827,14 +3758,6 @@ static int avt_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 
 		dev_info(&sensor->i2c_client->dev,"Selected crop (%u,%u) %ux%u\n",crop_rect.left,crop_rect.top,crop_rect.width,crop_rect.height);
 
-		dev_err(&client->dev, "%s[%d]: active area +%d:+%d %d x %d (max %d x %d, min %d x %d), code 0x%04X, HFLIP_W %d, VFLIP_W %d",
-				__func__, __LINE__,
-				crop_rect.left, crop_rect.top,
-				crop_rect.width, crop_rect.height,
-				sensor->max_rect.width, sensor->max_rect.height,
-				sensor->min_rect.width, sensor->min_rect.height,
-				sensor->mbus_framefmt.code,
-				sensor->hflip, sensor->vflip);
 
 		ret = bcrm_write8(sensor, BCRM_BINNING_SETTING_8RW, binning_info->sel);
 		
@@ -3873,7 +3796,7 @@ static int avt_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 	avt_controls_stream_grab(sensor,enable);
 
 out:
-	MUTEX_UNLOCK(&sensor->lock);
+	mutex_unlock(&sensor->lock);
 
 	return ret;
 }
@@ -4271,14 +4194,14 @@ int avt_pad_ops_set_selection(struct v4l2_subdev *sd,
 	if (sensor->mbus_framefmt.code == MEDIA_BUS_FMT_CUSTOM)
 		return -EINVAL;
 
-	MUTEX_LOCK(&sensor->lock)
+	mutex_lock(&sensor->lock);
 
 	if (sel->target == V4L2_SEL_TGT_CROP)
 		ret = avt_set_crop(sensor,sd_state, sel);
 	else if (sel->target == V4L2_SEL_TGT_COMPOSE)
 		ret = avt_set_compose(sensor,sd_state,sel);
 
-	MUTEX_UNLOCK(&sensor->lock);
+	mutex_unlock(&sensor->lock);
 
 	return ret;
 }
@@ -5208,6 +5131,7 @@ static int avt_probe(struct i2c_client *client)
 	struct avt_dev *sensor;
 	struct v4l2_mbus_framefmt *fmt;
 	struct fwnode_handle *fwnode = dev_fwnode(dev);
+	struct v4l2_subdev *sd;
 	int ret;
 
 	dev_info(&client->dev, "%s[%d]: %s",
@@ -5225,10 +5149,11 @@ static int avt_probe(struct i2c_client *client)
 	{
 		return -ENOMEM;
 	}
-
+	
 	sensor->i2c_client = client;
-
 	sensor->streamon_delay = 0;
+
+	sd = get_sd(sensor);
 
 	ret = fwnode_property_read_u32(fwnode,"streamon_delay",
 				       &sensor->streamon_delay);
@@ -5352,14 +5277,14 @@ static int avt_probe(struct i2c_client *client)
 #endif 
 
 	/* now create the subdevice on i2c*/
-	v4l2_i2c_subdev_init(get_sd(sensor), client, &avt_subdev_ops);
-	get_sd(sensor)->dev = &client->dev;
-	get_sd(sensor)->internal_ops = &avt_subdev_internal_ops;
-	get_sd(sensor)->flags |= V4L2_SUBDEV_FL_HAS_EVENTS | V4L2_SUBDEV_FL_HAS_DEVNODE;
+	v4l2_i2c_subdev_init(sd, client, &avt_subdev_ops);
+	sd->dev = &client->dev;
+	sd->internal_ops = &avt_subdev_internal_ops;
+	sd->flags |= V4L2_SUBDEV_FL_HAS_EVENTS | V4L2_SUBDEV_FL_HAS_DEVNODE;
 	sensor->pad.flags = MEDIA_PAD_FL_SOURCE;
-	get_sd(sensor)->entity.ops = &avt_sd_media_ops;
-	get_sd(sensor)->entity.function = MEDIA_ENT_F_CAM_SENSOR;
-	ret = media_entity_pads_init(&get_sd(sensor)->entity, 1, &sensor->pad);
+	sd->entity.ops = &avt_sd_media_ops;
+	sd->entity.function = MEDIA_ENT_F_CAM_SENSOR;
+	ret = media_entity_pads_init(&sd->entity, 1, &sensor->pad);
 	if (ret < 0)
 		goto fwnode_cleanup;
 
@@ -5368,12 +5293,12 @@ static int avt_probe(struct i2c_client *client)
 	{
 		enum avt_reset_type const reset_type = sensor->force_reset_on_init ? RESET_TYPE_HARD : RESET_TYPE_SOFT;
 		if(reset_type == RESET_TYPE_HARD) {
-			avt_info(get_sd(sensor), "Hard reset requested by device tree");
+			avt_info(sd, "Hard reset requested by device tree");
 		}
 
 		ret = avt_reset(sensor, reset_type);
 		if(ret < 0) {
-			avt_err(get_sd(sensor), "Camera reset failed");
+			avt_err(sd, "Camera reset failed");
 			goto fwnode_cleanup;
 		}
 	}
@@ -5446,7 +5371,7 @@ static int avt_probe(struct i2c_client *client)
 
 	init_completion(&sensor->bcrm_wrhs_completion);
 
-	sensor->bcrm_wrhs_queue = create_singlethread_workqueue(get_sd(sensor)->name);
+	sensor->bcrm_wrhs_queue = create_singlethread_workqueue(sd->name);
 	if (!sensor->bcrm_wrhs_queue)
 	{
 		dev_err(&client->dev, "%s[%d]: Could not create work queue\n", __func__, __LINE__);
@@ -5462,7 +5387,7 @@ static int avt_probe(struct i2c_client *client)
 	CLEAR(sensor->min_rect);
 	CLEAR(sensor->curr_rect);
 
-	ret = avt_get_sensor_capabilities(get_sd(sensor));
+	ret = avt_get_sensor_capabilities(sd);
 	if (ret)
 		goto entity_cleanup;
 
@@ -5472,7 +5397,7 @@ static int avt_probe(struct i2c_client *client)
 
 	ret = avt_get_fmt_available(client);
 
-	ret = avt_init_avail_formats(get_sd(sensor));
+	ret = avt_init_avail_formats(sd);
 	if (ret < 0)
 	{
 		dev_err(dev, "%s[%d]: avt_init_avail_formats failed with %d\n",
@@ -5480,11 +5405,7 @@ static int avt_probe(struct i2c_client *client)
 		goto entity_cleanup;
 	}
 
-	get_sd(sensor)->ctrl_handler = &sensor->v4l2_ctrl_hdl;
-	sensor->framerate_auto = true;
-	sensor->gain = avt_DEFAULT_GAIN;
-	sensor->exposure_time = avt_DEFAULT_EXPOSURETIME;
-	sensor->exposure_mode = EMODE_MANUAL;
+	sd->ctrl_handler = &sensor->v4l2_ctrl_hdl;
 
 	fmt = &sensor->mbus_framefmt;
 
@@ -5506,14 +5427,14 @@ static int avt_probe(struct i2c_client *client)
 		goto entity_cleanup;
 	}
 
-	ret = v4l2_async_register_subdev(get_sd(sensor));
+	ret = v4l2_async_register_subdev(sd);
 
 	if (ret)
 	{
 		dev_err(dev, "%s[%d]: v4l2_async_register_subdev_sensor_common failed with (%d)\n", __func__, __LINE__, ret);
 		goto free_ctrls;
 	}
-	dev_info(&client->dev, "sensor %s registered\n", get_sd(sensor)->name);
+	dev_info(&client->dev, "sensor %s registered\n", sd->name);
 
 	ret = device_add_group(dev, &avt_attr_grp);
 	dev_info(dev, " -> %s[%d]: sysfs group created! (%d)\n", __func__, __LINE__, ret);
@@ -5555,7 +5476,7 @@ free_ctrls:
 	v4l2_ctrl_handler_free(&sensor->v4l2_ctrl_hdl);
 
 entity_cleanup:
-	media_entity_cleanup(&get_sd(sensor)->entity);
+	media_entity_cleanup(&sd->entity);
 
 fwnode_cleanup:
 	if (sensor->bcrm_wrhs_queue)
@@ -5591,7 +5512,7 @@ static void avt_remove(struct i2c_client *client)
 	device_remove_bin_file(dev, sensor->i2c_xfer_attr);
 
 	device_remove_group(dev, &avt_attr_grp);
-	media_entity_cleanup(&get_sd(sensor)->entity);
+	media_entity_cleanup(&sd->entity);
 
 	v4l2_ctrl_handler_free(&sensor->v4l2_ctrl_hdl);
 
@@ -5610,7 +5531,7 @@ static void avt_remove(struct i2c_client *client)
 
 	mutex_destroy(&sensor->lock);
 
-	v4l2_async_unregister_subdev(get_sd(sensor));
+	v4l2_async_unregister_subdev(sd);
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
 	return 0;
 #endif

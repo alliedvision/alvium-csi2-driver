@@ -615,12 +615,6 @@ struct avt_dev
 	int pending_softreset_request;
 	int pending_dphyreset_request;
 
-	bool hflip;
-	bool vflip;
-	uint64_t gain;
-	uint64_t exposure_time;
-	int exposure_mode;
-
 	uint32_t avt_min_clk;
 	uint32_t avt_max_clk;
 
