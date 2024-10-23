@@ -1,9 +1,17 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+/* 
+ * Allied Vision Alvium camera driver
+ * 
+ * Copyright (C) 2022 - 2024 Allied Vision Technologies GmbH
+ */
+
 #ifndef __AVT_CSI2_H__
 #define __AVT_CSI2_H__
 
+#include <linux/avt-csi2.h>
+
 #include "avt-csi2-version.h"
 #include "avt-csi2-regs.h"
-#include "libcsi_ioctl.h"
 
 #define USEMUTEX
 
@@ -111,42 +119,6 @@ struct avt_ctrl_mapping {
 #define AV_ATTR_CAMERA_NAME		{"Camera name",			-1}
 #define AV_ATTR_SERIAL_NUMBER		{"Serial Number",		-1}
 
-#define V4L2_CID_EXPOSURE_AUTO_MIN              (V4L2_CID_CAMERA_CLASS_BASE+40)
-#define V4L2_CID_EXPOSURE_AUTO_MAX              (V4L2_CID_CAMERA_CLASS_BASE+41)
-#define V4L2_CID_GAIN_AUTO_MIN                  (V4L2_CID_CAMERA_CLASS_BASE+42)
-#define V4L2_CID_GAIN_AUTO_MAX                  (V4L2_CID_CAMERA_CLASS_BASE+43)
-#define V4L2_CID_EXPOSURE_ACTIVE_LINE_MODE      (V4L2_CID_CAMERA_CLASS_BASE+44)
-#define V4L2_CID_EXPOSURE_ACTIVE_LINE_SELECTOR  (V4L2_CID_CAMERA_CLASS_BASE+45)
-#define V4L2_CID_EXPOSURE_ACTIVE_INVERT         (V4L2_CID_CAMERA_CLASS_BASE+46)
-
-/* Trigger mode to ON/OFF */
-#define V4L2_CID_TRIGGER_MODE		(V4L2_CID_CAMERA_CLASS_BASE+47)
-
-/* trigger activation: edge_rising, edge_falling, edge_any, level_high, level_low */
-#define V4L2_CID_TRIGGER_ACTIVATION	(V4L2_CID_CAMERA_CLASS_BASE+48)
-
-/* trigger source: software, gpio0, gpio1 */
-#define V4L2_CID_TRIGGER_SOURCE		(V4L2_CID_CAMERA_CLASS_BASE+49)
-
-/* Execute a software trigger */
-#define V4L2_CID_TRIGGER_SOFTWARE	(V4L2_CID_CAMERA_CLASS_BASE+50)
-
-/* Camera temperature readout */
-#define V4L2_CID_DEVICE_TEMPERATURE	(V4L2_CID_CAMERA_CLASS_BASE+51)
-
-/* Binning mode: avg, sum */
-#define V4L2_CID_BINNING_MODE		(V4L2_CID_CAMERA_CLASS_BASE+52)
-
-/* Binning mode: avg, sum */
-#define V4L2_CID_BINNING_SETTING	(V4L2_CID_CAMERA_CLASS_BASE+53)
-
-#define AVT_CID_FIRMWARE_VERSION 	(V4L2_CID_CAMERA_CLASS_BASE+54)
-#define AVT_CID_CAMERA_NAME 		(V4L2_CID_CAMERA_CLASS_BASE+55)
-#define AVT_CID_SERIAL_NUMBER 		(V4L2_CID_CAMERA_CLASS_BASE+56)
-
-#define AVT_CID_ACQUISITION_STATUS 	(V4L2_CID_CAMERA_CLASS_BASE+57)
-
-#define AVT_CID_BINNING_SELECTOR 	(V4L2_CID_CAMERA_CLASS_BASE+58)
 
 
 static const char * const v4l2_triggeractivation_menu[] = {
@@ -374,7 +346,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.flags 			= 0,
 	},
 	{
-		.id 			= V4L2_CID_TRIGGER_MODE,
+		.id 			= AVT_CID_TRIGGER_MODE,
 		.attr 			= AV_ATTR_TRIGGER_MODE,
 		.reg_offset 		= BCRM_FRAME_START_TRIGGER_MODE_8RW,
 		.reg_size 		= AV_CAM_REG_SIZE,
@@ -385,7 +357,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.avt_flags 		= AVT_CTRL_FLAG_STREAM_DISABLED,
 	},
 	{
-		.id 			= V4L2_CID_TRIGGER_ACTIVATION,
+		.id 			= AVT_CID_TRIGGER_ACTIVATION,
 		.attr 			= AV_ATTR_TRIGGER_ACTIVATION,
 		.reg_offset 		= BCRM_FRAME_START_TRIGGER_ACTIVATION_8RW,
 		.reg_size 		= AV_CAM_REG_SIZE,
@@ -399,7 +371,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.avt_flags 		= AVT_CTRL_FLAG_STREAM_DISABLED,
 	},
 	{
-		.id 			= V4L2_CID_TRIGGER_SOURCE,
+		.id 			= AVT_CID_TRIGGER_SOURCE,
 		.attr 			= AV_ATTR_TRIGGER_SOURCE,
 		.reg_offset 		= BCRM_FRAME_START_TRIGGER_SOURCE_8RW,
 		.reg_size 		= AV_CAM_REG_SIZE,
@@ -413,7 +385,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.avt_flags 		= AVT_CTRL_FLAG_STREAM_DISABLED,
 	},
 	{
-		.id 			= V4L2_CID_TRIGGER_SOFTWARE,
+		.id 			= AVT_CID_TRIGGER_SOFTWARE,
 		.attr 			= AV_ATTR_TRIGGER_SOFTWARE,
 		.reg_offset 		= BCRM_FRAME_START_TRIGGER_SOFTWARE_8W,
 		.reg_size 		= AV_CAM_REG_SIZE,
@@ -423,7 +395,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.custom 		= true,
 	},
 	{
-		.id 			= V4L2_CID_BINNING_MODE,
+		.id 			= AVT_CID_BINNING_MODE,
 		.attr			= AV_ATTR_BINNING_MODE,
 		.reg_offset		= BCRM_BINNING_MODE_8RW,
 		.reg_size		= AV_CAM_REG_SIZE,
@@ -437,7 +409,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.avt_flags		= AVT_CTRL_FLAG_STREAM_DISABLED,
 	},
 	{
-		.id 			= V4L2_CID_BINNING_SETTING,
+		.id 			= AVT_CID_BINNING_SETTING,
 		.attr			= AV_ATTR_BINNING_SETTING,
 		.type			= V4L2_CTRL_TYPE_AREA,
 		.flags			= V4L2_CTRL_FLAG_VOLATILE,
@@ -484,7 +456,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 					| V4L2_CTRL_FLAG_READ_ONLY,
 	},
 	{
-		.id			= V4L2_CID_EXPOSURE_AUTO_MIN,
+		.id			= AVT_CID_EXPOSURE_AUTO_MIN,
 		.attr			= AV_ATTR_EXPOSURE_AUTO_MIN,
 		.min_offset		= BCRM_EXPOSURE_TIME_MIN_64R,
 		.max_offset		= BCRM_EXPOSURE_AUTO_MAX_64RW,
@@ -497,7 +469,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.avt_flags 		= AVT_CTRL_FLAG_READ_BACK,
 	},
 	{
-		.id			= V4L2_CID_EXPOSURE_AUTO_MAX,
+		.id			= AVT_CID_EXPOSURE_AUTO_MAX,
 		.attr			= AV_ATTR_EXPOSURE_AUTO_MAX,
 		.min_offset		= BCRM_EXPOSURE_AUTO_MIN_64RW,
 		.max_offset		= BCRM_EXPOSURE_TIME_MAX_64R,
@@ -510,7 +482,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.avt_flags 		= AVT_CTRL_FLAG_READ_BACK,
 	},
 	{
-		.id			= V4L2_CID_GAIN_AUTO_MIN,
+		.id			= AVT_CID_GAIN_AUTO_MIN,
 		.attr			= AV_ATTR_GAIN_AUTO_MIN,
 		.min_offset		= BCRM_GAIN_MIN_64R,
 		.max_offset		= BCRM_GAIN_AUTO_MAX_64RW,
@@ -523,7 +495,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.avt_flags 		= AVT_CTRL_FLAG_READ_BACK,
 	},
 	{
-		.id			= V4L2_CID_GAIN_AUTO_MAX,
+		.id			= AVT_CID_GAIN_AUTO_MAX,
 		.attr			= AV_ATTR_GAIN_AUTO_MAX,
 		.min_offset		= BCRM_GAIN_AUTO_MIN_64RW,
 		.max_offset		= BCRM_GAIN_MAX_64R,
@@ -536,7 +508,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.avt_flags 		= AVT_CTRL_FLAG_READ_BACK,
 	},
 	{
-		.id			= V4L2_CID_DEVICE_TEMPERATURE,
+		.id			= AVT_CID_DEVICE_TEMPERATURE,
 		.attr			= { "Device Temperature", 14 },
 		.reg_offset		= BCRM_DEVICE_TEMPERATURE_32R,
 		.reg_size		= AV_CAM_REG_SIZE,
@@ -549,7 +521,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 			 		| V4L2_CTRL_FLAG_READ_ONLY,
 	},
 	{
-		.id			= V4L2_CID_EXPOSURE_ACTIVE_LINE_MODE,
+		.id			= AVT_CID_EXPOSURE_ACTIVE_LINE_MODE,
 		.attr			= { "Exposure Active Line Mode", 18 },
 		.reg_offset		= BCRM_EXPOSURE_ACTIVE_LINE_MODE_8RW,
 		.reg_size		= AV_CAM_REG_SIZE,
@@ -557,7 +529,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.type			= V4L2_CTRL_TYPE_BOOLEAN,
 	},
 	{
-		.id			= V4L2_CID_EXPOSURE_ACTIVE_LINE_SELECTOR,
+		.id			= AVT_CID_EXPOSURE_ACTIVE_LINE_SELECTOR,
 		.attr			= { "Exposure Active Line Selector",18 },
 		.reg_offset		= BCRM_EXPOSURE_ACTIVE_LINE_SELECTOR_8RW,
 		.reg_size		= AV_CAM_REG_SIZE,
@@ -568,7 +540,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.type			= V4L2_CTRL_TYPE_INTEGER,
 	},
 	{
-		.id			= V4L2_CID_EXPOSURE_ACTIVE_INVERT,
+		.id			= AVT_CID_EXPOSURE_ACTIVE_INVERT,
 		.attr			= { "Exposure Active Invert",18 },
 		.type			= V4L2_CTRL_TYPE_BOOLEAN,
 	},
@@ -651,8 +623,7 @@ struct avt3_dev
 	uint64_t gain;
 	uint64_t exposure_time;
 	int exposure_mode;
-	struct v4l2_trigger_status avt_trigger_status;
-	
+
 	uint32_t avt_min_clk;
 	uint32_t avt_max_clk;
 

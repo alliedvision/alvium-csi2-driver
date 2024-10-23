@@ -1,3 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+/* 
+ * Allied Vision Alvium register definitons
+ * 
+ * Copyright (C) 2022 - 2024 Allied Vision Technologies GmbH
+ */
+
 #ifndef __AVT_CSI2_REGS_H__
 #define __AVT_CSI2_REGS_H__
 
