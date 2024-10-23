@@ -13,6 +13,10 @@
 #include "avt-csi2-version.h"
 #include "avt-csi2-regs.h"
 
+#ifdef NVIDIA
+#include <media/camera_common.h>
+#endif //#ifdef NVIDIA
+
 #define USEMUTEX
 
 
@@ -567,8 +571,12 @@ struct avt3_binning_info {
 struct avt3_dev
 {
 	struct i2c_client *i2c_client;
-	struct v4l2_subdev *sd;
-	void *platform_data;
+#ifdef NVIDIA
+	struct camera_common_data s_data;
+#else
+	struct v4l2_subdev subdev;
+#endif
+
 	struct mutex lock;
 
 	struct regmap *regmap;

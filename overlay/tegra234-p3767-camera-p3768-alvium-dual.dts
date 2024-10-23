@@ -152,7 +152,7 @@
 					avt_csi2_a@3c {
 						status = "okay";
                         reg = <0x3c>;
-                        compatible =  "alliedvision,avt3-nv";
+                        compatible =  "alliedvision,avt_csi2";
 
 						devnode = "video0";
 						avt3,userptr;
@@ -196,7 +196,7 @@
 					avt_csi2_b@3c {
 						status = "okay";
                         reg = <0x3c>;
-                        compatible =  "alliedvision,avt3-nv";
+                        compatible =  "alliedvision,avt_csi2";
                                                 
 						devnode = "video1";				
 						avt3,userptr;		

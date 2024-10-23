@@ -139,7 +139,7 @@
 			#size-cells = <0>;
 			avt_csi2_a@3c {
 				status = "okay";
-				compatible = "alliedvision,avt3-nv";
+				compatible = "alliedvision,avt_csi2";
 				reg = <0x3c>;
 
 				devnode = "video0";
@@ -178,7 +178,7 @@
 		__overlay__ {
 			avt_csi2_b@3c {
 				status = "okay";
-                compatible =  "alliedvision,avt3-nv";  
+                compatible =  "alliedvision,avt_csi2";  
                 reg = <0x3c>;
 
 				devnode = "video1";
