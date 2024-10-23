@@ -3277,8 +3277,9 @@ static struct v4l2_ctrl* avt3_ctrl_find(struct avt3_dev *camera,u32 id)
 
 static inline int avt3_trigger_mode_enabled(struct avt3_dev *camera)
 {
-	u8 tmp;
-	int ret;
+	u8 tmp = 0;
+	int ret = 0;
+
 	const struct v4l2_ctrl * trigger_mode_ctrl = 
 			avt3_ctrl_find(camera, AVT_CID_TRIGGER_MODE);
 	
@@ -3297,8 +3298,9 @@ static inline int avt3_trigger_mode_enabled(struct avt3_dev *camera)
 
 static inline int avt3_test_trigger_source(struct avt3_dev *camera, int source)
 {
-	u8 tmp;
-	int ret;
+	u8 tmp = 0;
+	int ret = 0;
+
 	const struct v4l2_ctrl * trigger_source_ctrl = 
 		avt3_ctrl_find(camera, AVT_CID_TRIGGER_SOURCE);
 
@@ -3317,7 +3319,7 @@ static inline int avt3_test_trigger_source(struct avt3_dev *camera, int source)
 
 static void avt3_update_sw_ctrl_state(struct avt3_dev *camera)
 {
-	int trigger_en, trigger_sw_source;
+	int trigger_en = 0, trigger_sw_source = 0;
 	struct v4l2_ctrl * sw_trigger_ctrl =
 		avt3_ctrl_find(camera, AVT_CID_TRIGGER_SOFTWARE);
 
