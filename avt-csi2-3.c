@@ -317,7 +317,7 @@ static void avt3_dphy_reset(struct avt3_dev *sensor, bool bResetPhy);
 
 static void avt3_ctrl_changed(struct avt3_dev *camera, const struct v4l2_ctrl * const ctrl);
 static struct v4l2_ctrl* avt3_ctrl_find(struct avt3_dev *camera,u32 id);
-static int avt3_ctrl_write(struct i2c_client *client, enum avt_ctrl ctrl_id, __u32 value);
+static int avt3_write_media_bus_format(struct avt3_dev *camera, int code);
 static int avt3_get_sensor_capabilities(struct v4l2_subdev *sd);
 
 
@@ -532,8 +532,8 @@ static int avt3_change_mode(struct avt3_dev *camera, u8 req_mode)
 	camera->mode = req_mode;
 
 	if (req_mode == AVT_BCRM_MODE) {
-		ret = avt3_ctrl_write(camera->i2c_client, V4L2_AV_CSI2_PIXELFORMAT,
-			camera->mbus_framefmt.code);
+		const int mbus_code = camera->mbus_framefmt.code;
+		ret = avt3_write_media_bus_format(camera, mbus_code);
 
 		if (ret < 0) {
 			avt_err(camera->sd,"Failed to set pixelformat!");
@@ -1802,25 +1802,7 @@ out:
 	return ret;
 }
 
-static int set_bayer_format(struct i2c_client *client, __u8 value)
-{
-	struct avt3_dev *sensor = client_to_avt3_dev(client);
-	int ret = 0;
-
-	avt_dbg(sensor->sd, " %d", (uint32_t)value);
-
-	ret = bcrm_write8(sensor, BCRM_IMG_BAYER_PATTERN_8RW, value);
-
-	if (ret < 0)
-	{
-		avt_err(sensor->sd, "i2c write failed");
-		return ret;
-	}
-
-	return 0;
-}
-
-static int lockup_media_bus_fmt(struct avt3_dev *sensor, u32 mbus_code)
+static int lookup_media_bus_format_index(struct avt3_dev *sensor, u32 mbus_code)
 {
 
 	int i;
@@ -2406,6 +2388,50 @@ static void avt3_calc_compose(const struct avt3_dev * const camera,
 	*info = best;
 }
 
+static int avt3_update_format(struct avt3_dev *camera,
+	const struct v4l2_rect *roi,
+	const struct avt3_binning_info *info)
+{
+	int ret = 0;
+	struct v4l2_rect scaled_roi = *roi;
+	const struct v4l2_rect binning_rect = {
+		.width = info->max_width,
+		.height = info->max_height,
+	};
+
+	v4l2_rect_scale(&scaled_roi, &camera->sensor_rect, &binning_rect);
+
+	v4l_bound_align_image(
+		&scaled_roi.width,camera->min_rect.width,
+		binning_rect.width,3,
+		&scaled_roi.height,camera->min_rect.height,
+		binning_rect.height,3,0);
+
+	ret = bcrm_write8(camera, BCRM_BINNING_SETTING_8RW, info->sel);
+	if (unlikely(ret)) 
+		return ret;
+
+	ret = bcrm_write32(camera, BCRM_IMG_WIDTH_32RW, scaled_roi.width);
+	if (unlikely(ret)) 
+		return ret;
+
+	ret = bcrm_write32(camera, BCRM_IMG_HEIGHT_32RW, scaled_roi.height);
+	if (unlikely(ret)) 
+		return ret;
+
+	ret = bcrm_write32(camera, BCRM_IMG_OFFSET_X_32RW, scaled_roi.left);
+	if (unlikely(ret)) 
+		return ret;
+
+	ret = bcrm_write32(camera, BCRM_IMG_OFFSET_Y_32RW, scaled_roi.top);
+	if (unlikely(ret)) 
+		return ret;
+
+	camera->curr_binning_info = info;
+
+	return ret;
+}
+
 static int avt3_try_fmt_internal(struct v4l2_subdev *sd,
 				 struct v4l2_mbus_framefmt *fmt,
 				 const struct avt3_binning_info **new_binning)
@@ -2514,6 +2540,46 @@ err:
 	return ret;
 }
 
+static int avt3_write_media_bus_format(struct avt3_dev *camera, int code)
+{
+	struct device *dev = &camera->i2c_client->dev;
+	const struct avt_csi_mipi_mode_mapping *fmt_mapping;
+	int idx = lookup_media_bus_format_index(camera, code);
+	int ret = 0;
+
+	if (idx < 0) {
+		return -EINVAL;
+	}
+
+	fmt_mapping = &camera->available_fmts[idx];
+
+	ret = bcrm_write32(camera, BCRM_IMG_MIPI_DATA_FORMAT_32RW, 
+		fmt_mapping->mipi_fmt);
+
+	if (unlikely(ret)) {
+		dev_err(dev, "Failed to set mipi format to %x with %d\n",
+			fmt_mapping->mipi_fmt, ret);
+
+		goto exit;
+	}
+
+	if (fmt_mapping->bayer_pattern != bayer_ignore) {
+		ret = bcrm_write8(camera, BCRM_IMG_BAYER_PATTERN_8RW, 
+			fmt_mapping->bayer_pattern);
+
+		if (unlikely(ret)) {
+			dev_err(dev,
+				"Failed to set bayer pattern to %x with %d\n",
+				fmt_mapping->bayer_pattern, ret);
+
+			goto exit;
+		}
+	}
+
+exit:
+	return ret;
+}
+
 static int avt3_set_fmt_internal_bcrm(struct avt3_dev *camera,
 	struct v4l2_subdev_state *sd_state,
 	struct v4l2_subdev_format *format)
@@ -2522,7 +2588,6 @@ static int avt3_set_fmt_internal_bcrm(struct avt3_dev *camera,
 	struct v4l2_mbus_framefmt *mbus_fmt = &format->format;
 	const struct avt3_binning_info *new_binning = NULL;
 	struct v4l2_mbus_framefmt *fmt;
-	bool pending_fmt_change = false;
 	int ret = 0;
 
 	if (mbus_fmt->code == MEDIA_BUS_FMT_CUSTOM) {
@@ -2537,35 +2602,30 @@ static int avt3_set_fmt_internal_bcrm(struct avt3_dev *camera,
 
 	if (format->which == V4L2_SUBDEV_FORMAT_TRY) {
 		avt_dbg(sd,  "format->which == V4L2_SUBDEV_FORMAT_TRY");
-		fmt = v4l2_subdev_get_try_format(sd, sd_state, 0);
+		fmt = v4l2_subdev_get_try_format(sd, sd_state, format->pad);
 	} else {
 		avt_dbg(sd,  "format->which != V4L2_SUBDEV_FORMAT_TRY");
 		fmt = &camera->mbus_framefmt;
 
-
 		if (new_binning != camera->curr_binning_info) {
-			camera->curr_binning_info = new_binning;
-			camera->pending_mode_change = true;
+			ret = avt3_update_format(camera, &camera->curr_rect, new_binning);
+			if (ret < 0)
+				goto out;
 		}
 
 		if (mbus_fmt->code != camera->mbus_framefmt.code) {
-			pending_fmt_change = true;
+			ret = avt3_write_media_bus_format(camera, mbus_fmt->code);
+
+			if(ret < 0) {
+				avt_err(sd, "Failed setting pixel format in camera: %d", ret);
+				goto out;
+			}
+
+			ret = avt_update_exposure_limits(sd);
 		}
 	}
 
 	*fmt = *mbus_fmt;
-
-	if(pending_fmt_change && mbus_fmt->code != MEDIA_BUS_FMT_CUSTOM) {
-		ret = avt3_ctrl_write(camera->i2c_client, V4L2_AV_CSI2_PIXELFORMAT,
-			camera->mbus_framefmt.code);
-
-		if(ret < 0) {
-			avt_err(sd, "Failed setting pixel format in camera: %d", ret);
-			goto out;
-		}
-
-		ret = avt_update_exposure_limits(sd);
-	}
 
 out:
 	return ret;
@@ -2621,152 +2681,11 @@ static int avt3_pad_ops_set_fmt(struct v4l2_subdev *sd,
 		ret = -EINVAL;
 	}
 
-	
-
 out:
 	MUTEX_UNLOCK(&sensor->lock);
 
 	return ret;
 }
-
-static int avt3_ctrl_write(struct i2c_client *client, enum avt_ctrl ctrl_id, __u32 value)
-{
-	struct avt3_dev *sensor = client_to_avt3_dev(client);
-	int ret = 0;
-	unsigned int reg = 0;
-	int length = 0;
-	int fmtidx;
-
-	__u8 bayer_temp = 0;
-
-	avt_dbg(sensor->sd, "switch (ctrl_id) %x ", ctrl_id);
-
-	switch (ctrl_id)
-	{
-
-	case V4L2_AV_CSI2_STREAMON:
-    {
-      u8 acquisition_state;
-
-      ret = bcrm_read8(sensor, BCRM_ACQUISITION_STATUS_8R, &acquisition_state);
-      if (0 != acquisition_state) {
-        adev_info(&client->dev, 
-          "V4L2_AV_CSI2_STREAMON called but cam is streaming already. acquisition_state %d, sensor->is_streaming %d",
-          acquisition_state, sensor->is_streaming);
-        dump_stack();
-        return -EINVAL;
-      }
-	  }
-
-		avt_dbg(sensor->sd, "V4L2_AV_CSI2_STREAMON %d", value);
-		reg = BCRM_ACQUISITION_START_8RW;
-		length = AV_CAM_DATA_SIZE_8;
-		break;
-
-	case V4L2_AV_CSI2_STREAMOFF:
-		avt_dbg(sensor->sd, "V4L2_AV_CSI2_STREAMOFF %d", value);
-		reg = BCRM_ACQUISITION_STOP_8RW;
-		length = AV_CAM_DATA_SIZE_8;
-		break;
-
-	case V4L2_AV_CSI2_ABORT:
-		avt_dbg(sensor->sd, "V4L2_AV_CSI2_ABORT %d", value);
-		reg = BCRM_ACQUISITION_ABORT_8RW;
-		length = AV_CAM_DATA_SIZE_8;
-		break;
-
-	case V4L2_AV_CSI2_WIDTH:
-		avt_dbg(sensor->sd, "V4L2_AV_CSI2_WIDTH %d", value);
-		reg = BCRM_IMG_WIDTH_32RW;
-		length = AV_CAM_DATA_SIZE_32;
-		break;
-	case V4L2_AV_CSI2_HEIGHT:
-		avt_dbg(sensor->sd, "V4L2_AV_CSI2_HEIGHT %d", value);
-		reg = BCRM_IMG_HEIGHT_32RW;
-		length = AV_CAM_DATA_SIZE_32;
-		break;
-	case V4L2_AV_CSI2_OFFSET_X:
-		avt_dbg(sensor->sd, "V4L2_AV_CSI2_OFFSET_X %d", value);
-		reg = BCRM_IMG_OFFSET_X_32RW;
-		length = AV_CAM_DATA_SIZE_32;
-		break;
-	case V4L2_AV_CSI2_OFFSET_Y:
-		avt_dbg(sensor->sd, "V4L2_AV_CSI2_OFFSET_Y %d", value);
-		reg = BCRM_IMG_OFFSET_Y_32RW;
-		length = AV_CAM_DATA_SIZE_32;
-		break;
-	case V4L2_AV_CSI2_HFLIP:
-		avt_dbg(sensor->sd, "V4L2_AV_CSI2_HFLIP %d", value);
-		reg = BCRM_IMG_REVERSE_X_8RW;
-		length = AV_CAM_DATA_SIZE_8;
-		break;
-	case V4L2_AV_CSI2_VFLIP:
-		avt_dbg(sensor->sd, "V4L2_AV_CSI2_VFLIP %d", value);
-		reg = BCRM_IMG_REVERSE_Y_8RW;
-		length = AV_CAM_DATA_SIZE_8;
-		break;
-
-	case V4L2_AV_CSI2_PIXELFORMAT:
-		avt_dbg(sensor->sd, "V4L2_AV_CSI2_PIXELFORMAT %d 0x%04X", value, value);
-		reg = BCRM_IMG_MIPI_DATA_FORMAT_32RW;
-		length = AV_CAM_DATA_SIZE_32;
-
-		fmtidx = lockup_media_bus_fmt(sensor, value);
-
-		if (fmtidx == -EINVAL || fmtidx >= sensor->available_fmts_cnt)
-		{
-			adev_info(&client->dev, "not supported by the host, lockup_media_bus_fmt returned fmtidx %d for V4L2_AV_CSI2_PIXELFORMAT %d 0x%04X",
-					  fmtidx,
-					  value, value);
-			dump_stack();
-			return -EINVAL;
-		}
-
-		adev_info(&client->dev, "lockup_media_bus_fmt returned fmtidx %d for V4L2_AV_CSI2_PIXELFORMAT_W %d 0x%04X, V4L2_PIX_FMT %c%c%c%c, MIPI_CSI2_DT 0x%02x, bayer_pattern %d",
-				  fmtidx,
-				  sensor->available_fmts[fmtidx].mbus_code,
-				  sensor->available_fmts[fmtidx].mbus_code,
-				  sensor->available_fmts[fmtidx].fourcc & 0x0ff, (sensor->available_fmts[fmtidx].fourcc >> 8) & 0x0ff,
-				  (sensor->available_fmts[fmtidx].fourcc >> 16) & 0x0ff, (sensor->available_fmts[fmtidx].fourcc >> 24) & 0x0ff,
-				  sensor->available_fmts[fmtidx].mipi_fmt,
-				  sensor->available_fmts[fmtidx].bayer_pattern);
-
-		value = sensor->available_fmts[fmtidx].mipi_fmt;
-		bayer_temp = sensor->available_fmts[fmtidx].bayer_pattern;
-		break;
-
-	default:
-		dev_err(&client->dev, "%s[%d]: unknown ctrl 0x%x\n", __func__, __LINE__, ctrl_id);
-		return -EINVAL;
-	}
-
-  	avt_dbg(sensor->sd, "reg %x, length %d, vc->value0 0x%x\n", reg, length, value);
-
-	ret = bcrm_write(sensor, reg, value, length);
-
-	if (ret < 0)
-	{
-		dev_err(&client->dev, "%s[%d]: bcrm_write failed\n",
-			__func__, __LINE__);
-		return ret;
-	}
-
-	/* set pixelformat followed by set matching bayer format */
-	if (ctrl_id == V4L2_AV_CSI2_PIXELFORMAT && bayer_temp != bayer_ignore)
-	{
-		ret = set_bayer_format(client, bayer_temp);
-		if (ret < 0)
-		{
-		dev_err(&client->dev, "%s[%d]: bcrm_write failed, ret %d\n",
-			__func__, __LINE__, ret);
-		return ret;
-		}
-	}
-
-  return 0;
-}
-
-
 static int read_control_value(struct avt3_dev *camera,s64 *value, const u16 reg,
 			      const u8 size)
 {
@@ -2963,8 +2882,9 @@ static inline int avt3_trigger_mode_enabled(struct avt3_dev *camera)
 
 static inline int avt3_test_trigger_source(struct avt3_dev *camera, int source)
 {
-	u8 tmp;
-	int ret;
+	u8 tmp = 0;
+	int ret = 0;
+
 	const struct v4l2_ctrl * trigger_source_ctrl = 
 		avt3_ctrl_find(camera, AVT_CID_TRIGGER_SOURCE);
 
@@ -2983,7 +2903,7 @@ static inline int avt3_test_trigger_source(struct avt3_dev *camera, int source)
 
 static void avt3_update_sw_ctrl_state(struct avt3_dev *camera)
 {
-	int trigger_en, trigger_sw_source;
+	int trigger_en = 0, trigger_sw_source = 0;
 	struct v4l2_ctrl * sw_trigger_ctrl =
 		avt3_ctrl_find(camera, AVT_CID_TRIGGER_SOFTWARE);
 
@@ -3932,7 +3852,7 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 
 	if (!enable && sensor->is_streaming)
 	{
-		ret = avt3_ctrl_write(sensor->i2c_client, V4L2_AV_CSI2_STREAMOFF, 1);
+		ret = bcrm_write8(sensor, BCRM_ACQUISITION_STOP_8RW, 1);
 		sensor->is_streaming = false;
 
 		// ToDo: eventually wait until cam has stopped streaming
@@ -3973,13 +3893,7 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 		}
 
 
-		ret = avt3_ctrl_write(sensor->i2c_client, V4L2_AV_CSI2_WIDTH, crop_rect.width);
 
-		ret = avt3_ctrl_write(sensor->i2c_client, V4L2_AV_CSI2_OFFSET_X, crop_rect.left);
-
-		ret = avt3_ctrl_write(sensor->i2c_client, V4L2_AV_CSI2_HEIGHT, crop_rect.height);
-
-		ret = avt3_ctrl_write(sensor->i2c_client, V4L2_AV_CSI2_OFFSET_Y, crop_rect.top);
 
 		if (!avt3_trigger_mode_enabled(sensor)) {
 			ret = write_framerate(sensor);
@@ -3999,7 +3913,7 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 		}
 
 		/* start streaming */
-		ret = avt3_ctrl_write(client, V4L2_AV_CSI2_STREAMON, 1);
+		ret = bcrm_write8(sensor, BCRM_ACQUISITION_START_8RW, 1);
 
 		// ToDo: probably it's better to check the status here. but this conflicts with the workaround for imx8mp delayed start
 		if (!ret)
@@ -4316,6 +4230,7 @@ static int avt3_set_compose(struct avt3_dev *camera,
 			    struct v4l2_subdev_state *sd_state,
 			    struct v4l2_subdev_selection *sel)
 {
+	int ret = 0;
 	struct v4l2_mbus_framefmt *frmfmt;
 	const struct avt3_binning_info *info;
 	const struct v4l2_rect *crop;
@@ -4333,31 +4248,36 @@ static int avt3_set_compose(struct avt3_dev *camera,
 
 	avt3_calc_compose(camera,crop,&sel->r.width,&sel->r.height,&info);
 
+	if (sel->which == V4L2_SUBDEV_FORMAT_ACTIVE) {
+		ret = avt3_update_format(camera, crop, info);
+		if (ret < 0)
+			goto exit;
+	}
+
 	frmfmt->width = sel->r.width;
 	frmfmt->height = sel->r.height;
-
-	if (sel->which == V4L2_SUBDEV_FORMAT_ACTIVE)
-		camera->curr_binning_info = info;
-
-	return 0;
+		
+exit: 
+	return ret;
 }
 
 static int avt3_set_crop(struct avt3_dev *camera,
 			 struct v4l2_subdev_state *sd_state,
 			 struct v4l2_subdev_selection *sel)
 {
+	int ret = 0;
 	const struct v4l2_rect *min = &camera->min_rect;
 	const struct v4l2_rect *max = &camera->max_rect;
-	struct v4l2_rect *crop_rect;
+	struct v4l2_rect *crop;
 	struct v4l2_mbus_framefmt *frmfmt;
 	const struct avt3_binning_info *info;
 	u32 width = max->width,height = max->height;
 
 	if (sel->which  == V4L2_SUBDEV_FORMAT_TRY) {
-		crop_rect = v4l2_subdev_get_try_crop(camera->sd, sd_state, sel->pad);
+		crop = v4l2_subdev_get_try_crop(camera->sd, sd_state, sel->pad);
 		frmfmt = v4l2_subdev_get_try_format(camera->sd, sd_state, sel->pad);
 	} else {
-		crop_rect = &camera->curr_rect;
+		crop = &camera->curr_rect;
 		frmfmt = &camera->mbus_framefmt;
 	}
 
@@ -4368,16 +4288,19 @@ static int avt3_set_crop(struct avt3_dev *camera,
 
 	avt3_calc_compose(camera,&sel->r,&width,&height,&info);
 
+	if (sel->which == V4L2_SUBDEV_FORMAT_ACTIVE) {
+		ret = avt3_update_format(camera, &sel->r, info);
+		if (ret < 0)
+			goto exit;
+	}
+
 	frmfmt->width = width;
 	frmfmt->height = height;
 
-	*crop_rect = sel->r;
+	*crop = sel->r;
 
-	if (sel->which == V4L2_SUBDEV_FORMAT_ACTIVE)
-		camera->curr_binning_info = info;
-
-
-	return 0;
+exit:
+	return ret;
 }
 
 int avt3_pad_ops_set_selection(struct v4l2_subdev *sd,
