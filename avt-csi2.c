@@ -27,12 +27,12 @@
 #define xI2C_READ_COMPATIBLE_MODE
 #define xMUTEX_DEBUG_MODE
 
-#define AVT3_DEFAULT_FPS AVT3_10_FPS
-#define AVT3_DEFAULT_MODE AVT3_MODE_NTSC_720_480
+#define avt_DEFAULT_FPS avt_10_FPS
+#define avt_DEFAULT_MODE avt_MODE_NTSC_720_480
 
-#define AVT3_DEFAULT_EXPOSURETIME 25000000
-#define AVT3_DEFAULT_GAIN 1000
-#define AVT3_MAX_FORMAT_ENTRIES 40
+#define avt_DEFAULT_EXPOSURETIME 25000000
+#define avt_DEFAULT_GAIN 1000
+#define avt_MAX_FORMAT_ENTRIES 40
 
 #include <asm/unaligned.h>
 #include <linux/kernel.h>
@@ -210,7 +210,7 @@ struct avt_binning_setting {
 	enum avt_binning_type type;
 };
 
-struct avt3_mode_info
+struct avt_mode_info
 {
 	u32 hact;
 	u32 htot;
@@ -295,16 +295,16 @@ static const struct avt_binning_setting avt_binning_settings[] = {
 
 static const size_t avt_binning_setting_cnt = ARRAY_SIZE(avt_binning_settings);
 
-static int bcrm_write(struct avt3_dev *camera, u16 reg, u64 val, size_t len);
+static int bcrm_write(struct avt_dev *camera, u16 reg, u64 val, size_t len);
 
-static int avt3_detect(struct i2c_client *client);
-static int avt3_reset(struct avt3_dev *sensor, enum avt_reset_type reset_type);
-static void avt3_dphy_reset(struct avt3_dev *sensor, bool bResetPhy);
+static int avt_detect(struct i2c_client *client);
+static int avt_reset(struct avt_dev *sensor, enum avt_reset_type reset_type);
+static void avt_dphy_reset(struct avt_dev *sensor, bool bResetPhy);
 
-static void avt3_ctrl_changed(struct avt3_dev *camera, const struct v4l2_ctrl * const ctrl);
-static struct v4l2_ctrl* avt3_ctrl_find(struct avt3_dev *camera,u32 id);
-static int avt3_write_media_bus_format(struct avt3_dev *camera, int code);
-static int avt3_get_sensor_capabilities(struct v4l2_subdev *sd);
+static void avt_ctrl_changed(struct avt_dev *camera, const struct v4l2_ctrl * const ctrl);
+static struct v4l2_ctrl* avt_ctrl_find(struct avt_dev *camera,u32 id);
+static int avt_write_media_bus_format(struct avt_dev *camera, int code);
+static int avt_get_sensor_capabilities(struct v4l2_subdev *sd);
 
 
 #define DUMP_BCRM_REG8(CLIENT, BCRM_REG) dump_bcrm_reg(CLIENT, (BCRM_REG), (#BCRM_REG), AV_CAM_DATA_SIZE_8)
@@ -314,21 +314,21 @@ static int avt3_get_sensor_capabilities(struct v4l2_subdev *sd);
 
 static void dump_bcrm_reg(struct i2c_client *client, u16 nOffset, const char *pRegName, int regsize);
 
-static inline struct avt3_dev* to_avt3_dev(struct v4l2_subdev *sd)
+static inline struct avt_dev* to_avt_dev(struct v4l2_subdev *sd)
 {
 #ifdef NVIDIA
-	return container_of(sd, struct avt3_dev, s_data.subdev);
+	return container_of(sd, struct avt_dev, s_data.subdev);
 #else
-	return container_of(sd, struct avt3_dev, subdev);
+	return container_of(sd, struct avt_dev, subdev);
 #endif
 }
 
-static inline struct avt3_dev* client_to_avt3_dev(struct i2c_client *client)
+static inline struct avt_dev* client_to_avt_dev(struct i2c_client *client)
 {
-	return to_avt3_dev(i2c_get_clientdata(client));
+	return to_avt_dev(i2c_get_clientdata(client));
 }
 
-static inline struct v4l2_subdev* get_sd(struct avt3_dev *priv)
+static inline struct v4l2_subdev* get_sd(struct avt_dev *priv)
 {
 #ifdef NVIDIA
 	return &priv->s_data.subdev;
@@ -338,7 +338,7 @@ static inline struct v4l2_subdev* get_sd(struct avt3_dev *priv)
 }
 
 
-static ssize_t avt3_read_raw(struct avt3_dev *camera, u16 reg,
+static ssize_t avt_read_raw(struct avt_dev *camera, u16 reg,
 	u8 *buf, size_t len)
 {
 	int ret;
@@ -351,7 +351,7 @@ static ssize_t avt3_read_raw(struct avt3_dev *camera, u16 reg,
 	return len;
 }
 
-static ssize_t avt3_write_raw(struct avt3_dev *camera, u16 reg,
+static ssize_t avt_write_raw(struct avt_dev *camera, u16 reg,
 	const u8 *buf, size_t len)
 {
 	int ret;
@@ -364,12 +364,12 @@ static ssize_t avt3_write_raw(struct avt3_dev *camera, u16 reg,
 	return len;
 }
 
-static ssize_t avt3_read(struct avt3_dev *camera, u16 reg, void *val, size_t len)
+static ssize_t avt_read(struct avt_dev *camera, u16 reg, void *val, size_t len)
 {
 	u8 tmp[8];
 	int ret;
 
-	ret = avt3_read_raw(camera, reg, tmp, len);
+	ret = avt_read_raw(camera, reg, tmp, len);
 	if (ret < 0)
 		goto out;
 
@@ -398,27 +398,27 @@ out:
 	return ret;
 }
 
-static inline ssize_t avt3_read8(struct avt3_dev *camera, u16 reg, u8 *val)
+static inline ssize_t avt_read8(struct avt_dev *camera, u16 reg, u8 *val)
 {
-	return avt3_read(camera, reg, (u8*)val, sizeof(*val));
+	return avt_read(camera, reg, (u8*)val, sizeof(*val));
 }
 
-static inline ssize_t avt3_read16(struct avt3_dev *camera, u16 reg, u16 *val)
+static inline ssize_t avt_read16(struct avt_dev *camera, u16 reg, u16 *val)
 {
-	return avt3_read(camera, reg, (u8*)val, sizeof(*val));
+	return avt_read(camera, reg, (u8*)val, sizeof(*val));
 }
 
-static inline ssize_t avt3_read32(struct avt3_dev *camera, u16 reg, u32 *val)
+static inline ssize_t avt_read32(struct avt_dev *camera, u16 reg, u32 *val)
 {
-	return avt3_read(camera, reg, (u8*)val, sizeof(*val));
+	return avt_read(camera, reg, (u8*)val, sizeof(*val));
 }
 
-static inline ssize_t avt3_read64(struct avt3_dev *camera, u16 reg, u64 *val) 
+static inline ssize_t avt_read64(struct avt_dev *camera, u16 reg, u64 *val) 
 {
-	return avt3_read(camera, reg, (u8*)val, sizeof(*val));
+	return avt_read(camera, reg, (u8*)val, sizeof(*val));
 }
 
-static ssize_t avt3_write(struct avt3_dev *camera, u16 reg, u64 val, size_t len)
+static ssize_t avt_write(struct avt_dev *camera, u16 reg, u64 val, size_t len)
 {
 	struct device *dev = &camera->i2c_client->dev;
 	u8 buf[8];
@@ -447,7 +447,7 @@ static ssize_t avt3_write(struct avt3_dev *camera, u16 reg, u64 val, size_t len)
 		return -EINVAL;
 	}
 
-	ret = avt3_write_raw(camera, reg, buf, len);
+	ret = avt_write_raw(camera, reg, buf, len);
 	// TODO: For compatibility reason, check if can be removed 
 	if (ret < 0)
 		return ret;
@@ -455,59 +455,59 @@ static ssize_t avt3_write(struct avt3_dev *camera, u16 reg, u64 val, size_t len)
 	return 0;
 }
 
-static inline u16 get_bcrm_addr(struct avt3_dev *camera,u16 reg)
+static inline u16 get_bcrm_addr(struct avt_dev *camera,u16 reg)
 {
 	return camera->cci_reg.reg.bcrm_addr + reg;
 }
 
-static inline int bcrm_read(struct avt3_dev *camera, u16 reg, u8 *val, size_t len)
+static inline int bcrm_read(struct avt_dev *camera, u16 reg, u8 *val, size_t len)
 {
 	WARN_ON(camera->mode != AVT_BCRM_MODE);
 
-	return avt3_read(camera, get_bcrm_addr(camera, reg), val, len);
+	return avt_read(camera, get_bcrm_addr(camera, reg), val, len);
 }
 
-static inline int bcrm_read8(struct avt3_dev *camera,u16 reg,u8 *val)
+static inline int bcrm_read8(struct avt_dev *camera,u16 reg,u8 *val)
 {
 	return bcrm_read(camera, reg, (u8*)val, sizeof(*val));
 }
 
-static inline int bcrm_read16(struct avt3_dev *camera,u16 reg,u16 *val)
+static inline int bcrm_read16(struct avt_dev *camera,u16 reg,u16 *val)
 {
 	return bcrm_read(camera, reg, (u8*)val, sizeof(*val));
 }
 
-static inline int bcrm_read32(struct avt3_dev *camera,u16 reg,u32 *val)
+static inline int bcrm_read32(struct avt_dev *camera,u16 reg,u32 *val)
 {
 	return bcrm_read(camera, reg, (u8*)val, sizeof(*val));
 }
 
-static inline int bcrm_read64(struct avt3_dev *camera,u16 reg,u64 *val)
+static inline int bcrm_read64(struct avt_dev *camera,u16 reg,u64 *val)
 {
 	return bcrm_read(camera, reg, (u8*)val, sizeof(*val));
 }
 
-static inline int bcrm_write8(struct avt3_dev *camera, u16 reg, u8 val)
+static inline int bcrm_write8(struct avt_dev *camera, u16 reg, u8 val)
 {
 	return bcrm_write(camera, reg, val, sizeof(val));
 }
 
-static inline int bcrm_write16(struct avt3_dev *camera, u16 reg, u16 val)
+static inline int bcrm_write16(struct avt_dev *camera, u16 reg, u16 val)
 {
 	return bcrm_write(camera, reg, val, sizeof(val));
 }
 
-static inline int bcrm_write32(struct avt3_dev *camera, u16 reg, u32 val)
+static inline int bcrm_write32(struct avt_dev *camera, u16 reg, u32 val)
 {
 	return bcrm_write(camera, reg, val, sizeof(val));
 }
 
-static inline int bcrm_write64(struct avt3_dev *camera, u16 reg, u64 val)
+static inline int bcrm_write64(struct avt_dev *camera, u16 reg, u64 val)
 {
 	return bcrm_write(camera, reg, val, sizeof(val));
 }
 
-static int avt3_change_mode(struct avt3_dev *camera, u8 req_mode)
+static int avt_change_mode(struct avt_dev *camera, u8 req_mode)
 {	
 	int ret;
 	u8 cur_mode;
@@ -515,12 +515,12 @@ static int avt3_change_mode(struct avt3_dev *camera, u8 req_mode)
 	if (req_mode == camera->mode)
 		return 0;
 
-	ret = avt3_write(camera, GENCP_CHANGEMODE_8W, req_mode, AV_CAM_DATA_SIZE_8);
+	ret = avt_write(camera, GENCP_CHANGEMODE_8W, req_mode, AV_CAM_DATA_SIZE_8);
 	if (ret < 0)
 		goto out;
 
 
-	ret = read_poll_timeout(avt3_read8, ret, cur_mode == req_mode,
+	ret = read_poll_timeout(avt_read8, ret, cur_mode == req_mode,
 		10 * USEC_PER_MSEC, 500 * USEC_PER_MSEC, true,
 		camera, GENCP_CURRENTMODE_8R, &cur_mode);
 	if (ret < 0)
@@ -530,7 +530,7 @@ static int avt3_change_mode(struct avt3_dev *camera, u8 req_mode)
 
 	if (req_mode == AVT_BCRM_MODE) {
 		const int mbus_code = camera->mbus_framefmt.code;
-		ret = avt3_write_media_bus_format(camera, mbus_code);
+		ret = avt_write_media_bus_format(camera, mbus_code);
 
 		if (ret < 0) {
 			avt_err(get_sd(camera),"Failed to set pixelformat!");
@@ -709,7 +709,7 @@ static void bcrm_dump(struct i2c_client *client)
 
 static void dump_bcrm_reg(struct i2c_client *client, u16 nOffset, const char *pRegName, int regsize)
 {
-	struct avt3_dev *sensor = client_to_avt3_dev(client);
+	struct avt_dev *sensor = client_to_avt_dev(client);
 	int status = 0;
 	struct avt_val64 val64;
 
@@ -741,7 +741,7 @@ static void dump_bcrm_reg(struct i2c_client *client, u16 nOffset, const char *pR
 
 static bool bcrm_get_write_handshake_availibility(struct i2c_client *client)
 {
-	struct avt3_dev *sensor = client_to_avt3_dev(client);
+	struct avt_dev *sensor = client_to_avt_dev(client);
 	u8 value = 0;
 	int status;
 
@@ -767,7 +767,7 @@ static bool bcrm_get_write_handshake_availibility(struct i2c_client *client)
 
 static int read_cci_registers(struct i2c_client *client)
 {
-	struct avt3_dev *sensor = client_to_avt3_dev(client);
+	struct avt_dev *sensor = client_to_avt_dev(client);
 
 	int ret = 0;
 	uint32_t crc = 0;
@@ -796,7 +796,7 @@ static int read_cci_registers(struct i2c_client *client)
 			cci_cmd_tbl[CHANGE_MODE].address);
 
 	// read only until CHANGE_MODE because it's writeonly
-	ret = avt3_read_raw(sensor, cci_cmd_tbl[CCI_REGISTER_LAYOUT_VERSION].address,
+	ret = avt_read_raw(sensor, cci_cmd_tbl[CCI_REGISTER_LAYOUT_VERSION].address,
 						   (char *)&sensor->cci_reg, cci_cmd_tbl[CHANGE_MODE].address);
 
 	avt_info(get_sd(sensor), "regmap_bulk_read(sensor->regmap8, cci_cmd_tbl[CCI_REGISTER_LAYOUT_VERSION].address ret %d\n", ret);
@@ -872,7 +872,7 @@ err_out:
 
 static int read_gencp_registers(struct i2c_client *client)
 {
-	struct avt3_dev *sensor = client_to_avt3_dev(client);
+	struct avt_dev *sensor = client_to_avt_dev(client);
 
 	int ret = 0;
 	uint32_t crc = 0;
@@ -896,7 +896,7 @@ static int read_gencp_registers(struct i2c_client *client)
 	crc_byte_count =
 		(uint32_t)((char *)&sensor->gencp_reg.checksum - (char *)&sensor->gencp_reg);
 
-	ret = avt3_read_raw(sensor, sensor->cci_reg.reg.gcprm_address + 0x0000, 
+	ret = avt_read_raw(sensor, sensor->cci_reg.reg.gcprm_address + 0x0000, 
 		(char *)&sensor->gencp_reg, sizeof(sensor->gencp_reg));
 
 	if (ret < 0)
@@ -941,7 +941,7 @@ err_out:
 
 static int cci_version_check(struct i2c_client *client)
 {
-	struct avt3_dev *sensor = client_to_avt3_dev(client);
+	struct avt_dev *sensor = client_to_avt_dev(client);
 	uint32_t cci_minver, cci_majver;
 	int ret = 0;
 
@@ -985,7 +985,7 @@ err_out:
 
 static int bcrm_version_check(struct i2c_client *client)
 {
-	struct avt3_dev *sensor = client_to_avt3_dev(client);
+	struct avt_dev *sensor = client_to_avt_dev(client);
 	u32 value = 0;
 	int ret;
 
@@ -1019,7 +1019,7 @@ err_out:
 
 static int gcprm_version_check(struct i2c_client *client)
 {
-	struct avt3_dev *sensor = client_to_avt3_dev(client);
+	struct avt_dev *sensor = client_to_avt_dev(client);
 	u32 value = sensor->gencp_reg.gcprm_layout_version;
 
 	MUTEX_LOCK(&sensor->lock);
@@ -1042,7 +1042,7 @@ static int gcprm_version_check(struct i2c_client *client)
 static ssize_t availability_show(struct device *dev,
 								 struct device_attribute *attr, char *buf)
 {
-	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
+	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 	ssize_t ret;
 
 	MUTEX_LOCK(&sensor->lock);
@@ -1058,7 +1058,7 @@ static ssize_t availability_show(struct device *dev,
 static ssize_t cci_register_layout_version_show(struct device *dev,
 												struct device_attribute *attr, char *buf)
 {
-	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
+	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 	ssize_t ret;
 
 	MUTEX_LOCK(&sensor->lock);
@@ -1071,7 +1071,7 @@ static ssize_t cci_register_layout_version_show(struct device *dev,
 static ssize_t bcrm_feature_inquiry_reg_show(struct device *dev,
 											 struct device_attribute *attr, char *buf)
 {
-	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
+	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 	ssize_t ret;
 	union bcrm_feature_inquiry_reg feature_inquiry_reg;
 
@@ -1092,7 +1092,7 @@ static ssize_t bcrm_feature_inquiry_reg_show(struct device *dev,
 static ssize_t bcrm_feature_inquiry_reg_text_show(struct device *dev,
 												  struct device_attribute *attr, char *buf)
 {
-	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
+	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 	ssize_t ret = 0;
 
 	ret = sprintf(buf, "reverse_x_avail                 %d\n"
@@ -1139,7 +1139,7 @@ static ssize_t bcrm_feature_inquiry_reg_text_show(struct device *dev,
 static ssize_t bcrm_bayer_formats_show(struct device *dev,
 									   struct device_attribute *attr, char *buf)
 {
-	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
+	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 	ssize_t ret;
 
 	ret = sprintf(buf, "0x%04X\n", sensor->bayer_inquiry_reg.value);
@@ -1150,7 +1150,7 @@ static ssize_t bcrm_bayer_formats_show(struct device *dev,
 static ssize_t bcrm_bayer_formats_text_show(struct device *dev,
 											struct device_attribute *attr, char *buf)
 {
-	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
+	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 	ssize_t ret;
 
 	ret = sprintf(buf, "monochrome_avail %d\n"
@@ -1170,7 +1170,7 @@ static ssize_t bcrm_bayer_formats_text_show(struct device *dev,
 static ssize_t bcrm_mipi_formats_show(struct device *dev,
 									  struct device_attribute *attr, char *buf)
 {
-	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
+	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 	ssize_t ret;
 
 	MUTEX_LOCK(&sensor->lock);
@@ -1183,7 +1183,7 @@ static ssize_t bcrm_mipi_formats_show(struct device *dev,
 static ssize_t bcrm_mipi_formats_text_show(struct device *dev,
 										   struct device_attribute *attr, char *buf)
 {
-	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
+	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 
 	return sprintf(buf, "yuv420_8_leg_avail   %d\n"
 						"yuv420_8_avail       %d\n"
@@ -1228,7 +1228,7 @@ static ssize_t bcrm_mipi_formats_text_show(struct device *dev,
 static ssize_t device_capabilities_show(struct device *dev,
 										struct device_attribute *attr, char *buf)
 {
-	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
+	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 
 	return sprintf(buf, "0x%016llX\n", sensor->cci_reg.reg.device_capabilities.value);
 }
@@ -1236,7 +1236,7 @@ static ssize_t device_capabilities_show(struct device *dev,
 static ssize_t device_capabilities_text_show(struct device *dev,
 											 struct device_attribute *attr, char *buf)
 {
-	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
+	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 	ssize_t ret;
 
 	MUTEX_LOCK(&sensor->lock);
@@ -1262,7 +1262,7 @@ static ssize_t device_capabilities_text_show(struct device *dev,
 static ssize_t device_guid_show(struct device *dev,
 								struct device_attribute *attr, char *buf)
 {
-	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
+	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 	ssize_t ret;
 
 	ret = sprintf(buf, "%s\n", sensor->cci_reg.reg.device_guid);
@@ -1273,7 +1273,7 @@ static ssize_t device_guid_show(struct device *dev,
 static ssize_t manufacturer_name_show(struct device *dev,
 									  struct device_attribute *attr, char *buf)
 {
-	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
+	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 	ssize_t ret;
 
 	ret = sprintf(buf, "%s\n", sensor->cci_reg.reg.manufacturer_name);
@@ -1284,7 +1284,7 @@ static ssize_t manufacturer_name_show(struct device *dev,
 static ssize_t model_name_show(struct device *dev,
 							   struct device_attribute *attr, char *buf)
 {
-	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
+	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 	ssize_t ret;
 
 	ret = sprintf(buf, "%s\n", sensor->cci_reg.reg.model_name);
@@ -1295,7 +1295,7 @@ static ssize_t model_name_show(struct device *dev,
 static ssize_t family_name_show(struct device *dev,
 								struct device_attribute *attr, char *buf)
 {
-	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
+	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 	ssize_t ret;
 
 	ret = sprintf(buf, "%s\n", sensor->cci_reg.reg.family_name);
@@ -1306,7 +1306,7 @@ static ssize_t family_name_show(struct device *dev,
 static ssize_t lane_count_show(struct device *dev,
 							   struct device_attribute *attr, char *buf)
 {
-	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
+	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 	ssize_t ret;
 
 	ret = sprintf(buf, "%d\n", sensor->v4l2_fwnode_ep.bus.mipi_csi2.num_data_lanes);
@@ -1317,7 +1317,7 @@ static ssize_t lane_count_show(struct device *dev,
 static ssize_t lane_capabilities_show(struct device *dev,
 									  struct device_attribute *attr, char *buf)
 {
-	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
+	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 
 	return sprintf(buf, "0x%02X\n", sensor->lane_capabilities.value);
 }
@@ -1325,7 +1325,7 @@ static ssize_t lane_capabilities_show(struct device *dev,
 static ssize_t device_version_show(struct device *dev,
 								   struct device_attribute *attr, char *buf)
 {
-	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
+	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 
 	return sprintf(buf, "%s\n", sensor->cci_reg.reg.device_version);
 }
@@ -1333,7 +1333,7 @@ static ssize_t device_version_show(struct device *dev,
 static ssize_t firmware_version_show(struct device *dev,
 									 struct device_attribute *attr, char *buf)
 {
-	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
+	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 	ssize_t ret;
 
 	ret = sprintf(buf, "%u.%u.%u.%u\n",
@@ -1348,7 +1348,7 @@ static ssize_t firmware_version_show(struct device *dev,
 static ssize_t manufacturer_info_show(struct device *dev,
 									  struct device_attribute *attr, char *buf)
 {
-	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
+	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 
 	return sprintf(buf, "%s\n", sensor->cci_reg.reg.manufacturer_info);
 }
@@ -1356,7 +1356,7 @@ static ssize_t manufacturer_info_show(struct device *dev,
 static ssize_t serial_number_show(struct device *dev,
 								  struct device_attribute *attr, char *buf)
 {
-	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
+	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 
 	return sprintf(buf, "%s\n", sensor->cci_reg.reg.serial_number);
 }
@@ -1364,7 +1364,7 @@ static ssize_t serial_number_show(struct device *dev,
 static ssize_t user_defined_name_show(struct device *dev,
 									  struct device_attribute *attr, char *buf)
 {
-	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
+	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 
 	return sprintf(buf, "%s\n", sensor->cci_reg.reg.user_defined_name);
 }
@@ -1387,7 +1387,7 @@ static ssize_t debug_en_store(struct device *dev,
 {
 	ssize_t ret;
 
-	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
+	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 	MUTEX_LOCK(&sensor->lock);
 
 	ret = kstrtoint(buf, 10, &debug);
@@ -1408,7 +1408,7 @@ static ssize_t mipiclk_show(struct device *dev,
 {
 	ssize_t ret;
 
-	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
+	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 
 	ret = sysfs_emit(buf, "%llu\n", sensor->v4l2_fwnode_ep.link_frequencies[0]);
 
@@ -1422,7 +1422,7 @@ static ssize_t mipiclk_store(struct device *dev,
 	uint32_t avt_next_clk = 0;
 	uint32_t avt_current_clk = 0;
 
-	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
+	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 	struct i2c_client *client = to_i2c_client(dev);
 	MUTEX_LOCK(&sensor->lock);
 
@@ -1472,7 +1472,7 @@ static ssize_t device_temperature_show(struct device *dev,
 	ssize_t ret;
 	int device_temperature;
 
-	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
+	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 	MUTEX_LOCK(&sensor->lock);
 
 	ret = bcrm_read32(sensor, BCRM_DEVICE_TEMPERATURE_32R, &device_temperature);
@@ -1486,7 +1486,7 @@ static ssize_t device_temperature_show(struct device *dev,
 static ssize_t softreset_show(struct device *dev,
 							  struct device_attribute *attr, char *buf)
 {
-	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
+	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 	ssize_t ret;
 
 	ret = sprintf(buf, "%d\n", sensor->pending_softreset_request);
@@ -1497,7 +1497,7 @@ static ssize_t softreset_show(struct device *dev,
 static ssize_t softreset_store(struct device *dev,
 							   struct device_attribute *attr, const char *buf, size_t count)
 {
-	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
+	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 	ssize_t ret;
 	int value;
 
@@ -1508,10 +1508,10 @@ static ssize_t softreset_store(struct device *dev,
 	}
 
 	if (value > 0) {
-		avt3_reset(sensor, RESET_TYPE_SOFT);
+		avt_reset(sensor, RESET_TYPE_SOFT);
 
 		/* Re-read and configure MIPI configuration */
-		avt3_get_sensor_capabilities(get_sd(sensor));
+		avt_get_sensor_capabilities(get_sd(sensor));
 	}
 
 	return count;
@@ -1520,7 +1520,7 @@ static ssize_t softreset_store(struct device *dev,
 static ssize_t dphyreset_show(struct device *dev,
 							  struct device_attribute *attr, char *buf)
 {
-	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
+	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 	ssize_t ret;
 
 	MUTEX_LOCK(&sensor->lock);
@@ -1535,7 +1535,7 @@ static ssize_t dphyreset_show(struct device *dev,
 static ssize_t dphyreset_store(struct device *dev,
 							   struct device_attribute *attr, const char *buf, size_t count)
 {
-	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
+	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 	ssize_t ret;
 
 	MUTEX_LOCK(&sensor->lock);
@@ -1548,8 +1548,8 @@ static ssize_t dphyreset_store(struct device *dev,
 
 	if (sensor->pending_dphyreset_request > 0)
 	{
-		avt3_dphy_reset(sensor, true);
-		avt3_dphy_reset(sensor, false);
+		avt_dphy_reset(sensor, true);
+		avt_dphy_reset(sensor, false);
 	}
 	MUTEX_UNLOCK(&sensor->lock);
 	return count;
@@ -1558,7 +1558,7 @@ static ssize_t dphyreset_store(struct device *dev,
 static ssize_t streamon_delay_show(struct device *dev,
 								   struct device_attribute *attr, char *buf)
 {
-	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
+	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 	ssize_t ret;
 
 	MUTEX_LOCK(&sensor->lock);
@@ -1575,7 +1575,7 @@ static ssize_t streamon_delay_show(struct device *dev,
 static ssize_t streamon_delay_store(struct device *dev,
 									struct device_attribute *attr, const char *buf, size_t count)
 {
-	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
+	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 	ssize_t ret;
 
 	MUTEX_LOCK(&sensor->lock);
@@ -1597,7 +1597,7 @@ static ssize_t streamon_delay_store(struct device *dev,
 static ssize_t hardreset_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
-	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
+	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 	ssize_t ret;
 
 	MUTEX_LOCK(&sensor->lock);
@@ -1612,7 +1612,7 @@ static ssize_t hardreset_show(struct device *dev,
 static ssize_t hardreset_store(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
-	struct avt3_dev *sensor = client_to_avt3_dev(to_i2c_client(dev));
+	struct avt_dev *sensor = client_to_avt_dev(to_i2c_client(dev));
 	ssize_t ret;
 	int value;
 
@@ -1623,10 +1623,10 @@ static ssize_t hardreset_store(struct device *dev,
 	}
 
 	if (value > 0) {
-		avt3_reset(sensor, RESET_TYPE_HARD);
+		avt_reset(sensor, RESET_TYPE_HARD);
 
 		/* Re-read and configure MIPI configuration */
-		avt3_get_sensor_capabilities(get_sd(sensor));
+		avt_get_sensor_capabilities(get_sd(sensor));
 	}
 
 	return count;
@@ -1672,7 +1672,7 @@ static DEVICE_ATTR_RW(hardreset);
 static DEVICE_ATTR_RO(device_temperature);
 static DEVICE_ATTR_RW(mipiclk);
 
-static struct attribute *avt3_attrs[] = {
+static struct attribute *avt_attrs[] = {
 	&dev_attr_availability.attr,
 	&dev_attr_bcrm_dump.attr,
 	&dev_attr_cci_register_layout_version.attr,
@@ -1705,13 +1705,13 @@ static struct attribute *avt3_attrs[] = {
 	&dev_attr_mipiclk.attr,
 	NULL};
 
-static struct attribute_group avt3_attr_grp = {
-	.attrs = avt3_attrs,
+static struct attribute_group avt_attr_grp = {
+	.attrs = avt_attrs,
 };
 
-static int avt3_get_fmt_available(struct i2c_client *client)
+static int avt_get_fmt_available(struct i2c_client *client)
 {
-	struct avt3_dev *sensor = client_to_avt3_dev(client);
+	struct avt_dev *sensor = client_to_avt_dev(client);
 	u8 bayer_val = 0;
 	int ret;
 	u64 avail_mipi = 0;
@@ -1752,7 +1752,7 @@ out:
 	return ret;
 }
 
-static int lookup_media_bus_format_index(struct avt3_dev *sensor, u32 mbus_code)
+static int lookup_media_bus_format_index(struct avt_dev *sensor, u32 mbus_code)
 {
 
 	int i;
@@ -1786,9 +1786,9 @@ void set_mode_mapping(struct avt_csi_mipi_mode_mapping *pfmt,
 }
 
 /* ToDo: read available formats from Cam */
-static int avt3_init_avail_formats(struct v4l2_subdev *sd)
+static int avt_init_avail_formats(struct v4l2_subdev *sd)
 {
-	struct avt3_dev *sensor = to_avt3_dev(sd);
+	struct avt_dev *sensor = to_avt_dev(sd);
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
 	struct avt_csi_mipi_mode_mapping *pfmt;
 
@@ -1858,7 +1858,7 @@ static int avt3_init_avail_formats(struct v4l2_subdev *sd)
 			sensor->avail_mipi_reg.avail_mipi.raw14_avail,
 			sensor->avail_mipi_reg.avail_mipi.jpeg_avail);
 
-	sensor->available_fmts = kmalloc(sizeof(sensor->available_fmts[0]) * AVT3_MAX_FORMAT_ENTRIES, GFP_KERNEL);
+	sensor->available_fmts = kmalloc(sizeof(sensor->available_fmts[0]) * avt_MAX_FORMAT_ENTRIES, GFP_KERNEL);
 
 	if (!sensor->available_fmts)
 	{
@@ -1948,7 +1948,7 @@ static int avt3_init_avail_formats(struct v4l2_subdev *sd)
 	return sensor->available_fmts_cnt;
 }
 
-static int avt3_init_current_format(struct avt3_dev *camera, struct v4l2_mbus_framefmt *fmt)
+static int avt_init_current_format(struct avt_dev *camera, struct v4l2_mbus_framefmt *fmt)
 {
 	u32 current_mipi_format;
 	u8 current_bayer_pattern;
@@ -1995,7 +1995,7 @@ static int avt3_init_current_format(struct avt3_dev *camera, struct v4l2_mbus_fr
 
 /* hard reset depends on gpio-pins, needs to be completed on
    suitable board instead of imx8mp-evk */
-static int perform_hard_reset(struct avt3_dev *sensor)
+static int perform_hard_reset(struct avt_dev *sensor)
 {
 	dev_info(&sensor->i2c_client->dev, "%s[%d]",
 			 __func__, __LINE__);
@@ -2016,9 +2016,9 @@ static int perform_hard_reset(struct avt3_dev *sensor)
 	/* Todo: implement usefull camera power cycle timing,
 	 eventually based on additional dts parameters,
 	 can't be checked on imx8mp-evk because shared GPIO lines */
-	//	avt3_power(sensor, false);
+	//	avt_power(sensor, false);
 	usleep_range(5000, 10000);
-	//	avt3_power(sensor, true);
+	//	avt_power(sensor, true);
 	//	usleep_range(5000, 10000);
 
 	gpiod_set_value_cansleep(sensor->reset_gpio, GPIOD_OUT_LOW);
@@ -2032,8 +2032,8 @@ static int perform_hard_reset(struct avt3_dev *sensor)
 
 static const int heartbeat_default = 0x80;
 
-static int heartbeat_write_default(struct avt3_dev *sensor) {
-	int ret = avt3_write(sensor, cci_cmd_tbl[HEARTBEAT].address, heartbeat_default, AV_CAM_DATA_SIZE_8);
+static int heartbeat_write_default(struct avt_dev *sensor) {
+	int ret = avt_write(sensor, cci_cmd_tbl[HEARTBEAT].address, heartbeat_default, AV_CAM_DATA_SIZE_8);
 	if(ret != 0) {
 		avt_err(get_sd(sensor), "Heartbeat write failed (regmap_write returned %d)", ret);
 		return -1;
@@ -2041,8 +2041,8 @@ static int heartbeat_write_default(struct avt3_dev *sensor) {
 	return 0;
 }
 
-static int heartbeat_read(struct avt3_dev *sensor, u8 *heartbeat) {
-	int ret = avt3_read8(sensor, cci_cmd_tbl[HEARTBEAT].address, heartbeat);
+static int heartbeat_read(struct avt_dev *sensor, u8 *heartbeat) {
+	int ret = avt_read8(sensor, cci_cmd_tbl[HEARTBEAT].address, heartbeat);
 	if(ret != 0) {
 		avt_err(get_sd(sensor), "Heartbeat read failed (regmap_read returned %d)", ret);
 		return -1;
@@ -2050,7 +2050,7 @@ static int heartbeat_read(struct avt3_dev *sensor, u8 *heartbeat) {
 	return 0;
 }
 
-static int heartbeat_supported(struct avt3_dev *sensor) {
+static int heartbeat_supported(struct avt_dev *sensor) {
 	u8 heartbeat;
 
 	int ret = heartbeat_write_default(sensor);
@@ -2068,7 +2068,7 @@ static int heartbeat_supported(struct avt3_dev *sensor) {
 	return heartbeat != 0;
 }
 
-static int wait_camera_available(struct avt3_dev *sensor, bool use_heartbeat) {
+static int wait_camera_available(struct avt_dev *sensor, bool use_heartbeat) {
 	static const unsigned long max_time_ms = 10000;
 	static const unsigned long delay_ms = 400;
 	u64 const start_jiffies = get_jiffies_64();
@@ -2080,7 +2080,7 @@ static int wait_camera_available(struct avt3_dev *sensor, bool use_heartbeat) {
 	do
 	{
 		usleep_range(delay_ms*1000, (delay_ms+1)*1000);
-		device_available = avt3_detect(sensor->i2c_client) == 0;
+		device_available = avt_detect(sensor->i2c_client) == 0;
 		duration_ms = jiffies_to_msecs(get_jiffies_64() - start_jiffies);
 	} while((duration_ms < max_time_ms) && device_available);
 
@@ -2088,7 +2088,7 @@ static int wait_camera_available(struct avt3_dev *sensor, bool use_heartbeat) {
 	do
 	{
 		usleep_range(delay_ms*1000, (delay_ms+1)*1000);
-		device_available = avt3_detect(sensor->i2c_client) == 0;
+		device_available = avt_detect(sensor->i2c_client) == 0;
 		duration_ms = jiffies_to_msecs(get_jiffies_64() - start_jiffies);
 	} while((duration_ms < max_time_ms) && !device_available);
 
@@ -2125,7 +2125,7 @@ static int wait_camera_available(struct avt3_dev *sensor, bool use_heartbeat) {
 	return -1;
 }
 
-static int avt3_reset(struct avt3_dev *sensor, enum avt_reset_type reset_type)
+static int avt_reset(struct avt_dev *sensor, enum avt_reset_type reset_type)
 {
 	struct i2c_client *client = sensor->i2c_client;
 	int ret;
@@ -2152,9 +2152,9 @@ static int avt3_reset(struct avt3_dev *sensor, enum avt_reset_type reset_type)
 		}
 	} else {
 		sensor->pending_softreset_request = 1;
-		ret = avt3_write(sensor, cci_cmd_tbl[SOFT_RESET].address, 1, AV_CAM_DATA_SIZE_8);
+		ret = avt_write(sensor, cci_cmd_tbl[SOFT_RESET].address, 1, AV_CAM_DATA_SIZE_8);
 		if (ret < 0) {
-			dev_err(&client->dev, "avt3_soft_reset request by calling regmap_write failed (%d)\n", ret);
+			dev_err(&client->dev, "avt_soft_reset request by calling regmap_write failed (%d)\n", ret);
 			goto out;
 		}
 	}
@@ -2177,7 +2177,7 @@ out:
 	return ret;
 }
 
-static void avt3_dphy_reset(struct avt3_dev *sensor, bool bResetPhy)
+static void avt_dphy_reset(struct avt_dev *sensor, bool bResetPhy)
 {
 	struct i2c_client *client = sensor->i2c_client;
 	int ret;
@@ -2189,7 +2189,7 @@ static void avt3_dphy_reset(struct avt3_dev *sensor, bool bResetPhy)
 	
 	if (ret < 0)
 	{
-		dev_err(&client->dev, "%s[%d]: avt3_dphy_reset request by calling regmap_write CSI2_PHY_RESET_32RW failed (%d)\n",
+		dev_err(&client->dev, "%s[%d]: avt_dphy_reset request by calling regmap_write CSI2_PHY_RESET_32RW failed (%d)\n",
 				__func__, __LINE__, ret);
 		goto out;
 	}
@@ -2200,9 +2200,9 @@ out:
 
 /* --------------- Subdev Operations --------------- */
 /* -- Code needs to be completed, e.g. power off the cam and setup on power on to support standby, hybernate, ... --  */
-static int avt3_core_ops_s_power(struct v4l2_subdev *sd, int on)
+static int avt_core_ops_s_power(struct v4l2_subdev *sd, int on)
 {
-	struct avt3_dev *sensor = to_avt3_dev(sd);
+	struct avt_dev *sensor = to_avt_dev(sd);
 	int ret = 0;
 
 	MUTEX_LOCK(&sensor->lock);
@@ -2224,7 +2224,7 @@ static int avt3_core_ops_s_power(struct v4l2_subdev *sd, int on)
 	return ret;
 }
 
-static int avt3_pad_ops_get_fmt(struct v4l2_subdev *sd,
+static int avt_pad_ops_get_fmt(struct v4l2_subdev *sd,
 #if (LINUX_VERSION_CODE > KERNEL_VERSION(5, 14, 0))
 								struct v4l2_subdev_state *sd_state,
 #else
@@ -2232,7 +2232,7 @@ static int avt3_pad_ops_get_fmt(struct v4l2_subdev *sd,
 #endif
 								struct v4l2_subdev_format *format)
 {
-	struct avt3_dev *sensor = to_avt3_dev(sd);
+	struct avt_dev *sensor = to_avt_dev(sd);
 	struct v4l2_mbus_framefmt *fmt;
 
 	dev_info(&sensor->i2c_client->dev, "%s[%d]",
@@ -2270,20 +2270,20 @@ static int avt3_pad_ops_get_fmt(struct v4l2_subdev *sd,
 	return 0;
 }
 
-static void avt3_calc_compose(const struct avt3_dev * const camera,
+static void avt_calc_compose(const struct avt_dev * const camera,
 			      const struct v4l2_rect * const crop,
 			      u32 *width,u32 *height,
-			      const struct avt3_binning_info **info)
+			      const struct avt_binning_info **info)
 {
 	const u32 type = camera->curr_binning_type;
-	const struct avt3_binning_info * const infos = camera->binning_infos[type];
+	const struct avt_binning_info * const infos = camera->binning_infos[type];
 	const size_t cnt = camera->binning_info_cnt[type];
 	const struct v4l2_rect * const min = &camera->min_rect;
 	const struct v4l2_rect * const max = &camera->sensor_rect;
 	const bool x_changed = *width != camera->mbus_framefmt.width;
 	const bool y_changed = *height != camera->mbus_framefmt.height;
 	const bool type_changed = type != camera->curr_binning_info->type;
-	const struct avt3_binning_info *best;
+	const struct avt_binning_info *best;
 	struct v4l2_rect scaled_crop = *crop;
 	struct v4l2_rect binning_rect = {0};
 
@@ -2294,7 +2294,7 @@ static void avt3_calc_compose(const struct avt3_dev * const camera,
 		int i;
 
 		for (i = 0; i < cnt; i++) {
-			const struct avt3_binning_info * const cur = &infos[i];
+			const struct avt_binning_info * const cur = &infos[i];
 			const u32 s_width = camera->curr_rect.width / cur->vfact;
 			const u32 s_height = camera->curr_rect.height / cur->hfact;
 			u32 error = 0;
@@ -2338,9 +2338,9 @@ static void avt3_calc_compose(const struct avt3_dev * const camera,
 	*info = best;
 }
 
-static int avt3_update_format(struct avt3_dev *camera,
+static int avt_update_format(struct avt_dev *camera,
 	const struct v4l2_rect *roi,
-	const struct avt3_binning_info *info)
+	const struct avt_binning_info *info)
 {
 	int ret = 0;
 	struct v4l2_rect scaled_roi = *roi;
@@ -2382,14 +2382,14 @@ static int avt3_update_format(struct avt3_dev *camera,
 	return ret;
 }
 
-static int avt3_try_fmt_internal(struct v4l2_subdev *sd,
+static int avt_try_fmt_internal(struct v4l2_subdev *sd,
 				 struct v4l2_mbus_framefmt *fmt,
-				 const struct avt3_binning_info **new_binning)
+				 const struct avt_binning_info **new_binning)
 {
-	struct avt3_dev *sensor = to_avt3_dev(sd);
+	struct avt_dev *sensor = to_avt_dev(sd);
 	int i;
 
-	avt3_calc_compose(sensor,&sensor->curr_rect,&fmt->width,&fmt->height,
+	avt_calc_compose(sensor,&sensor->curr_rect,&fmt->width,&fmt->height,
 			  new_binning);
 
 	dev_info(&sensor->i2c_client->dev, "%s[%d]",
@@ -2436,7 +2436,7 @@ static int avt3_try_fmt_internal(struct v4l2_subdev *sd,
 }
 
 static int avt_update_exposure_limits(struct v4l2_subdev *sd) {
-	struct avt3_dev *sensor = to_avt3_dev(sd);
+	struct avt_dev *sensor = to_avt_dev(sd);
 	int ret;
 	u64 exp_min, exp_max, exp_inc;
 
@@ -2459,14 +2459,14 @@ static int avt_update_exposure_limits(struct v4l2_subdev *sd) {
 	}
 
 	{
-		struct v4l2_ctrl * exp_ctrl = avt3_ctrl_find(sensor, V4L2_CID_EXPOSURE);
+		struct v4l2_ctrl * exp_ctrl = avt_ctrl_find(sensor, V4L2_CID_EXPOSURE);
 		if(exp_ctrl != NULL) {
 			__v4l2_ctrl_modify_range(exp_ctrl, exp_min, exp_max, exp_inc, exp_ctrl->default_value);
 		}
 	}
 
 	{
-		struct v4l2_ctrl* exp_abs_ctrl = avt3_ctrl_find(sensor, V4L2_CID_EXPOSURE_ABSOLUTE);
+		struct v4l2_ctrl* exp_abs_ctrl = avt_ctrl_find(sensor, V4L2_CID_EXPOSURE_ABSOLUTE);
 		if(exp_abs_ctrl != NULL) {
 			__v4l2_ctrl_modify_range(exp_abs_ctrl, exp_min / EXP_ABS, exp_max / EXP_ABS, exp_inc / EXP_ABS, exp_abs_ctrl->default_value);
 		}
@@ -2474,9 +2474,9 @@ static int avt_update_exposure_limits(struct v4l2_subdev *sd) {
 
 	{
 		struct v4l2_ctrl *exp_auto_min_ctrl = 
-			avt3_ctrl_find(sensor, AVT_CID_EXPOSURE_AUTO_MIN);
+			avt_ctrl_find(sensor, AVT_CID_EXPOSURE_AUTO_MIN);
 		struct v4l2_ctrl *exp_auto_max_ctrl =
-			avt3_ctrl_find(sensor, AVT_CID_EXPOSURE_AUTO_MAX);
+			avt_ctrl_find(sensor, AVT_CID_EXPOSURE_AUTO_MAX);
 
 		if(exp_auto_min_ctrl != NULL && exp_auto_max_ctrl != NULL) {
 			__v4l2_ctrl_modify_range(exp_auto_min_ctrl, exp_min, exp_max, exp_inc, exp_min);
@@ -2490,7 +2490,7 @@ err:
 	return ret;
 }
 
-static int avt3_write_media_bus_format(struct avt3_dev *camera, int code)
+static int avt_write_media_bus_format(struct avt_dev *camera, int code)
 {
 	struct device *dev = &camera->i2c_client->dev;
 	const struct avt_csi_mipi_mode_mapping *fmt_mapping;
@@ -2530,13 +2530,13 @@ exit:
 	return ret;
 }
 
-static int avt3_set_fmt_internal_bcrm(struct avt3_dev *camera,
+static int avt_set_fmt_internal_bcrm(struct avt_dev *camera,
 	struct v4l2_subdev_state *sd_state,
 	struct v4l2_subdev_format *format)
 {
 	struct v4l2_subdev *sd = get_sd(camera);
 	struct v4l2_mbus_framefmt *mbus_fmt = &format->format;
-	const struct avt3_binning_info *new_binning = NULL;
+	const struct avt_binning_info *new_binning = NULL;
 	struct v4l2_mbus_framefmt *fmt;
 	int ret = 0;
 
@@ -2546,7 +2546,7 @@ static int avt3_set_fmt_internal_bcrm(struct avt3_dev *camera,
 	}
 
 
-	ret = avt3_try_fmt_internal(sd, mbus_fmt, &new_binning);
+	ret = avt_try_fmt_internal(sd, mbus_fmt, &new_binning);
 	if (ret)
 		goto out;
 
@@ -2558,13 +2558,13 @@ static int avt3_set_fmt_internal_bcrm(struct avt3_dev *camera,
 		fmt = &camera->mbus_framefmt;
 
 		if (new_binning != camera->curr_binning_info) {
-			ret = avt3_update_format(camera, &camera->curr_rect, new_binning);
+			ret = avt_update_format(camera, &camera->curr_rect, new_binning);
 			if (ret < 0)
 				goto out;
 		}
 
 		if (mbus_fmt->code != camera->mbus_framefmt.code) {
-			ret = avt3_write_media_bus_format(camera, mbus_fmt->code);
+			ret = avt_write_media_bus_format(camera, mbus_fmt->code);
 
 			if(ret < 0) {
 				avt_err(sd, "Failed setting pixel format in camera: %d", ret);
@@ -2581,7 +2581,7 @@ out:
 	return ret;
 }
 
-static int avt3_set_fmt_internal_gencp(struct avt3_dev *camera,
+static int avt_set_fmt_internal_gencp(struct avt_dev *camera,
 	struct v4l2_subdev_state *sd_state,
 	struct v4l2_subdev_format *format)
 {
@@ -2600,11 +2600,11 @@ static int avt3_set_fmt_internal_gencp(struct avt3_dev *camera,
 }
 
 
-static int avt3_pad_ops_set_fmt(struct v4l2_subdev *sd,
+static int avt_pad_ops_set_fmt(struct v4l2_subdev *sd,
 				struct v4l2_subdev_state *sd_state,
 				struct v4l2_subdev_format *format)
 {
-	struct avt3_dev *sensor = to_avt3_dev(sd);
+	struct avt_dev *sensor = to_avt_dev(sd);
 
 
 	int ret;
@@ -2624,9 +2624,9 @@ static int avt3_pad_ops_set_fmt(struct v4l2_subdev *sd,
 	}
 
 	if (sensor->mode == AVT_BCRM_MODE) {
-		ret = avt3_set_fmt_internal_bcrm(sensor, sd_state, format);
+		ret = avt_set_fmt_internal_bcrm(sensor, sd_state, format);
 	} else if (sensor->mode == AVT_GENCP_MODE) {
-		ret = avt3_set_fmt_internal_gencp(sensor, sd_state, format);
+		ret = avt_set_fmt_internal_gencp(sensor, sd_state, format);
 	} else {
 		ret = -EINVAL;
 	}
@@ -2636,7 +2636,7 @@ out:
 
 	return ret;
 }
-static int read_control_value(struct avt3_dev *camera,s64 *value, const u16 reg,
+static int read_control_value(struct avt_dev *camera,s64 *value, const u16 reg,
 			      const u8 size)
 {
 	int ret = 0;
@@ -2645,7 +2645,7 @@ static int read_control_value(struct avt3_dev *camera,s64 *value, const u16 reg,
 	if (size > AV_CAM_DATA_SIZE_64) 
 		return -EINVAL;
 
-	ret = avt3_read_raw(camera, get_bcrm_addr(camera, reg), tmp, size);
+	ret = avt_read_raw(camera, get_bcrm_addr(camera, reg), tmp, size);
 
 	if (ret < 0)
 		return ret;
@@ -2671,7 +2671,7 @@ static int read_control_value(struct avt3_dev *camera,s64 *value, const u16 reg,
 	return ret;
 }
 
-static void avt3_ctrl_to_reg(const u32 cid,s64 * value)
+static void avt_ctrl_to_reg(const u32 cid,s64 * value)
 {
 	switch (cid) {
 	case V4L2_CID_EXPOSURE_AUTO:
@@ -2695,7 +2695,7 @@ static void avt3_ctrl_to_reg(const u32 cid,s64 * value)
 	}
 }
 
-static void avt3_ctrl_from_reg(const u32 cid,s64 * value)
+static void avt_ctrl_from_reg(const u32 cid,s64 * value)
 {
 	switch (cid) {
 	case V4L2_CID_EXPOSURE_AUTO:
@@ -2719,7 +2719,7 @@ static void avt3_ctrl_from_reg(const u32 cid,s64 * value)
 	}
 }
 
-static int avt3_update_ctrl_value(struct avt3_dev *camera,
+static int avt_update_ctrl_value(struct avt_dev *camera,
 				  struct v4l2_ctrl *ctrl,
 				  const struct avt_ctrl_mapping *mapping)
 {
@@ -2736,7 +2736,7 @@ static int avt3_update_ctrl_value(struct avt3_dev *camera,
 		return ret;
 	}
 
-	avt3_ctrl_from_reg(ctrl->id,&value);
+	avt_ctrl_from_reg(ctrl->id,&value);
 
 	switch (ctrl->type) {
 	case V4L2_CTRL_TYPE_MENU:
@@ -2767,10 +2767,10 @@ static int avt3_update_ctrl_value(struct avt3_dev *camera,
 	return 0;
 }
 
-static int avt3_g_volatile_ctrl(struct v4l2_ctrl *ctrl)
+static int avt_g_volatile_ctrl(struct v4l2_ctrl *ctrl)
 {
 	const struct avt_ctrl_mapping * const ctrl_mapping = ctrl->priv;
-	struct avt3_dev *sensor = container_of(ctrl->handler, struct avt3_dev, v4l2_ctrl_hdl);
+	struct avt_dev *sensor = container_of(ctrl->handler, struct avt_dev, v4l2_ctrl_hdl);
 
 	avt_dbg(get_sd(sensor), "ctrl->id %d", ctrl->id);
 
@@ -2789,16 +2789,16 @@ static int avt3_g_volatile_ctrl(struct v4l2_ctrl *ctrl)
 		return -EINVAL;
 	}
 
-	return avt3_update_ctrl_value(sensor, ctrl, ctrl_mapping);
+	return avt_update_ctrl_value(sensor, ctrl, ctrl_mapping);
 }
 
-static struct v4l2_ctrl* avt3_ctrl_find(struct avt3_dev *camera,u32 id)
+static struct v4l2_ctrl* avt_ctrl_find(struct avt_dev *camera,u32 id)
 {
 	int i;
 
 	for (i = 0; i < AVT_MAX_CTRLS; i++)
 	{
-		struct v4l2_ctrl * ctrl = camera->avt3_ctrls[i];
+		struct v4l2_ctrl * ctrl = camera->avt_ctrls[i];
 
 		if (ctrl && ctrl->id == id)
 		{
@@ -2809,13 +2809,13 @@ static struct v4l2_ctrl* avt3_ctrl_find(struct avt3_dev *camera,u32 id)
 	return NULL;
 }
 
-static inline int avt3_trigger_mode_enabled(struct avt3_dev *camera)
+static inline int avt_trigger_mode_enabled(struct avt_dev *camera)
 {
 	u8 tmp = 0;
 	int ret = 0;
 
 	const struct v4l2_ctrl * trigger_mode_ctrl = 
-			avt3_ctrl_find(camera, AVT_CID_TRIGGER_MODE);
+			avt_ctrl_find(camera, AVT_CID_TRIGGER_MODE);
 	
 	if (trigger_mode_ctrl) {
 		return trigger_mode_ctrl->val != 0;
@@ -2830,13 +2830,13 @@ static inline int avt3_trigger_mode_enabled(struct avt3_dev *camera)
 	return tmp != 0;
 }
 
-static inline int avt3_test_trigger_source(struct avt3_dev *camera, int source)
+static inline int avt_test_trigger_source(struct avt_dev *camera, int source)
 {
 	u8 tmp = 0;
 	int ret = 0;
 
 	const struct v4l2_ctrl * trigger_source_ctrl = 
-		avt3_ctrl_find(camera, AVT_CID_TRIGGER_SOURCE);
+		avt_ctrl_find(camera, AVT_CID_TRIGGER_SOURCE);
 
 	if (trigger_source_ctrl) {
 		return trigger_source_ctrl->val == source;
@@ -2851,24 +2851,24 @@ static inline int avt3_test_trigger_source(struct avt3_dev *camera, int source)
 	return tmp == source;
 }
 
-static void avt3_update_sw_ctrl_state(struct avt3_dev *camera)
+static void avt_update_sw_ctrl_state(struct avt_dev *camera)
 {
 	int trigger_en = 0, trigger_sw_source = 0;
 	struct v4l2_ctrl * sw_trigger_ctrl =
-		avt3_ctrl_find(camera, AVT_CID_TRIGGER_SOFTWARE);
+		avt_ctrl_find(camera, AVT_CID_TRIGGER_SOFTWARE);
 
 	if (!sw_trigger_ctrl) {
 		avt_warn(get_sd(camera),"Software trigger control not found!");
 		return;
 	}
 
-	trigger_en = avt3_trigger_mode_enabled(camera);
+	trigger_en = avt_trigger_mode_enabled(camera);
 	if (trigger_en < 0) {
 		return;
 	}
 
 	trigger_sw_source =
-		avt3_test_trigger_source(camera, AVT_TRIGGER_SOURCE_SOFTWARE);
+		avt_test_trigger_source(camera, AVT_TRIGGER_SOURCE_SOFTWARE);
 	if (trigger_sw_source < 0) {
 		return;
 	}
@@ -2876,26 +2876,26 @@ static void avt3_update_sw_ctrl_state(struct avt3_dev *camera)
 	v4l2_ctrl_activate(sw_trigger_ctrl, trigger_en && trigger_sw_source);
 }
 
-static const struct v4l2_event avt3_source_change_event = {
+static const struct v4l2_event avt_source_change_event = {
 	.type = V4L2_EVENT_SOURCE_CHANGE,
 	.u.src_change.changes = V4L2_EVENT_SRC_CH_RESOLUTION,
 };
 
-static void avt3_ctrl_changed(struct avt3_dev *camera,
+static void avt_ctrl_changed(struct avt_dev *camera,
 			      const struct v4l2_ctrl * const ctrl)
 {
 	switch (ctrl->id)
 	{
 	case AVT_CID_TRIGGER_MODE:
-		avt3_update_sw_ctrl_state(camera);
+		avt_update_sw_ctrl_state(camera);
 		break;
 	case AVT_CID_TRIGGER_SOURCE:
-		avt3_update_sw_ctrl_state(camera);
+		avt_update_sw_ctrl_state(camera);
 		break;
 	case AVT_CID_EXPOSURE_AUTO_MIN: {
 		struct v4l2_ctrl *max_ctrl;
 
-		max_ctrl = avt3_ctrl_find(camera, AVT_CID_EXPOSURE_AUTO_MAX);
+		max_ctrl = avt_ctrl_find(camera, AVT_CID_EXPOSURE_AUTO_MAX);
 
 		if (max_ctrl == NULL)
 			break;
@@ -2909,7 +2909,7 @@ static void avt3_ctrl_changed(struct avt3_dev *camera,
 	case AVT_CID_EXPOSURE_AUTO_MAX: {
 		struct v4l2_ctrl *min_ctrl;
 
-		min_ctrl = avt3_ctrl_find(camera, AVT_CID_EXPOSURE_AUTO_MIN);
+		min_ctrl = avt_ctrl_find(camera, AVT_CID_EXPOSURE_AUTO_MIN);
 
 		if (min_ctrl == NULL)
 			break;
@@ -2923,7 +2923,7 @@ static void avt3_ctrl_changed(struct avt3_dev *camera,
 	case AVT_CID_GAIN_AUTO_MIN: {
 		struct v4l2_ctrl *max_ctrl;
 
-		max_ctrl = avt3_ctrl_find(camera, AVT_CID_GAIN_AUTO_MAX);
+		max_ctrl = avt_ctrl_find(camera, AVT_CID_GAIN_AUTO_MAX);
 
 		if (max_ctrl == NULL)
 			break;
@@ -2937,7 +2937,7 @@ static void avt3_ctrl_changed(struct avt3_dev *camera,
 	case AVT_CID_GAIN_AUTO_MAX: {
 		struct v4l2_ctrl *min_ctrl;
 
-		min_ctrl = avt3_ctrl_find(camera, AVT_CID_GAIN_AUTO_MIN);
+		min_ctrl = avt_ctrl_find(camera, AVT_CID_GAIN_AUTO_MIN);
 
 		if (min_ctrl == NULL)
 			break;
@@ -2951,7 +2951,7 @@ static void avt3_ctrl_changed(struct avt3_dev *camera,
 	case V4L2_CID_AUTOGAIN: {
 		struct v4l2_ctrl *gain_ctrl;
 
-		gain_ctrl = avt3_ctrl_find(camera,V4L2_CID_GAIN);
+		gain_ctrl = avt_ctrl_find(camera,V4L2_CID_GAIN);
 
 		if (gain_ctrl != NULL)
 			__v4l2_ctrl_grab(gain_ctrl,ctrl->val);
@@ -2962,12 +2962,12 @@ static void avt3_ctrl_changed(struct avt3_dev *camera,
 		struct v4l2_ctrl *exp_ctrl,*exp_abs_ctrl;
 		bool grabbed = (ctrl->val == V4L2_EXPOSURE_AUTO);
 
-		exp_ctrl = avt3_ctrl_find(camera,V4L2_CID_EXPOSURE);
+		exp_ctrl = avt_ctrl_find(camera,V4L2_CID_EXPOSURE);
 
 		if (exp_ctrl != NULL)
 			__v4l2_ctrl_grab(exp_ctrl,grabbed);
 
-		exp_abs_ctrl = avt3_ctrl_find(camera,V4L2_CID_EXPOSURE_ABSOLUTE);
+		exp_abs_ctrl = avt_ctrl_find(camera,V4L2_CID_EXPOSURE_ABSOLUTE);
 
 		if (exp_abs_ctrl != NULL)
 			__v4l2_ctrl_grab(exp_abs_ctrl,grabbed);
@@ -2975,14 +2975,14 @@ static void avt3_ctrl_changed(struct avt3_dev *camera,
 		break;
 	}
 	case AVT_CID_BINNING_SELECTOR: {
-		const struct avt3_binning_info *info;
+		const struct avt_binning_info *info;
 		struct v4l2_ctrl *binning_mode_ctrl;
 		u32 width = camera->mbus_framefmt.width;
 		u32 height = camera->mbus_framefmt.height;
 
 		camera->curr_binning_type = ctrl->val;
 
-		avt3_calc_compose(camera, &camera->curr_rect, &width, &height,
+		avt_calc_compose(camera, &camera->curr_rect, &width, &height,
 				  &info);
 
 		camera->curr_binning_info = info;
@@ -2994,11 +2994,11 @@ static void avt3_ctrl_changed(struct avt3_dev *camera,
 			camera->mbus_framefmt.height = height;
 
 			v4l2_subdev_notify_event(get_sd(camera),
-						 &avt3_source_change_event);
+						 &avt_source_change_event);
 		}
 
 		binning_mode_ctrl =
-			avt3_ctrl_find(camera, AVT_CID_BINNING_MODE);
+			avt_ctrl_find(camera, AVT_CID_BINNING_MODE);
 		if (binning_mode_ctrl != NULL)
 		{
 			const long modes_enabled = binning_modes_enabled[ctrl->val];
@@ -3021,7 +3021,7 @@ static void avt3_ctrl_changed(struct avt3_dev *camera,
 
 }
 
-static int write_ctrl_value(struct avt3_dev *camera,struct v4l2_ctrl *ctrl,
+static int write_ctrl_value(struct avt_dev *camera,struct v4l2_ctrl *ctrl,
 		      const struct avt_ctrl_mapping * const ctrl_mapping)
 {
 	const u16 reg = ctrl_mapping->reg_offset;
@@ -3034,7 +3034,7 @@ static int write_ctrl_value(struct avt3_dev *camera,struct v4l2_ctrl *ctrl,
 	else
 		temp = ctrl->val;
 
-	avt3_ctrl_to_reg(ctrl->id,&temp);
+	avt_ctrl_to_reg(ctrl->id,&temp);
 
 	if (ctrl_mapping->type == V4L2_CTRL_TYPE_BUTTON) {
 		ret = bcrm_write(camera, reg, 1, reg_length);
@@ -3046,7 +3046,7 @@ static int write_ctrl_value(struct avt3_dev *camera,struct v4l2_ctrl *ctrl,
 		return ret;
 
 	if (ctrl_mapping->avt_flags & AVT_CTRL_FLAG_READ_BACK) {
-		ret =  avt3_update_ctrl_value(camera, ctrl, ctrl_mapping);
+		ret =  avt_update_ctrl_value(camera, ctrl, ctrl_mapping);
 		if (ret < 0)
 			dev_err(&camera->i2c_client->dev,
 				"Control read back failed with %d",
@@ -3057,9 +3057,9 @@ static int write_ctrl_value(struct avt3_dev *camera,struct v4l2_ctrl *ctrl,
 	return ret;
 }
 
-static int avt3_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
+static int avt_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 {
-	struct avt3_dev *sensor = container_of(ctrl->handler, struct avt3_dev, v4l2_ctrl_hdl);
+	struct avt_dev *sensor = container_of(ctrl->handler, struct avt_dev, v4l2_ctrl_hdl);
 	struct i2c_client *client = sensor->i2c_client;
 	int ret = 0;
 
@@ -3086,7 +3086,7 @@ static int avt3_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 		u8 output_line_shift,invert,active = ctrl->val;
 		u32 line_config;
 
-		sel_ctrl = avt3_ctrl_find(sensor,
+		sel_ctrl = avt_ctrl_find(sensor,
 					  AVT_CID_EXPOSURE_ACTIVE_LINE_SELECTOR);
 
 		if (sel_ctrl == NULL) {
@@ -3095,7 +3095,7 @@ static int avt3_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 
 		output_line_shift = sel_ctrl->val * 8;
 
-		invert_ctrl = avt3_ctrl_find(sensor,
+		invert_ctrl = avt_ctrl_find(sensor,
 					     AVT_CID_EXPOSURE_ACTIVE_INVERT);
 
 		if (invert_ctrl == NULL) {
@@ -3128,7 +3128,7 @@ static int avt3_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 		}
 
 
-		avt3_ctrl_changed(sensor,ctrl);
+		avt_ctrl_changed(sensor,ctrl);
 	}
 	else
 	{
@@ -3141,13 +3141,13 @@ static int avt3_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 	return ret;
 }
 
-static const struct v4l2_ctrl_ops avt3_ctrl_ops = {
-	.g_volatile_ctrl = avt3_g_volatile_ctrl,
-	.s_ctrl = avt3_v4l2_ctrl_ops_s_ctrl,
+static const struct v4l2_ctrl_ops avt_ctrl_ops = {
+	.g_volatile_ctrl = avt_g_volatile_ctrl,
+	.s_ctrl = avt_v4l2_ctrl_ops_s_ctrl,
 };
 
 
-static int avt3_fill_ctrl_config(struct avt3_dev *camera,
+static int avt_fill_ctrl_config(struct avt_dev *camera,
 				 struct v4l2_ctrl_config *config,
 				 const struct avt_ctrl_mapping *mapping)
 {
@@ -3155,7 +3155,7 @@ static int avt3_fill_ctrl_config(struct avt3_dev *camera,
 
 
 
-	config->ops = &avt3_ctrl_ops;
+	config->ops = &avt_ctrl_ops;
 	config->id = mapping->id;
 	config->name = mapping->attr.name;
 	config->type = mapping->type;
@@ -3174,7 +3174,7 @@ static int avt3_fill_ctrl_config(struct avt3_dev *camera,
 		if (ret < 0)
 			return ret;
 
-		avt3_ctrl_from_reg(mapping->id,&config->def);
+		avt_ctrl_from_reg(mapping->id,&config->def);
 
 		break;
 	case V4L2_CTRL_TYPE_BOOLEAN:
@@ -3194,7 +3194,7 @@ static int avt3_fill_ctrl_config(struct avt3_dev *camera,
 			if (ret < 0)
 				return ret;
 
-			avt3_ctrl_from_reg(mapping->id,&config->min);
+			avt_ctrl_from_reg(mapping->id,&config->min);
 		}
 
 		if (!mapping->max_offset)
@@ -3206,7 +3206,7 @@ static int avt3_fill_ctrl_config(struct avt3_dev *camera,
 			if (ret < 0)
 				return ret;
 
-			avt3_ctrl_from_reg(mapping->id,&config->max);
+			avt_ctrl_from_reg(mapping->id,&config->max);
 		}
 
 		if (!mapping->step_offset)
@@ -3218,7 +3218,7 @@ static int avt3_fill_ctrl_config(struct avt3_dev *camera,
 			if (ret < 0)
 				return ret;
 
-			avt3_ctrl_from_reg(mapping->id,&config->step);
+			avt_ctrl_from_reg(mapping->id,&config->step);
 		}
 
 		if (!mapping->reg_offset)
@@ -3230,7 +3230,7 @@ static int avt3_fill_ctrl_config(struct avt3_dev *camera,
 			if (ret < 0)
 				return ret;
 
-			avt3_ctrl_from_reg(mapping->id,&config->def);
+			avt_ctrl_from_reg(mapping->id,&config->def);
 
 			if (config->def < config->min) {
 				config->def = config->min;
@@ -3249,18 +3249,18 @@ static int avt3_fill_ctrl_config(struct avt3_dev *camera,
 	return 0;
 }
 
-static void avt3_ctrl_added(struct avt3_dev *camera,struct v4l2_ctrl *ctrl)
+static void avt_ctrl_added(struct avt_dev *camera,struct v4l2_ctrl *ctrl)
 {
 	switch (ctrl->id)
 	{
 	case AVT_CID_TRIGGER_MODE:
-		avt3_update_sw_ctrl_state(camera);
+		avt_update_sw_ctrl_state(camera);
 		break;
 	case AVT_CID_TRIGGER_SOURCE:
-		avt3_update_sw_ctrl_state(camera);
+		avt_update_sw_ctrl_state(camera);
 		break;
 	case AVT_CID_TRIGGER_SOFTWARE:
-		avt3_update_sw_ctrl_state(camera);
+		avt_update_sw_ctrl_state(camera);
 		break;
 	case AVT_CID_FIRMWARE_VERSION: {
 		const union device_firmware_version_reg *fw_version =
@@ -3289,7 +3289,7 @@ static void avt3_ctrl_added(struct avt3_dev *camera,struct v4l2_ctrl *ctrl)
 	case AVT_CID_EXPOSURE_AUTO_MIN: {
 		struct v4l2_ctrl *max_ctrl = NULL;
 
-		max_ctrl = avt3_ctrl_find(camera, AVT_CID_EXPOSURE_AUTO_MAX);
+		max_ctrl = avt_ctrl_find(camera, AVT_CID_EXPOSURE_AUTO_MAX);
 
 		if (max_ctrl == NULL)
 			return;
@@ -3303,7 +3303,7 @@ static void avt3_ctrl_added(struct avt3_dev *camera,struct v4l2_ctrl *ctrl)
 	case AVT_CID_EXPOSURE_AUTO_MAX: {
 		struct v4l2_ctrl *min_ctrl = NULL;
 
-		min_ctrl = avt3_ctrl_find(camera, AVT_CID_EXPOSURE_AUTO_MIN);
+		min_ctrl = avt_ctrl_find(camera, AVT_CID_EXPOSURE_AUTO_MIN);
 
 		if (min_ctrl == NULL) {
 			avt_warn(get_sd(camera),"V4L2_CID_EXPOSURE_AUTO_MIN not found!");
@@ -3319,7 +3319,7 @@ static void avt3_ctrl_added(struct avt3_dev *camera,struct v4l2_ctrl *ctrl)
 	case AVT_CID_GAIN_AUTO_MIN: {
 		struct v4l2_ctrl *max_ctrl = NULL;
 
-		max_ctrl = avt3_ctrl_find(camera, AVT_CID_GAIN_AUTO_MAX);
+		max_ctrl = avt_ctrl_find(camera, AVT_CID_GAIN_AUTO_MAX);
 
 		if (max_ctrl == NULL)
 			return;
@@ -3333,7 +3333,7 @@ static void avt3_ctrl_added(struct avt3_dev *camera,struct v4l2_ctrl *ctrl)
 	case AVT_CID_GAIN_AUTO_MAX: {
 		struct v4l2_ctrl *min_ctrl = NULL;
 
-		min_ctrl = avt3_ctrl_find(camera, AVT_CID_GAIN_AUTO_MIN);
+		min_ctrl = avt_ctrl_find(camera, AVT_CID_GAIN_AUTO_MIN);
 
 		if (min_ctrl == NULL) {
 			avt_warn(get_sd(camera),"V4L2_CID_EXPOSURE_AUTO_MIN not found!");
@@ -3351,7 +3351,7 @@ static void avt3_ctrl_added(struct avt3_dev *camera,struct v4l2_ctrl *ctrl)
 	}
 }
 
-static int avt3_init_controls(struct avt3_dev *sensor)
+static int avt_init_controls(struct avt_dev *sensor)
 {
 	struct v4l2_ctrl_config config;
 	struct v4l2_ctrl *ctrl;
@@ -3389,10 +3389,10 @@ static int avt3_init_controls(struct avt3_dev *sensor)
 			 ctrl_mapping->attr.name,ctrl_mapping->id);
 
 
-		avt3_fill_ctrl_config(sensor,&config,ctrl_mapping);
+		avt_fill_ctrl_config(sensor,&config,ctrl_mapping);
 
 
-		sensor->avt3_ctrl_cfg[i] = config;
+		sensor->avt_ctrl_cfg[i] = config;
 
 		ctrl = v4l2_ctrl_new_custom(&sensor->v4l2_ctrl_hdl,
 					    &config,(void*)ctrl_mapping);
@@ -3401,7 +3401,7 @@ static int avt3_init_controls(struct avt3_dev *sensor)
 		{
 			avt_err(get_sd(sensor),
 				"Failed to init %s ctrl %d 0x%08x\n",
-				sensor->avt3_ctrl_cfg[i].name,
+				sensor->avt_ctrl_cfg[i].name,
 				sensor->v4l2_ctrl_hdl.error,
 				sensor->v4l2_ctrl_hdl.error);
 
@@ -3418,9 +3418,9 @@ static int avt3_init_controls(struct avt3_dev *sensor)
 		}
 
 
-		avt3_ctrl_added(sensor,ctrl);
+		avt_ctrl_added(sensor,ctrl);
 
-		sensor->avt3_ctrls[i] = ctrl;
+		sensor->avt_ctrls[i] = ctrl;
 		i++;
 	}
 
@@ -3450,7 +3450,7 @@ static inline u64 frame_interval_to_rate_uhz(struct v4l2_fract *interval)
 	return mult_frac(fac, interval->denominator, interval->numerator);
 }
 
-static int avt3_pad_ops_enum_frame_size(struct v4l2_subdev *sd,
+static int avt_pad_ops_enum_frame_size(struct v4l2_subdev *sd,
 #if (LINUX_VERSION_CODE > KERNEL_VERSION(5, 14, 0))
 	struct v4l2_subdev_state *sd_state,
 #else
@@ -3458,10 +3458,10 @@ static int avt3_pad_ops_enum_frame_size(struct v4l2_subdev *sd,
 #endif
 	struct v4l2_subdev_frame_size_enum *fse)
 {
-	struct avt3_dev *sensor = to_avt3_dev(sd);
+	struct avt_dev *sensor = to_avt_dev(sd);
 	const struct v4l2_rect *min = &sensor->min_rect;
 	const struct v4l2_rect *max = &sensor->sensor_rect;
-	struct avt3_binning_info *binning_info;
+	struct avt_binning_info *binning_info;
 	struct v4l2_rect binning_rect,scaled_crop = sensor->curr_rect;
 	size_t max_frame_size;
 
@@ -3518,7 +3518,7 @@ static int avt3_pad_ops_enum_frame_size(struct v4l2_subdev *sd,
 	return 0;
 }
 
-static int avt3_pad_ops_enum_frame_interval(
+static int avt_pad_ops_enum_frame_interval(
 	struct v4l2_subdev *sd,
 #if (LINUX_VERSION_CODE > KERNEL_VERSION(5, 14, 0))
 	struct v4l2_subdev_state *sd_state,
@@ -3527,10 +3527,10 @@ static int avt3_pad_ops_enum_frame_interval(
 #endif
 	struct v4l2_subdev_frame_interval_enum *fie)
 {
-	struct avt3_dev *sensor = to_avt3_dev(sd);
+	struct avt_dev *sensor = to_avt_dev(sd);
 	u32 width = fie->width;
 	u32 height = fie->height;
-	const struct avt3_binning_info *new_binning;
+	const struct avt_binning_info *new_binning;
 	int i,ret;
 	u64 max_framerate;
 
@@ -3543,7 +3543,7 @@ static int avt3_pad_ops_enum_frame_interval(
 
 	if (fie->index >= 1)
 	{
-		avt_info(sd, "fie->index >= AVT3_NUM_FRAMERATES fie->index %d, AVT3_NUM_FRAMERATES %d, fie->pad %d, fie->code 0x%04X, fie->width %d, fie->height %d",
+		avt_info(sd, "fie->index >= avt_NUM_FRAMERATES fie->index %d, avt_NUM_FRAMERATES %d, fie->pad %d, fie->code 0x%04X, fie->width %d, fie->height %d",
 				 fie->index, 1, fie->pad, fie->code, fie->width, fie->height);
 		return -EINVAL;
 	}
@@ -3568,7 +3568,7 @@ static int avt3_pad_ops_enum_frame_interval(
 	}
 
 	// Get matching binning config for requested resolution
-	avt3_calc_compose(sensor,&sensor->curr_rect,&width,&height,
+	avt_calc_compose(sensor,&sensor->curr_rect,&width,&height,
 			  &new_binning);
 
 	if (fie->width != width || fie->height != height)
@@ -3589,14 +3589,14 @@ static int avt3_pad_ops_enum_frame_interval(
 }
 
 
-static int avt3_video_ops_g_frame_interval(struct v4l2_subdev *sd,
+static int avt_video_ops_g_frame_interval(struct v4l2_subdev *sd,
 					   struct v4l2_subdev_frame_interval *fi)
 {
-	struct avt3_dev *sensor = to_avt3_dev(sd);
+	struct avt_dev *sensor = to_avt_dev(sd);
 
 	mutex_lock(&sensor->lock);
 	
-	if (avt3_trigger_mode_enabled(sensor)) {
+	if (avt_trigger_mode_enabled(sensor)) {
 		return -EINVAL;
 	}
 
@@ -3612,10 +3612,10 @@ static int avt3_video_ops_g_frame_interval(struct v4l2_subdev *sd,
 
 
 
-static int avt3_video_ops_s_frame_interval(struct v4l2_subdev *sd,
+static int avt_video_ops_s_frame_interval(struct v4l2_subdev *sd,
 					   struct v4l2_subdev_frame_interval *fi)
 {
-	struct avt3_dev *camera = to_avt3_dev(sd);
+	struct avt_dev *camera = to_avt_dev(sd);
 	int ret = 0;
 	u64 framerate_req,framerate_min,framerate_max;
 
@@ -3630,7 +3630,7 @@ static int avt3_video_ops_s_frame_interval(struct v4l2_subdev *sd,
 		goto out;
 	}
 
-	if (avt3_trigger_mode_enabled(camera)) {
+	if (avt_trigger_mode_enabled(camera)) {
 		ret = -EINVAL;
 		goto out;
 	}
@@ -3679,7 +3679,7 @@ out:
 	return ret;
 }
 
-static int avt3_pad_ops_enum_mbus_code(struct v4l2_subdev *sd,
+static int avt_pad_ops_enum_mbus_code(struct v4l2_subdev *sd,
 #if (LINUX_VERSION_CODE > KERNEL_VERSION(5, 14, 0))
 									   struct v4l2_subdev_state *sd_state,
 #else
@@ -3687,7 +3687,7 @@ static int avt3_pad_ops_enum_mbus_code(struct v4l2_subdev *sd,
 #endif
 									   struct v4l2_subdev_mbus_code_enum *code)
 {
-	struct avt3_dev *sensor = to_avt3_dev(sd);
+	struct avt_dev *sensor = to_avt_dev(sd);
 	struct i2c_client *client = sensor->i2c_client;
 
 	if (NULL == code)
@@ -3727,13 +3727,13 @@ static int avt3_pad_ops_enum_mbus_code(struct v4l2_subdev *sd,
 	return 0;
 }
 
-static void avt3_controls_stream_grab(struct avt3_dev *camera,bool grabbed)
+static void avt_controls_stream_grab(struct avt_dev *camera,bool grabbed)
 {
 	int i;
 
 	for (i = 0;i < AVT_MAX_CTRLS;i++)
 	{
-		struct v4l2_ctrl *ctrl = camera->avt3_ctrls[i];
+		struct v4l2_ctrl *ctrl = camera->avt_ctrls[i];
 
 		if (ctrl && ctrl->priv)
 		{
@@ -3748,13 +3748,13 @@ static void avt3_controls_stream_grab(struct avt3_dev *camera,bool grabbed)
 	}
 }
 
-static inline int set_auto_framerate(struct avt3_dev *camera, bool enabled)
+static inline int set_auto_framerate(struct avt_dev *camera, bool enabled)
 {
 	const u8 val = enabled ? 0 : 1;
 	return bcrm_write8(camera, BCRM_ACQUISITION_FRAME_RATE_ENABLE_8RW, val);
 }
 
-static int write_framerate(struct avt3_dev *camera)
+static int write_framerate(struct avt_dev *camera)
 {
 	int ret = 0;
 
@@ -3777,9 +3777,9 @@ exit:
 	return ret;
 }
 
-static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
+static int avt_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 {
-	struct avt3_dev *sensor = to_avt3_dev(sd);
+	struct avt_dev *sensor = to_avt_dev(sd);
 	struct i2c_client *client = sensor->i2c_client;
 	int ret = 0;
 
@@ -3812,7 +3812,7 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 	{
 		struct v4l2_rect crop_rect = sensor->curr_rect;
 		struct v4l2_rect binning_rect = {0};
-		const struct avt3_binning_info *binning_info = sensor->curr_binning_info;
+		const struct avt_binning_info *binning_info = sensor->curr_binning_info;
 
 		binning_rect.width = binning_info->max_width;
 		binning_rect.height = binning_info->max_height;
@@ -3845,7 +3845,7 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 
 
 
-		if (!avt3_trigger_mode_enabled(sensor)) {
+		if (!avt_trigger_mode_enabled(sensor)) {
 			ret = write_framerate(sensor);
 			if (unlikely(ret))
 				goto out;
@@ -3855,11 +3855,11 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 			bcrm_dump(client);
 
 		if (sensor->stream_start_phy_reset) {
-			avt3_dphy_reset(sensor,1);
+			avt_dphy_reset(sensor,1);
 
 			usleep_range(100,1000);
 
-			avt3_dphy_reset(sensor,0);
+			avt_dphy_reset(sensor,0);
 		}
 
 		/* start streaming */
@@ -3870,7 +3870,7 @@ static int avt3_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 			sensor->is_streaming = enable;
 	}
 
-	avt3_controls_stream_grab(sensor,enable);
+	avt_controls_stream_grab(sensor,enable);
 
 out:
 	MUTEX_UNLOCK(&sensor->lock);
@@ -3879,7 +3879,7 @@ out:
 }
 
 
-int avt3_core_ops_reset(struct v4l2_subdev *sd, u32 val)
+int avt_core_ops_reset(struct v4l2_subdev *sd, u32 val)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
 
@@ -3888,10 +3888,10 @@ int avt3_core_ops_reset(struct v4l2_subdev *sd, u32 val)
 	return 0;
 }
 
-int avt3_core_ops_g_register(struct v4l2_subdev *sd, struct v4l2_dbg_register *reg)
+int avt_core_ops_g_register(struct v4l2_subdev *sd, struct v4l2_dbg_register *reg)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
-	struct avt3_dev *sensor = to_avt3_dev(sd);
+	struct avt_dev *sensor = to_avt_dev(sd);
 	int ret = 0;
 
 	dev_info(&client->dev, "%s[%d]: reg 0x%04llX, size %d",
@@ -3906,12 +3906,12 @@ int avt3_core_ops_g_register(struct v4l2_subdev *sd, struct v4l2_dbg_register *r
 		ret = -EINVAL;
 	}
 
-	ret = avt3_read(sensor, reg->reg, &reg->val, reg->size);
+	ret = avt_read(sensor, reg->reg, &reg->val, reg->size);
 
 	return ret;
 }
 
-int avt3_core_ops_s_register(struct v4l2_subdev *sd, const struct v4l2_dbg_register *reg)
+int avt_core_ops_s_register(struct v4l2_subdev *sd, const struct v4l2_dbg_register *reg)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
 
@@ -3921,7 +3921,7 @@ int avt3_core_ops_s_register(struct v4l2_subdev *sd, const struct v4l2_dbg_regis
 	return 0;
 }
 
-static int avt3_core_ops_subscribe_event(struct v4l2_subdev *sd, struct v4l2_fh *fh,
+static int avt_core_ops_subscribe_event(struct v4l2_subdev *sd, struct v4l2_fh *fh,
 										 struct v4l2_event_subscription *sub)
 {
 	avt_dbg(sd, "event type %u", sub->type);
@@ -3937,22 +3937,22 @@ static int avt3_core_ops_subscribe_event(struct v4l2_subdev *sd, struct v4l2_fh 
 	}
 }
 
-static const struct v4l2_subdev_core_ops avt3_core_ops = {
-	.s_power = avt3_core_ops_s_power,
+static const struct v4l2_subdev_core_ops avt_core_ops = {
+	.s_power = avt_core_ops_s_power,
 	.log_status = v4l2_ctrl_subdev_log_status,
-	.reset = avt3_core_ops_reset,
-	.subscribe_event = avt3_core_ops_subscribe_event,
+	.reset = avt_core_ops_reset,
+	.subscribe_event = avt_core_ops_subscribe_event,
 	.unsubscribe_event = v4l2_event_subdev_unsubscribe,
 
 #ifdef CONFIG_VIDEO_ADV_DEBUG
-	.g_register = avt3_core_ops_g_register,
-	.s_register = avt3_core_ops_s_register,
+	.g_register = avt_core_ops_g_register,
+	.s_register = avt_core_ops_s_register,
 #endif
 };
 
-static int avt3_subdev_internal_ops_close(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
+static int avt_subdev_internal_ops_close(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
-	struct avt3_dev *sensor = to_avt3_dev(sd);
+	struct avt_dev *sensor = to_avt_dev(sd);
 	int ret = 0;
 
 	avt_dbg(sd, "sensor->open_refcnt %d, sensor->is_streaming %d",
@@ -3963,17 +3963,17 @@ static int avt3_subdev_internal_ops_close(struct v4l2_subdev *sd, struct v4l2_su
 	{
 		avt_err(sd, "sensor->is_streaming %d",
 				sensor->is_streaming);
-		// ret = avt3_video_ops_s_stream(sd, false);
+		// ret = avt_video_ops_s_stream(sd, false);
 	}
 
 	sensor->open_refcnt--;
 	return ret;
 }
 //TODO: Support multiple opens
-static int avt3_subdev_internal_ops_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
+static int avt_subdev_internal_ops_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	// called when userspace app calls 'open'
-	struct avt3_dev *sensor = to_avt3_dev(sd);
+	struct avt_dev *sensor = to_avt_dev(sd);
 
 	avt_dbg(sd, "sensor->open_refcnt %d", sensor->open_refcnt);
 
@@ -3989,7 +3989,7 @@ static int avt3_subdev_internal_ops_open(struct v4l2_subdev *sd, struct v4l2_sub
 		// set BCRM mode only when sensor is not streaming
 		mutex_lock(&sensor->lock);
 
-		avt3_change_mode(sensor, AVT_BCRM_MODE);
+		avt_change_mode(sensor, AVT_BCRM_MODE);
 
 		mutex_unlock(&sensor->lock);
 	}
@@ -3999,12 +3999,12 @@ static int avt3_subdev_internal_ops_open(struct v4l2_subdev *sd, struct v4l2_sub
 	return 0;
 }
 
-static const struct v4l2_subdev_internal_ops avt3_subdev_internal_ops = {
-	.open = avt3_subdev_internal_ops_open,
-	.close = avt3_subdev_internal_ops_close,
+static const struct v4l2_subdev_internal_ops avt_subdev_internal_ops = {
+	.open = avt_subdev_internal_ops_open,
+	.close = avt_subdev_internal_ops_close,
 };
 
-int avt3_video_ops_querystd(struct v4l2_subdev *sd, v4l2_std_id *std)
+int avt_video_ops_querystd(struct v4l2_subdev *sd, v4l2_std_id *std)
 {
 	v4l2_dbg(2, debug, sd, "%s[%d]: %s",
 			 __func__, __LINE__, __FILE__);
@@ -4018,9 +4018,9 @@ int v4l2_subdev_video_ops_s_mbus_config(struct v4l2_subdev *sd,
 	return 0;
 }
 
-int avt3_video_ops_g_parm(struct v4l2_subdev *sd, struct v4l2_streamparm *parm)
+int avt_video_ops_g_parm(struct v4l2_subdev *sd, struct v4l2_streamparm *parm)
 {
-	struct avt3_dev *sensor = to_avt3_dev(sd);
+	struct avt_dev *sensor = to_avt_dev(sd);
 	dev_info(&sensor->i2c_client->dev, "%s[%d]: %s", __func__, __LINE__, __FILE__);
 
 	if (!parm)
@@ -4037,14 +4037,14 @@ int avt3_video_ops_g_parm(struct v4l2_subdev *sd, struct v4l2_streamparm *parm)
 
 	parm->parm.capture.capability = V4L2_CAP_TIMEPERFRAME | V4L2_MODE_HIGHQUALITY;
 	parm->parm.capture.timeperframe = sensor->frame_interval;
-	/* return latest format as has been set by avt3_video_ops_g_parm */
+	/* return latest format as has been set by avt_video_ops_g_parm */
 
 	return 0;
 }
 
-int avt3_video_ops_s_parm(struct v4l2_subdev *sd, struct v4l2_streamparm *parm)
+int avt_video_ops_s_parm(struct v4l2_subdev *sd, struct v4l2_streamparm *parm)
 {
-	struct avt3_dev *sensor = to_avt3_dev(sd);
+	struct avt_dev *sensor = to_avt_dev(sd);
 	struct v4l2_fract *timeperframe = &parm->parm.capture.timeperframe;
 
 	v4l2_dbg(2, debug, sd, "%s[%d]: %s", __func__, __LINE__, __FILE__);
@@ -4071,14 +4071,14 @@ int avt3_video_ops_s_parm(struct v4l2_subdev *sd, struct v4l2_streamparm *parm)
 	return 0;
 }
 
-static const struct v4l2_subdev_video_ops avt3_video_ops = {
-	.g_frame_interval = avt3_video_ops_g_frame_interval,
-	.s_frame_interval = avt3_video_ops_s_frame_interval,
-	.s_stream = avt3_video_ops_s_stream,
-	.querystd = avt3_video_ops_querystd,
+static const struct v4l2_subdev_video_ops avt_video_ops = {
+	.g_frame_interval = avt_video_ops_g_frame_interval,
+	.s_frame_interval = avt_video_ops_s_frame_interval,
+	.s_stream = avt_video_ops_s_stream,
+	.querystd = avt_video_ops_querystd,
 #if !defined(CONFIG_ARCH_ZYNQMP) && !defined(DISABLE_PARM)
-	.g_parm = avt3_video_ops_g_parm,
-	.s_parm = avt3_video_ops_s_parm,
+	.g_parm = avt_video_ops_g_parm,
+	.s_parm = avt_video_ops_s_parm,
 #endif
 #if ((LINUX_VERSION_CODE) < (KERNEL_VERSION(5, 6, 0)))
 	.g_mbus_config = v4l2_subdev_video_ops_g_mbus_config,
@@ -4086,7 +4086,7 @@ static const struct v4l2_subdev_video_ops avt3_video_ops = {
 #endif
 };
 
-static void avt3_get_compose(struct avt3_dev *camera,
+static void avt_get_compose(struct avt_dev *camera,
 		   struct v4l2_subdev_state *sd_state,
 		   struct v4l2_subdev_selection *sel)
 {
@@ -4104,7 +4104,7 @@ static void avt3_get_compose(struct avt3_dev *camera,
 	sel->r.height = frmfmt->height;
 }
 
-static void avt3_get_crop(struct avt3_dev * camera,
+static void avt_get_crop(struct avt_dev * camera,
 		   struct v4l2_subdev_state *sd_state,
 		   struct v4l2_subdev_selection *sel)
 {
@@ -4123,11 +4123,11 @@ static void avt3_get_crop(struct avt3_dev * camera,
 	sel->r = *rect;
 }
 
-int avt3_pad_ops_get_selection(struct v4l2_subdev *sd,
+int avt_pad_ops_get_selection(struct v4l2_subdev *sd,
 			       struct v4l2_subdev_state *sd_state,
 			       struct v4l2_subdev_selection *sel)
 {
-	struct avt3_dev *sensor = to_avt3_dev(sd);
+	struct avt_dev *sensor = to_avt_dev(sd);
 	struct i2c_client *client = sensor->i2c_client;
 
 	dev_info(&client->dev, "%s[%d]: %s",
@@ -4150,12 +4150,12 @@ int avt3_pad_ops_get_selection(struct v4l2_subdev *sd,
 		break;
 	/* Current composing area */
 	case V4L2_SEL_TGT_COMPOSE:
-		avt3_get_compose(sensor,sd_state,sel);
+		avt_get_compose(sensor,sd_state,sel);
 		break;
 
 	/* Current cropping area */
 	case V4L2_SEL_TGT_CROP:
-		avt3_get_crop(sensor,sd_state,sel);
+		avt_get_crop(sensor,sd_state,sel);
 		break;
 
 	/* Cropping bounds */
@@ -4176,13 +4176,13 @@ int avt3_pad_ops_get_selection(struct v4l2_subdev *sd,
 	return 0;
 }
 
-static int avt3_set_compose(struct avt3_dev *camera,
+static int avt_set_compose(struct avt_dev *camera,
 			    struct v4l2_subdev_state *sd_state,
 			    struct v4l2_subdev_selection *sel)
 {
 	int ret = 0;
 	struct v4l2_mbus_framefmt *frmfmt;
-	const struct avt3_binning_info *info;
+	const struct avt_binning_info *info;
 	const struct v4l2_rect *crop;
 
 	if (sel->which  == V4L2_SUBDEV_FORMAT_TRY) {
@@ -4196,10 +4196,10 @@ static int avt3_set_compose(struct avt3_dev *camera,
 	sel->r.left = 0;
 	sel->r.top = 0;
 
-	avt3_calc_compose(camera,crop,&sel->r.width,&sel->r.height,&info);
+	avt_calc_compose(camera,crop,&sel->r.width,&sel->r.height,&info);
 
 	if (sel->which == V4L2_SUBDEV_FORMAT_ACTIVE) {
-		ret = avt3_update_format(camera, crop, info);
+		ret = avt_update_format(camera, crop, info);
 		if (ret < 0)
 			goto exit;
 	}
@@ -4211,7 +4211,7 @@ exit:
 	return ret;
 }
 
-static int avt3_set_crop(struct avt3_dev *camera,
+static int avt_set_crop(struct avt_dev *camera,
 			 struct v4l2_subdev_state *sd_state,
 			 struct v4l2_subdev_selection *sel)
 {
@@ -4220,7 +4220,7 @@ static int avt3_set_crop(struct avt3_dev *camera,
 	const struct v4l2_rect *max = &camera->max_rect;
 	struct v4l2_rect *crop;
 	struct v4l2_mbus_framefmt *frmfmt;
-	const struct avt3_binning_info *info;
+	const struct avt_binning_info *info;
 	u32 width = max->width,height = max->height;
 
 	if (sel->which  == V4L2_SUBDEV_FORMAT_TRY) {
@@ -4236,10 +4236,10 @@ static int avt3_set_crop(struct avt3_dev *camera,
 
 	v4l2_rect_map_inside(&sel->r, max);
 
-	avt3_calc_compose(camera,&sel->r,&width,&height,&info);
+	avt_calc_compose(camera,&sel->r,&width,&height,&info);
 
 	if (sel->which == V4L2_SUBDEV_FORMAT_ACTIVE) {
-		ret = avt3_update_format(camera, &sel->r, info);
+		ret = avt_update_format(camera, &sel->r, info);
 		if (ret < 0)
 			goto exit;
 	}
@@ -4253,11 +4253,11 @@ exit:
 	return ret;
 }
 
-int avt3_pad_ops_set_selection(struct v4l2_subdev *sd,
+int avt_pad_ops_set_selection(struct v4l2_subdev *sd,
 	struct v4l2_subdev_state *sd_state,
 	struct v4l2_subdev_selection *sel)
 {
-	struct avt3_dev *sensor = to_avt3_dev(sd);
+	struct avt_dev *sensor = to_avt_dev(sd);
 	int ret = -EINVAL;
 
 
@@ -4274,19 +4274,19 @@ int avt3_pad_ops_set_selection(struct v4l2_subdev *sd,
 	MUTEX_LOCK(&sensor->lock)
 
 	if (sel->target == V4L2_SEL_TGT_CROP)
-		ret = avt3_set_crop(sensor,sd_state, sel);
+		ret = avt_set_crop(sensor,sd_state, sel);
 	else if (sel->target == V4L2_SEL_TGT_COMPOSE)
-		ret = avt3_set_compose(sensor,sd_state,sel);
+		ret = avt_set_compose(sensor,sd_state,sel);
 
 	MUTEX_UNLOCK(&sensor->lock);
 
 	return ret;
 }
 
-int avt3_pad_ops_get_frame_desc(struct v4l2_subdev *sd, unsigned int pad,
+int avt_pad_ops_get_frame_desc(struct v4l2_subdev *sd, unsigned int pad,
 								struct v4l2_mbus_frame_desc *fd)
 {
-	struct avt3_dev *sensor = to_avt3_dev(sd);
+	struct avt_dev *sensor = to_avt_dev(sd);
 	struct i2c_client *client = sensor->i2c_client;
 
 	dev_info(&client->dev, "%s[%d]: %s",
@@ -4294,11 +4294,11 @@ int avt3_pad_ops_get_frame_desc(struct v4l2_subdev *sd, unsigned int pad,
 	return 0;
 }
 
-int avt3_pad_ops_set_frame_desc(struct v4l2_subdev *sd, unsigned int pad,
+int avt_pad_ops_set_frame_desc(struct v4l2_subdev *sd, unsigned int pad,
 								struct v4l2_mbus_frame_desc *fd)
 {
 
-	struct avt3_dev *sensor = to_avt3_dev(sd);
+	struct avt_dev *sensor = to_avt_dev(sd);
 	struct i2c_client *client = sensor->i2c_client;
 
 	dev_info(&client->dev, "%s[%d]: %s",
@@ -4306,7 +4306,7 @@ int avt3_pad_ops_set_frame_desc(struct v4l2_subdev *sd, unsigned int pad,
 	return 0;
 }
 #ifdef CONFIG_MEDIA_CONTROLLER
-int avt3_pad_ops_link_validate(struct v4l2_subdev *sd, struct media_link *link,
+int avt_pad_ops_link_validate(struct v4l2_subdev *sd, struct media_link *link,
 							   struct v4l2_subdev_format *source_fmt,
 							   struct v4l2_subdev_format *sink_fmt)
 {
@@ -4317,31 +4317,31 @@ int avt3_pad_ops_link_validate(struct v4l2_subdev *sd, struct media_link *link,
 }
 #endif /* CONFIG_MEDIA_CONTROLLER */
 
-static const struct v4l2_subdev_pad_ops avt3_pad_ops = {
-	.enum_mbus_code = avt3_pad_ops_enum_mbus_code,
-	.enum_frame_size = avt3_pad_ops_enum_frame_size,
-	.enum_frame_interval = avt3_pad_ops_enum_frame_interval,
-	.get_fmt = avt3_pad_ops_get_fmt,
-	.set_fmt = avt3_pad_ops_set_fmt,
-	.get_selection = avt3_pad_ops_get_selection,
-	.set_selection = avt3_pad_ops_set_selection,
+static const struct v4l2_subdev_pad_ops avt_pad_ops = {
+	.enum_mbus_code = avt_pad_ops_enum_mbus_code,
+	.enum_frame_size = avt_pad_ops_enum_frame_size,
+	.enum_frame_interval = avt_pad_ops_enum_frame_interval,
+	.get_fmt = avt_pad_ops_get_fmt,
+	.set_fmt = avt_pad_ops_set_fmt,
+	.get_selection = avt_pad_ops_get_selection,
+	.set_selection = avt_pad_ops_set_selection,
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 6, 0))
 	.g_mbus_config = v4l2_subdev_video_ops_g_mbus_config,
 	.s_mbus_config = v4l2_subdev_video_ops_s_mbus_config,
 #endif
-	.get_frame_desc = avt3_pad_ops_get_frame_desc,
-	.set_frame_desc = avt3_pad_ops_set_frame_desc,
+	.get_frame_desc = avt_pad_ops_get_frame_desc,
+	.set_frame_desc = avt_pad_ops_set_frame_desc,
 #ifdef CONFIG_MEDIA_CONTROLLER
-	.link_validate = avt3_pad_ops_link_validate,
+	.link_validate = avt_pad_ops_link_validate,
 #endif /* CONFIG_MEDIA_CONTROLLER */
 };
-static const struct v4l2_subdev_ops avt3_subdev_ops = {
-	.core = &avt3_core_ops,
-	.video = &avt3_video_ops,
-	.pad = &avt3_pad_ops,
+static const struct v4l2_subdev_ops avt_subdev_ops = {
+	.core = &avt_core_ops,
+	.video = &avt_video_ops,
+	.pad = &avt_pad_ops,
 };
 
-static int avt3_meo_link_setup(struct media_entity *entity,
+static int avt_meo_link_setup(struct media_entity *entity,
 							   const struct media_pad *local,
 							   const struct media_pad *remote, u32 flags)
 {
@@ -4350,28 +4350,28 @@ static int avt3_meo_link_setup(struct media_entity *entity,
 	return 0;
 }
 
-int avt3_meo_get_fwnode_pad(struct fwnode_endpoint *endpoint)
+int avt_meo_get_fwnode_pad(struct fwnode_endpoint *endpoint)
 {
 	pr_info("%s[%d]", __func__, __LINE__);
 
 	return 0;
 }
 
-int avt3_meo_link_validate(struct media_link *link)
+int avt_meo_link_validate(struct media_link *link)
 {
 	pr_info("%s[%d]", __func__, __LINE__);
 
 	return 0;
 }
 
-static const struct media_entity_operations avt3_sd_media_ops = {
-	.link_setup = avt3_meo_link_setup,
+static const struct media_entity_operations avt_sd_media_ops = {
+	.link_setup = avt_meo_link_setup,
 };
 
 
-static int avt3_get_sensor_capabilities(struct v4l2_subdev *sd)
+static int avt_get_sensor_capabilities(struct v4l2_subdev *sd)
 {
-	struct avt3_dev *sensor = to_avt3_dev(sd);
+	struct avt_dev *sensor = to_avt_dev(sd);
 	struct i2c_client *client = sensor->i2c_client;
 
 	int ret = 0;
@@ -4577,7 +4577,7 @@ static int avt3_get_sensor_capabilities(struct v4l2_subdev *sd)
 	sensor->curr_rect.left = 0;
 	sensor->curr_rect.top = 0;
 
-	ret = avt3_write(sensor, GENCP_CHANGEMODE_8W, bcm_mode, AV_CAM_DATA_SIZE_8);
+	ret = avt_write(sensor, GENCP_CHANGEMODE_8W, bcm_mode, AV_CAM_DATA_SIZE_8);
 
 	if (ret < 0)
 	{
@@ -4589,7 +4589,7 @@ static int avt3_get_sensor_capabilities(struct v4l2_subdev *sd)
 	return 0;
 }
 
-static int avt_csi2_check_mipicfg(struct avt3_dev *sensor)
+static int avt_csi2_check_mipicfg(struct avt_dev *sensor)
 {
 	struct i2c_client *client = sensor->i2c_client;
 	int ret = -EINVAL;
@@ -4647,7 +4647,7 @@ error_out:
 }
 
 
-static int avt3_query_binning(struct avt3_dev *camera)
+static int avt_query_binning(struct avt_dev *camera)
 {
 	int ret,i,j;
 	int type_idx[AVT_BINNING_TYPE_CNT];
@@ -4700,14 +4700,14 @@ static int avt3_query_binning(struct avt3_dev *camera)
 
 	for (i = 0;i < AVT_BINNING_TYPE_CNT;i++) {
 		camera->binning_infos[i] = kcalloc(camera->binning_info_cnt[i],
-			sizeof(struct avt3_binning_info),GFP_KERNEL);
+			sizeof(struct avt_binning_info),GFP_KERNEL);
 	}
 
 	memset(type_idx,0,sizeof(type_idx[0]) * AVT_BINNING_TYPE_CNT);
 	for (i = 0;i < avt_binning_setting_cnt;i++) {
 		const struct avt_binning_setting *setting = &avt_binning_settings[i];
 		if (setting->inq == -1 || binning_inq & (1<<setting->inq)) {
-			struct avt3_binning_info info = {0};
+			struct avt_binning_info info = {0};
 
 			info.vfact = setting->vfact;
 			info.hfact = setting->hfact;
@@ -4765,10 +4765,10 @@ static int avt3_query_binning(struct avt3_dev *camera)
 
 
 #ifdef BCRM_HS_THREAD
-int avt3_streamon_thread(void *data)
+int avt_streamon_thread(void *data)
 {
 	struct v4l2_subdev *sd = (struct v4l2_subdev *)data;
-	struct avt3_dev *sensor = to_avt3_dev(sd);
+	struct avt_dev *sensor = to_avt_dev(sd);
 	int ret = 0;
 
 	long jiffies = msecs_to_jiffies(5000);
@@ -4784,8 +4784,8 @@ int avt3_streamon_thread(void *data)
 			if (sensor->is_streaming && sensor->phyreset_on_streamon)
 			{
 				usleep_range(sensor->dphyreset_delay, sensor->dphyreset_delay * 2);
-				avt3_dphy_reset(sensor, true);
-				avt3_dphy_reset(sensor, false);
+				avt_dphy_reset(sensor, true);
+				avt_dphy_reset(sensor, false);
 				avt_info(sd, "trigger alvium phy reset, sensor->dphyreset_delay %u ret %d",
 						 sensor->dphyreset_delay, ret);
 			}
@@ -4795,16 +4795,16 @@ int avt3_streamon_thread(void *data)
 	return 0;
 }
 
-static int avt3_streamon_thread_enable(struct v4l2_subdev *sd)
+static int avt_streamon_thread_enable(struct v4l2_subdev *sd)
 {
-	struct avt3_dev *sensor = to_avt3_dev(sd);
+	struct avt_dev *sensor = to_avt_dev(sd);
 	struct i2c_client *client = sensor->i2c_client;
 
 	struct task_struct *task;
 
 	dev_info(&client->dev, "%s[%d]+", __func__, __LINE__);
 
-	task = kthread_create(avt3_streamon_thread, (void *)sd,
+	task = kthread_create(avt_streamon_thread, (void *)sd,
 						  "%s", client->name);
 
 	if (IS_ERR(task))
@@ -4818,9 +4818,9 @@ static int avt3_streamon_thread_enable(struct v4l2_subdev *sd)
 	return 0;
 }
 
-static int avt3_streamon_thread_disable(struct v4l2_subdev *sd)
+static int avt_streamon_thread_disable(struct v4l2_subdev *sd)
 {
-	struct avt3_dev *sensor = to_avt3_dev(sd);
+	struct avt_dev *sensor = to_avt_dev(sd);
 	struct i2c_client *client = sensor->i2c_client;
 
 	dev_info(&client->dev, "%s[%d]+", __func__, __LINE__);
@@ -4849,7 +4849,7 @@ static const struct regmap_config alvium_regmap_config = {
 };
 
 
-static int prepare_write_handshake(struct avt3_dev *camera)
+static int prepare_write_handshake(struct avt_dev *camera)
 {
 	int ret;
 	u8 handshake_val;
@@ -4872,7 +4872,7 @@ static int prepare_write_handshake(struct avt3_dev *camera)
 	}
 
 	/* reset only handshake status */
-	ret = avt3_write(camera, get_bcrm_addr(camera, BCRM_WRITE_HANDSHAKE_8RW), 
+	ret = avt_write(camera, get_bcrm_addr(camera, BCRM_WRITE_HANDSHAKE_8RW), 
 		handshake_val & ~BCRM_HANDSHAKE_STATUS_MASK, 1);
 	
 	if (ret < 0)
@@ -4895,7 +4895,7 @@ static int prepare_write_handshake(struct avt3_dev *camera)
 	return 0;
 }
 
-static int wait_for_write_handshake(struct avt3_dev *camera)
+static int wait_for_write_handshake(struct avt_dev *camera)
 {
 	ulong ret;
 
@@ -4919,7 +4919,7 @@ static int wait_for_write_handshake(struct avt3_dev *camera)
 	return -EIO;
 }
 
-static int bcrm_write(struct avt3_dev *camera, u16 reg, u64 val, size_t len)
+static int bcrm_write(struct avt_dev *camera, u16 reg, u64 val, size_t len)
 {
 	struct device *dev = &camera->i2c_client->dev;
 	int ret;
@@ -4931,7 +4931,7 @@ static int bcrm_write(struct avt3_dev *camera, u16 reg, u64 val, size_t len)
 	if (ret < 0)
 		return ret;
 
-	ret = avt3_write(camera, get_bcrm_addr(camera, reg), val, len);
+	ret = avt_write(camera, get_bcrm_addr(camera, reg), val, len);
 
 	if (ret < 0)
 	{
@@ -4958,8 +4958,8 @@ static void bcrm_wrhs_work_func(struct work_struct *work)
 	int ret = 0;
 	int i = 0;
 
-	struct avt3_dev *sensor =
-		container_of(work, struct avt3_dev, bcrm_wrhs_work);
+	struct avt_dev *sensor =
+		container_of(work, struct avt_dev, bcrm_wrhs_work);
 
 	atomic_set(&sensor->bcrm_wrhs_enabled,1);
 
@@ -4971,7 +4971,7 @@ static void bcrm_wrhs_work_func(struct work_struct *work)
 		if (handshake_val & BCRM_HANDSHAKE_STATUS_MASK)
 		{
 			//TODO: Must we check the return value here ?
-			ret = avt3_write(sensor, 
+			ret = avt_write(sensor, 
 				get_bcrm_addr(sensor, BCRM_WRITE_HANDSHAKE_8RW),
 				handshake_val & ~BCRM_HANDSHAKE_STATUS_MASK,
 				AV_CAM_DATA_SIZE_8);
@@ -4993,7 +4993,7 @@ static void bcrm_wrhs_work_func(struct work_struct *work)
 }
 
 
-static int avt3_detect(struct i2c_client *client)
+static int avt_detect(struct i2c_client *client)
 {
 	const u16 address = 0x0;
 	u32 value = 0;
@@ -5029,11 +5029,11 @@ static int avt3_detect(struct i2c_client *client)
 	return 0;
 }
 
-static ssize_t avt3_fw_transfer_read(struct file *filp, struct kobject *kobj,
+static ssize_t avt_fw_transfer_read(struct file *filp, struct kobject *kobj,
 	struct bin_attribute *battr, char *buf, loff_t off, size_t len)
 {
-	struct avt3_dev *camera = battr->private;
-	struct avt3_fw_transfer *xfer = &camera->next_fw_rd_transfer;
+	struct avt_dev *camera = battr->private;
+	struct avt_fw_transfer *xfer = &camera->next_fw_rd_transfer;
 	int ret = -EINVAL; 
 
 	WARN_ON(off != 0);
@@ -5041,7 +5041,7 @@ static ssize_t avt3_fw_transfer_read(struct file *filp, struct kobject *kobj,
 	mutex_lock(&camera->lock);
 
 	if (xfer->len == len) {
-		ret = avt3_read_raw(camera, xfer->addr,
+		ret = avt_read_raw(camera, xfer->addr,
 			buf, xfer->len);
 
 		memset(xfer, 0, sizeof(*xfer));
@@ -5052,15 +5052,15 @@ static ssize_t avt3_fw_transfer_read(struct file *filp, struct kobject *kobj,
 	return ret;
 }
 
-static ssize_t avt3_fw_transfer_write(struct file *filp, struct kobject *kobj,
+static ssize_t avt_fw_transfer_write(struct file *filp, struct kobject *kobj,
 	struct bin_attribute *battr, char *buf, loff_t off, size_t len)
 {
 	const struct {
-		struct avt3_fw_transfer xfer;
+		struct avt_fw_transfer xfer;
 		u8 buf[];
 	} __packed *payload;
-	const struct avt3_fw_transfer *xfer;
-	struct avt3_dev *camera = battr->private;
+	const struct avt_fw_transfer *xfer;
+	struct avt_dev *camera = battr->private;
 	ssize_t ret = -EINVAL;
 
 	WARN_ON(off != 0);
@@ -5085,7 +5085,7 @@ static ssize_t avt3_fw_transfer_write(struct file *filp, struct kobject *kobj,
 		if (xfer->len + sizeof(*xfer) != len)
 			goto out;
 		
-		ret = avt3_write_raw(camera, xfer->addr, payload->buf, xfer->len);
+		ret = avt_write_raw(camera, xfer->addr, payload->buf, xfer->len);
 		if (ret < 0) 
 			goto out;	
 
@@ -5098,7 +5098,7 @@ out:
 	return ret;
 }
 
-static int avt3_fw_transfer_init(struct avt3_dev *camera) 
+static int avt_fw_transfer_init(struct avt_dev *camera) 
 {
 	struct device *dev = &camera->i2c_client->dev;
 	struct bin_attribute *fw_transfer_attr;
@@ -5113,9 +5113,9 @@ static int avt3_fw_transfer_init(struct avt3_dev *camera)
 	fw_transfer_attr->attr.mode = 0666; // Other read 
 	fw_transfer_attr->private = camera;
 	// TODO: Change to dynamic size
-	fw_transfer_attr->size = sizeof(struct avt3_fw_transfer) + 1024; 
-	fw_transfer_attr->read = avt3_fw_transfer_read;
-	fw_transfer_attr->write = avt3_fw_transfer_write;
+	fw_transfer_attr->size = sizeof(struct avt_fw_transfer) + 1024; 
+	fw_transfer_attr->read = avt_fw_transfer_read;
+	fw_transfer_attr->write = avt_fw_transfer_write;
 
 	ret = device_create_bin_file(dev, fw_transfer_attr);
 	if (ret) {
@@ -5128,10 +5128,10 @@ static int avt3_fw_transfer_init(struct avt3_dev *camera)
 }
 
 
-static ssize_t avt3_mode_show(struct device *dev, struct device_attribute *attr, char *buf)
+static ssize_t avt_mode_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct i2c_client *client = to_i2c_client(dev);
-	struct avt3_dev *camera = client_to_avt3_dev(client);
+	struct avt_dev *camera = client_to_avt_dev(client);
 	
 	mutex_lock(&camera->lock);
 	if (camera->mode == AVT_GENCP_MODE)
@@ -5145,10 +5145,10 @@ static ssize_t avt3_mode_show(struct device *dev, struct device_attribute *attr,
 }
 
 
-static ssize_t avt3_mode_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t len)
+static ssize_t avt_mode_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t len)
 {
 	struct i2c_client *client = to_i2c_client(dev);
-	struct avt3_dev *camera = client_to_avt3_dev(client);
+	struct avt_dev *camera = client_to_avt_dev(client);
 	u8 mode_req;
 	int ret;
 	const char *modestr = strim((char*)buf);
@@ -5163,7 +5163,7 @@ static ssize_t avt3_mode_store(struct device *dev, struct device_attribute *attr
 
 	mutex_lock(&camera->lock);
 	
-	ret = avt3_change_mode(camera, mode_req);
+	ret = avt_change_mode(camera, mode_req);
 	if (ret < 0)
 		goto out;
 
@@ -5174,7 +5174,7 @@ out:
 	return ret;
 }
 
-static int avt3_mode_attr_init(struct avt3_dev *camera) 
+static int avt_mode_attr_init(struct avt_dev *camera) 
 {
 	struct device *dev = &camera->i2c_client->dev;
 	struct device_attribute *mode_attr;
@@ -5187,8 +5187,8 @@ static int avt3_mode_attr_init(struct avt3_dev *camera)
 	sysfs_attr_init(&mode_attr->attr);
 	mode_attr->attr.name = "mode";
 	mode_attr->attr.mode = 0666;
-	mode_attr->show = avt3_mode_show;
-	mode_attr->store = avt3_mode_store;
+	mode_attr->show = avt_mode_show;
+	mode_attr->store = avt_mode_store;
 
 	ret = device_create_file(dev, mode_attr);
 	if (ret) {
@@ -5201,11 +5201,11 @@ static int avt3_mode_attr_init(struct avt3_dev *camera)
 }
 
 
-static int avt3_probe(struct i2c_client *client)
+static int avt_probe(struct i2c_client *client)
 {
 
 	struct device *dev = &client->dev;
-	struct avt3_dev *sensor;
+	struct avt_dev *sensor;
 	struct v4l2_mbus_framefmt *fmt;
 	struct fwnode_handle *fwnode = dev_fwnode(dev);
 	int ret;
@@ -5213,7 +5213,7 @@ static int avt3_probe(struct i2c_client *client)
 	dev_info(&client->dev, "%s[%d]: %s",
 			 __func__, __LINE__, __FILE__);
 
-	if (avt3_detect(client) < 0)
+	if (avt_detect(client) < 0)
 	{
 		dev_warn(&client->dev,"No camera detected!");
 		return -ENODEV;
@@ -5352,12 +5352,12 @@ static int avt3_probe(struct i2c_client *client)
 #endif 
 
 	/* now create the subdevice on i2c*/
-	v4l2_i2c_subdev_init(get_sd(sensor), client, &avt3_subdev_ops);
+	v4l2_i2c_subdev_init(get_sd(sensor), client, &avt_subdev_ops);
 	get_sd(sensor)->dev = &client->dev;
-	get_sd(sensor)->internal_ops = &avt3_subdev_internal_ops;
+	get_sd(sensor)->internal_ops = &avt_subdev_internal_ops;
 	get_sd(sensor)->flags |= V4L2_SUBDEV_FL_HAS_EVENTS | V4L2_SUBDEV_FL_HAS_DEVNODE;
 	sensor->pad.flags = MEDIA_PAD_FL_SOURCE;
-	get_sd(sensor)->entity.ops = &avt3_sd_media_ops;
+	get_sd(sensor)->entity.ops = &avt_sd_media_ops;
 	get_sd(sensor)->entity.function = MEDIA_ENT_F_CAM_SENSOR;
 	ret = media_entity_pads_init(&get_sd(sensor)->entity, 1, &sensor->pad);
 	if (ret < 0)
@@ -5371,7 +5371,7 @@ static int avt3_probe(struct i2c_client *client)
 			avt_info(get_sd(sensor), "Hard reset requested by device tree");
 		}
 
-		ret = avt3_reset(sensor, reset_type);
+		ret = avt_reset(sensor, reset_type);
 		if(ret < 0) {
 			avt_err(get_sd(sensor), "Camera reset failed");
 			goto fwnode_cleanup;
@@ -5462,33 +5462,33 @@ static int avt3_probe(struct i2c_client *client)
 	CLEAR(sensor->min_rect);
 	CLEAR(sensor->curr_rect);
 
-	ret = avt3_get_sensor_capabilities(get_sd(sensor));
+	ret = avt_get_sensor_capabilities(get_sd(sensor));
 	if (ret)
 		goto entity_cleanup;
 
-	ret = avt3_query_binning(sensor);
+	ret = avt_query_binning(sensor);
 	if (ret)
 		goto entity_cleanup;
 
-	ret = avt3_get_fmt_available(client);
+	ret = avt_get_fmt_available(client);
 
-	ret = avt3_init_avail_formats(get_sd(sensor));
+	ret = avt_init_avail_formats(get_sd(sensor));
 	if (ret < 0)
 	{
-		dev_err(dev, "%s[%d]: avt3_init_avail_formats failed with %d\n",
+		dev_err(dev, "%s[%d]: avt_init_avail_formats failed with %d\n",
 				__func__, __LINE__, ret);
 		goto entity_cleanup;
 	}
 
 	get_sd(sensor)->ctrl_handler = &sensor->v4l2_ctrl_hdl;
 	sensor->framerate_auto = true;
-	sensor->gain = AVT3_DEFAULT_GAIN;
-	sensor->exposure_time = AVT3_DEFAULT_EXPOSURETIME;
+	sensor->gain = avt_DEFAULT_GAIN;
+	sensor->exposure_time = avt_DEFAULT_EXPOSURETIME;
 	sensor->exposure_mode = EMODE_MANUAL;
 
 	fmt = &sensor->mbus_framefmt;
 
-	ret = avt3_init_current_format(sensor, fmt);
+	ret = avt_init_current_format(sensor, fmt);
 	if (ret)
 	{
 		goto entity_cleanup;
@@ -5499,10 +5499,10 @@ static int avt3_probe(struct i2c_client *client)
 
 	// Init controls before registering the device, because the control handler must be fully initialized before
 	// the subdevice is registered.
-	ret = avt3_init_controls(sensor);
+	ret = avt_init_controls(sensor);
 	if (ret)
 	{
-		dev_err(dev, "%s[%d]: avt3_init_controls failed with (%d)\n", __func__, __LINE__, ret);
+		dev_err(dev, "%s[%d]: avt_init_controls failed with (%d)\n", __func__, __LINE__, ret);
 		goto entity_cleanup;
 	}
 
@@ -5515,7 +5515,7 @@ static int avt3_probe(struct i2c_client *client)
 	}
 	dev_info(&client->dev, "sensor %s registered\n", get_sd(sensor)->name);
 
-	ret = device_add_group(dev, &avt3_attr_grp);
+	ret = device_add_group(dev, &avt_attr_grp);
 	dev_info(dev, " -> %s[%d]: sysfs group created! (%d)\n", __func__, __LINE__, ret);
 	if (ret)
 	{
@@ -5523,13 +5523,13 @@ static int avt3_probe(struct i2c_client *client)
 		goto free_ctrls;
 	}
 
-	ret = avt3_mode_attr_init(sensor);
+	ret = avt_mode_attr_init(sensor);
 	if (ret) {
 		dev_err(dev, "Failed to create mode attribute!\n");
 		goto sysfs_cleanup;
 	}
 
-	ret = avt3_fw_transfer_init(sensor);
+	ret = avt_fw_transfer_init(sensor);
 	if (ret) {
 		dev_err(dev, "Failed to create fw_transfer attribute!\n");
 		goto sysfs_cleanup;
@@ -5538,7 +5538,7 @@ static int avt3_probe(struct i2c_client *client)
 
 #ifdef DPHY_RESET_WORKAROUND
 	sema_init(&sensor->streamon_sem, 0);
-	avt3_streamon_thread_enable(sd_of(sensor));
+	avt_streamon_thread_enable(sd_of(sensor));
 #endif
 
 	ret = bcrm_write32(sensor, BCRM_STREAM_ON_DELAY_32RW, sensor->streamon_delay);
@@ -5548,7 +5548,7 @@ static int avt3_probe(struct i2c_client *client)
 	return 0;
 
 sysfs_cleanup:
-	device_remove_group(dev, &avt3_attr_grp);
+	device_remove_group(dev, &avt_attr_grp);
 
 free_ctrls:
 
@@ -5574,13 +5574,13 @@ err_exit:
 }
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
-static int avt3_remove(struct i2c_client *client)
+static int avt_remove(struct i2c_client *client)
 #else
-static void avt3_remove(struct i2c_client *client)
+static void avt_remove(struct i2c_client *client)
 #endif
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
-	struct avt3_dev *sensor = to_avt3_dev(sd);
+	struct avt_dev *sensor = to_avt_dev(sd);
 	struct device *dev = &client->dev;
 
 	avt_dbg(sd, "+");
@@ -5590,13 +5590,13 @@ static void avt3_remove(struct i2c_client *client)
 
 	device_remove_bin_file(dev, sensor->fw_transfer_attr);
 
-	device_remove_group(dev, &avt3_attr_grp);
+	device_remove_group(dev, &avt_attr_grp);
 	media_entity_cleanup(&get_sd(sensor)->entity);
 
 	v4l2_ctrl_handler_free(&sensor->v4l2_ctrl_hdl);
 
 #ifdef DPHY_RESET_WORKAROUND
-	avt3_streamon_thread_disable(sd);
+	avt_streamon_thread_disable(sd);
 #endif
 
 	if (sensor->bcrm_wrhs_queue)
@@ -5617,31 +5617,31 @@ static void avt3_remove(struct i2c_client *client)
 }
 
 
-static const struct i2c_device_id avt3_id[] = {
+static const struct i2c_device_id avt_id[] = {
 	{"avt_csi2", 0},
 	{},
 };
-MODULE_DEVICE_TABLE(i2c, avt3_id);
+MODULE_DEVICE_TABLE(i2c, avt_id);
 
-static const struct of_device_id avt3_dt_ids[] = {
+static const struct of_device_id avt_dt_ids[] = {
 	{
 		.compatible = "alliedvision,avt_csi2",
 	},
 	{}};
-MODULE_DEVICE_TABLE(of, avt3_dt_ids);
+MODULE_DEVICE_TABLE(of, avt_dt_ids);
 
-static struct i2c_driver avt3_i2c_driver = {
+static struct i2c_driver avt_i2c_driver = {
 	.driver = {
 		.name = "avt_csi2",
 		.owner = THIS_MODULE,
-		.of_match_table = avt3_dt_ids,
+		.of_match_table = avt_dt_ids,
 	},
-	.id_table = avt3_id,
-	.probe_new = avt3_probe,
-	.remove = avt3_remove,
+	.id_table = avt_id,
+	.probe_new = avt_probe,
+	.remove = avt_remove,
 };
 
-module_i2c_driver(avt3_i2c_driver);
+module_i2c_driver(avt_i2c_driver);
 
 MODULE_DESCRIPTION("Allied Vision's MIPI-CSI2 Camera Driver");
 MODULE_AUTHOR("Allied Vision Inc.");

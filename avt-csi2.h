@@ -559,7 +559,7 @@ enum avt_exposure_mode {
 
 #define AVT_BINNING_TYPE_CNT 	2
 
-struct avt3_binning_info {
+struct avt_binning_info {
     	u32 sel;
 	u32 hfact;
 	u32 vfact;
@@ -568,7 +568,7 @@ struct avt3_binning_info {
 	u32 type;
 };
 
-struct avt3_dev
+struct avt_dev
 {
 	struct i2c_client *i2c_client;
 #ifdef NVIDIA
@@ -593,8 +593,8 @@ struct avt3_dev
 	enum avt_mode mode;
 
 	struct v4l2_ctrl_handler v4l2_ctrl_hdl;
-	struct v4l2_ctrl_config	avt3_ctrl_cfg[AVT_MAX_CTRLS];
-	struct v4l2_ctrl *avt3_ctrls[AVT_MAX_CTRLS];
+	struct v4l2_ctrl_config	avt_ctrl_cfg[AVT_MAX_CTRLS];
+	struct v4l2_ctrl *avt_ctrls[AVT_MAX_CTRLS];
 
 	struct v4l2_fwnode_endpoint v4l2_fwnode_ep; /* the parsed DT endpoint info */
 	struct fwnode_handle *endpoint;
@@ -656,10 +656,10 @@ struct avt3_dev
 	struct completion 	bcrm_completion;
 #endif
 
-	struct avt3_binning_info *binning_infos[AVT_BINNING_TYPE_CNT];
+	struct avt_binning_info *binning_infos[AVT_BINNING_TYPE_CNT];
 	size_t binning_info_cnt[AVT_BINNING_TYPE_CNT];
 	u32 curr_binning_type;
-	const struct avt3_binning_info *curr_binning_info;
+	const struct avt_binning_info *curr_binning_info;
 
 	struct v4l2_rect sensor_rect;
 
@@ -669,7 +669,7 @@ struct avt3_dev
 
 	struct bin_attribute *fw_transfer_attr;
 
-	struct avt3_fw_transfer	next_fw_rd_transfer;
+	struct avt_fw_transfer	next_fw_rd_transfer;
 
 	struct device_attribute	*mode_attr;
 };

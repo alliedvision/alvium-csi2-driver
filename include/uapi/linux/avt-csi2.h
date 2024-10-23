@@ -91,7 +91,7 @@ enum avt_test_pattern {
 #define AVT_CID_DO_AUTO_EXPOSURE		 (AVT_CID_CAMERA_BASE + 22)
 
 //TODO: Struct name
-struct avt3_fw_transfer {
+struct avt_fw_transfer {
     u16 addr;
     u16 len;
     u8  rd;
