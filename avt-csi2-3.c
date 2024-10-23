@@ -2856,8 +2856,8 @@ static int avt3_update_ctrl_value(struct avt3_dev *camera,
 {
 	const u16 reg = mapping->reg_offset;
 	const u8 len = mapping->reg_length;
-	int ret;
-	s64 value;
+	int ret = 0;
+	s64 value = 0;
 
 	ret = read_control_value(camera, &value, reg, len);
 
@@ -2942,8 +2942,9 @@ static struct v4l2_ctrl* avt3_ctrl_find(struct avt3_dev *camera,u32 id)
 
 static inline int avt3_trigger_mode_enabled(struct avt3_dev *camera)
 {
-	u8 tmp;
-	int ret;
+	u8 tmp = 0;
+	int ret = 0;
+
 	const struct v4l2_ctrl * trigger_mode_ctrl = 
 			avt3_ctrl_find(camera, AVT_CID_TRIGGER_MODE);
 	
