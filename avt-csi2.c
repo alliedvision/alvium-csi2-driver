@@ -3759,15 +3759,6 @@ static int avt_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 		dev_info(&sensor->i2c_client->dev,"Selected crop (%u,%u) %ux%u\n",crop_rect.left,crop_rect.top,crop_rect.width,crop_rect.height);
 
 
-		ret = bcrm_write8(sensor, BCRM_BINNING_SETTING_8RW, binning_info->sel);
-		
-		if (ret < 0) {
-			dev_err(&client->dev,"%s[%d]: Writing binning setting failed with: %d",__func__,__LINE__,ret);
-		}
-
-
-
-
 		if (!avt_trigger_mode_enabled(sensor)) {
 			ret = write_framerate(sensor);
 			if (unlikely(ret))
@@ -5152,6 +5143,7 @@ static int avt_probe(struct i2c_client *client)
 	
 	sensor->i2c_client = client;
 	sensor->streamon_delay = 0;
+	sensor->framerate_auto = true;
 
 	sd = get_sd(sensor);
 
