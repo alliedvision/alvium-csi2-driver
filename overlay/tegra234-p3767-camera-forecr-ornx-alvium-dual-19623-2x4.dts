@@ -257,6 +257,7 @@
 
 			tegra-camera-platform {
 				status = "okay";
+                compatible = "nvidia, tegra-camera-platform";
 
 				num_csi_lanes = <8>;
 				max_lane_speed = <1500000>;
