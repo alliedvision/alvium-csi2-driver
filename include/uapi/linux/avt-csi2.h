@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
+// SPDX-License-Identifier: GPL-2.0-or-later WITH Linux-syscall-note
 /* 
  * Allied Vision Alvium camera driver
  * 
@@ -90,12 +90,11 @@ enum avt_test_pattern {
 };
 #define AVT_CID_DO_AUTO_EXPOSURE		 (AVT_CID_CAMERA_BASE + 22)
 
-//TODO: Struct name
-struct avt3_fw_transfer {
-    u16 addr;
-    u16 len;
-    u8  rd;
-    u8  reserved[3];
-} __packed;
+struct avt_i2c_xfer {
+    __u16 addr;
+    __u16 len;
+    __u8  rd;
+    __u8  reserved[3];
+} __attribute__((packed));
 
 #endif /* LINUX_AVT_CSI_H */

@@ -13,6 +13,10 @@
 #include "avt-csi2-version.h"
 #include "avt-csi2-regs.h"
 
+#ifdef NVIDIA
+#include <media/camera_common.h>
+#endif //#ifdef NVIDIA
+
 #define USEMUTEX
 
 
@@ -555,7 +559,7 @@ enum avt_exposure_mode {
 
 #define AVT_BINNING_TYPE_CNT 	2
 
-struct avt3_binning_info {
+struct avt_binning_info {
     	u32 sel;
 	u32 hfact;
 	u32 vfact;
@@ -564,11 +568,15 @@ struct avt3_binning_info {
 	u32 type;
 };
 
-struct avt3_dev
+struct avt_dev
 {
 	struct i2c_client *i2c_client;
-	struct v4l2_subdev *sd;
-	void *platform_data;
+#ifdef NVIDIA
+	struct camera_common_data s_data;
+#else
+	struct v4l2_subdev subdev;
+#endif
+
 	struct mutex lock;
 
 	struct regmap *regmap;
@@ -585,8 +593,8 @@ struct avt3_dev
 	enum avt_mode mode;
 
 	struct v4l2_ctrl_handler v4l2_ctrl_hdl;
-	struct v4l2_ctrl_config	avt3_ctrl_cfg[AVT_MAX_CTRLS];
-	struct v4l2_ctrl *avt3_ctrls[AVT_MAX_CTRLS];
+	struct v4l2_ctrl_config	avt_ctrl_cfg[AVT_MAX_CTRLS];
+	struct v4l2_ctrl *avt_ctrls[AVT_MAX_CTRLS];
 
 	struct v4l2_fwnode_endpoint v4l2_fwnode_ep; /* the parsed DT endpoint info */
 	struct fwnode_handle *endpoint;
@@ -607,12 +615,6 @@ struct avt3_dev
 	int pending_softreset_request;
 	int pending_dphyreset_request;
 
-	bool hflip;
-	bool vflip;
-	uint64_t gain;
-	uint64_t exposure_time;
-	int exposure_mode;
-
 	uint32_t avt_min_clk;
 	uint32_t avt_max_clk;
 
@@ -623,7 +625,6 @@ struct avt3_dev
 
 	union bcrm_feature_inquiry_reg feature_inquiry_reg;
 	union bcrm_avail_mipi_reg avail_mipi_reg;
-	union bcrm_avail_mipi_reg ignore_avail_mipi_reg;
 	union bcrm_bayer_inquiry_reg bayer_inquiry_reg;
 	union bcrm_supported_lanecount_reg lane_capabilities;
 
@@ -649,10 +650,10 @@ struct avt3_dev
 	struct completion 	bcrm_completion;
 #endif
 
-	struct avt3_binning_info *binning_infos[AVT_BINNING_TYPE_CNT];
+	struct avt_binning_info *binning_infos[AVT_BINNING_TYPE_CNT];
 	size_t binning_info_cnt[AVT_BINNING_TYPE_CNT];
 	u32 curr_binning_type;
-	const struct avt3_binning_info *curr_binning_info;
+	const struct avt_binning_info *curr_binning_info;
 
 	struct v4l2_rect sensor_rect;
 
@@ -660,9 +661,9 @@ struct avt3_dev
 
 	atomic_t  bcrm_wrhs_enabled;
 
-	struct bin_attribute *fw_transfer_attr;
+	struct bin_attribute *i2c_xfer_attr;
 
-	struct avt3_fw_transfer	next_fw_rd_transfer;
+	struct avt_i2c_xfer	next_fw_rd_transfer;
 
 	struct device_attribute	*mode_attr;
 };
