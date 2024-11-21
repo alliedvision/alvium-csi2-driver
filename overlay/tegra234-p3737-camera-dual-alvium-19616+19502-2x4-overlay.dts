@@ -13,19 +13,16 @@
 
 #include "alvium-default-mode.h"
 
-#define CAM_I2C_MUX 	TEGRA234_AON_GPIO(CC, 3)
-
 / {
-	overlay-name = "DevKit Alvium C Dual 19623 (1x2,1x4)";
-	jetson-header-name = "Jetson 24pin CSI Connector";
-	compatible = "nvidia,p3768-0000+p3767-0000", "nvidia,p3768-0000+p3767-0001", "nvidia,p3768-0000+p3767-0003", "nvidia,p3768-0000+p3767-0004", "nvidia,p3768-0000+p3767-0005";
+	overlay-name = "DevKit Alvium FP3 Dual 19616+19502 (2x4)";
+	jetson-header-name = "Jetson AGX CSI Connector";
+	compatible = "nvidia,p3737-0000+p3701-0000", "nvidia,p3737-0000+p3701-0004", "nvidia,p3737-0000+p3701-0005", "nvidia,p3737-0000+p3701-0008";
 
 	fragment@0 {
 		target-path = "/";
 		__overlay__ {
 			tegra-capture-vi {
 				status = "okay";
-				compatible = "alliedvision,tegra-camrtc-capture-vi", "nvidia,tegra-camrtc-capture-vi";
 				num-channels = <2>;
 				ports {
 					#address-cells = <1>;
@@ -36,8 +33,8 @@
 						reg = <0>;
 						avt_csi2_vi_in0: endpoint {
 							status = "okay";
-							port-index = <1>;
-							bus-width = <2>;
+							port-index = <0>;
+							bus-width = <4>;
 							remote-endpoint = <&avt_csi2_csi_out0>;
 						};
 					};
@@ -83,8 +80,8 @@
 
 								avt_csi2_csi_in0: endpoint@0 {
 									status = "okay";
-									port-index = <1>;
-									bus-width = <2>;
+									port-index = <0>;
+									bus-width = <4>;
 									remote-endpoint = <&avt_csi2_out0>;
 								};
 							};
@@ -133,104 +130,88 @@
 	};
 
 
+
+
 	fragment@2 {
-		target-path = "/bus@0";
-
+		target-path = "/bus@0/i2c@3180000";
 		__overlay__ {
-			cam_i2cmux {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			avt_csi2_a@3c {
 				status = "okay";
+				compatible = "alliedvision,avt_csi2";
+				reg = <0x3c>;
 
-				i2c@0 {
-					status = "okay";
-					reg = <0>;
+				devnode = "video0";
+				avt3,userptr;
+
+				ports {
 					#address-cells = <1>;
 					#size-cells = <0>;
-					rbpcv2_imx219_a@10 {
-						status = "disabled";
-					};
 
-					avt_csi2_a@3c {
-						status = "okay";
-                        reg = <0x3c>;
-                        compatible =  "alliedvision,avt_csi2";
-
-						devnode = "video0";
-						avt3,userptr;
-
-						ports {
-							#address-cells = <1>;
-							#size-cells = <0>;
-
-							port@0 {
-								reg = <0>;
-								avt_csi2_out0: endpoint {
-									port-index = <1>;
-									bus-width = <2>;
-									data-lanes = <1 2>;
-									clock-lanes = <0>;
-									link-frequencies = /bits/ 64 <750000000>;
-									remote-endpoint = <&avt_csi2_csi_in0>;
-								};
-							};
-						};
-
-						mode0 {
-							num_lanes = "2";
-							tegra_sinterface = "serial_b";
-							lane_polarity = "6";
-
-							ALVIUM_DEFAULT_MODE
+					port@0 {
+						reg = <0>;
+						avt_csi2_out0: endpoint {
+							port-index = <0>;
+							bus-width = <4>;
+							data-lanes = <1 2 3 4>;
+							clock-lanes = <0>;
+							link-frequencies = /bits/ 64 <400000000>;
+							remote-endpoint = <&avt_csi2_csi_in0>;
 						};
 					};
 				};
-				i2c@1 {
-					status = "okay";
-					reg = <1>;
+
+				mode0 {
+					num_lanes = "4";
+					tegra_sinterface = "serial_a";
+
+                    ALVIUM_DEFAULT_MODE
+				};
+			};
+
+		};
+	};
+
+	fragment@3 {
+		target-path = "/bus@0/i2c@31e0000";
+		__overlay__ {
+			avt_csi2_b@3c {
+				status = "okay";
+                compatible =  "alliedvision,avt_csi2";  
+                reg = <0x3c>;
+
+				devnode = "video1";
+				avt3,userptr;
+			
+				ports {
 					#address-cells = <1>;
 					#size-cells = <0>;
 
-					rbpcv2_imx219_c@10 {
-						status = "disabled";
-					};
-
-					avt_csi2_b@3c {
-						status = "okay";
-                        reg = <0x3c>;
-                        compatible =  "alliedvision,avt_csi2";
-                                                
-						devnode = "video1";
-						avt3,userptr;
-
-						ports {
-							#address-cells = <1>;
-							#size-cells = <0>;
-
-							port@0 {
-								reg = <0>;
-								avt_csi2_out1: endpoint {
-									port-index = <2>;
-									bus-width = <4>;
-									data-lanes = <1 2 3 4>;
-									clock-lanes = <0>;
-									link-frequencies = /bits/ 64 <750000000>;
-									remote-endpoint = <&avt_csi2_csi_in1>;
-								};
-							};
-						};
-
-						mode0 {
-							num_lanes = "4";
-							tegra_sinterface = "serial_c";
-							
-							ALVIUM_DEFAULT_MODE
+					port@0 {
+						reg = <0>;
+						avt_csi2_out1: endpoint {
+							port-index = <0>;
+							bus-width = <4>;
+							data-lanes = <1 2 3 4>;
+							clock-lanes = <0>;
+							link-frequencies = /bits/ 64 <400000000>;
+							remote-endpoint = <&avt_csi2_csi_in1>;
 						};
 					};
+				};
+
+				mode0 {
+					num_lanes = "4";
+					tegra_sinterface = "serial_c";
+					
+                    ALVIUM_DEFAULT_MODE
 				};
 			};
 		};
 	};
 
-	fragment@3 {
+	fragment@4 {
 		target-path = "/";
 		__overlay__ {
 			avt_csitl {
@@ -247,7 +228,6 @@
 				};
 			};
 
-
 			tegra-camera-platform {
 				status = "okay";
 
@@ -256,7 +236,7 @@
 				min_bits_per_pixel = <8>;
 				vi_peak_byte_per_pixel = <2>;
 				vi_bw_margin_pct = <25>;
-				max_pixel_rate = <160000>;
+				max_pixel_rate = <7500000>;
 				isp_peak_byte_per_pixel = <5>;
 				isp_bw_margin_pct = <25>;
 
@@ -265,7 +245,7 @@
 
 					module0 {
 						status = "okay";
-						badge = "avt_csi2_a";
+						badge = "avt_csi2";
 						position = "front";
 						orientation = "1";
 
@@ -274,25 +254,9 @@
 							/* Declare PCL support driver (classically known as guid)  */
 							pcl_id = "v4l2_sensor";
 							/* Driver v4l2 device name */
-							devname = "avt_csi2_a";
+							devname = "avt_csi2 2-003c";
 							/* Declare the device-tree hierarchy to driver instance */
-							proc-device-tree = "/proc/device-tree/bus@0/i2c@3180000/avt_csi2_a@3c";
-						};
-					};
-                    module1 {
-						status = "okay";
-						badge = "avt_csi2_b";
-						position = "rear";
-						orientation = "1";
-
-						drivernode0 {
-							status = "okay";
-							/* Declare PCL support driver (classically known as guid)  */
-							pcl_id = "v4l2_sensor";
-							/* Driver v4l2 device name */
-							devname = "avt_csi2_b";
-							/* Declare the device-tree hierarchy to driver instance */
-							proc-device-tree = "/proc/device-tree/bus@0/i2c@3180000/avt_csi2_b@3c";
+							proc-device-tree = "/proc/device-tree/bus@0/i2c@3180000/avt_csi2@3c";
 						};
 					};
 				};
@@ -300,4 +264,17 @@
 		};
 	};
 
+
+	fragment@5 {
+		target-path = "/bus@0";
+		__overlay__ {
+			/* The alvium adapter pcb allows to use the pwdn pins for triggering,
+			   so make them available to the user. */
+			gpio@2200000 {
+				camera-control-output-low {
+					gpios = <>;
+				};
+			};
+		};
+	};
 };

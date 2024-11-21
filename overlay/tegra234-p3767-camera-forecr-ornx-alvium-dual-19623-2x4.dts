@@ -13,10 +13,9 @@
 
 #include "alvium-default-mode.h"
 
-#define CAM_I2C_MUX 	TEGRA234_AON_GPIO(CC, 3)
 
 / {
-	overlay-name = "DevKit Alvium C Dual 19623 (1x2,1x4)";
+	overlay-name = "Forecr Ornx Alvium C Dual 19623 (2x4)";
 	jetson-header-name = "Jetson 24pin CSI Connector";
 	compatible = "nvidia,p3768-0000+p3767-0000", "nvidia,p3768-0000+p3767-0001", "nvidia,p3768-0000+p3767-0003", "nvidia,p3768-0000+p3767-0004", "nvidia,p3768-0000+p3767-0005";
 
@@ -36,8 +35,8 @@
 						reg = <0>;
 						avt_csi2_vi_in0: endpoint {
 							status = "okay";
-							port-index = <1>;
-							bus-width = <2>;
+							port-index = <0>;
+							bus-width = <4>;
 							remote-endpoint = <&avt_csi2_csi_out0>;
 						};
 					};
@@ -83,8 +82,8 @@
 
 								avt_csi2_csi_in0: endpoint@0 {
 									status = "okay";
-									port-index = <1>;
-									bus-width = <2>;
+									port-index = <0>;
+									bus-width = <4>;
 									remote-endpoint = <&avt_csi2_out0>;
 								};
 							};
@@ -137,96 +136,104 @@
 		target-path = "/bus@0";
 
 		__overlay__ {
-			cam_i2cmux {
-				status = "okay";
+			i2c@3180000 {
+                pca9544a_70: pca9544a@70 {
+                    status = "okay";
+                    
+                    i2c@0 {
+                        reg = <0>;
+                        i2c-mux,deselect-on-exit;
+                        #address-cells = <1>;
+                        #size-cells = <0>;
 
-				i2c@0 {
-					status = "okay";
-					reg = <0>;
-					#address-cells = <1>;
-					#size-cells = <0>;
-					rbpcv2_imx219_a@10 {
-						status = "disabled";
-					};
+                        avt_csi2_a@3c {
+                            status = "okay";
+                            reg = <0x3c>;
+                            compatible =  "alliedvision,avt_csi2";
 
-					avt_csi2_a@3c {
-						status = "okay";
-                        reg = <0x3c>;
-                        compatible =  "alliedvision,avt_csi2";
+                            devnode = "video0";
+                            avt3,userptr;
 
-						devnode = "video0";
-						avt3,userptr;
+                            ports {
+                                #address-cells = <1>;
+                                #size-cells = <0>;
 
-						ports {
-							#address-cells = <1>;
-							#size-cells = <0>;
+                                port@0 {
+                                    reg = <0>;
+                                    avt_csi2_out0: endpoint {
+                                        port-index = <0>;
+                                        bus-width = <4>;
+                                        data-lanes = <1 2 3 4>;
+                                        clock-lanes = <0>;
+                                        link-frequencies = /bits/ 64 <750000000>;
+                                        remote-endpoint = <&avt_csi2_csi_in0>;
+                                    };
+                                };
+                            };
 
-							port@0 {
-								reg = <0>;
-								avt_csi2_out0: endpoint {
-									port-index = <1>;
-									bus-width = <2>;
-									data-lanes = <1 2>;
-									clock-lanes = <0>;
-									link-frequencies = /bits/ 64 <750000000>;
-									remote-endpoint = <&avt_csi2_csi_in0>;
-								};
-							};
-						};
+                            mode0 {
+                                num_lanes = "4";
+                                tegra_sinterface = "serial_a";
+                                lane_polarity = "6";
 
-						mode0 {
-							num_lanes = "2";
-							tegra_sinterface = "serial_b";
-							lane_polarity = "6";
+                                ALVIUM_DEFAULT_MODE
+                            };
+                        };
+                    };
+                    i2c@1 {
+                        reg = <1>;
+                        i2c-mux,deselect-on-exit;
+                        #address-cells = <1>;
+                        #size-cells = <0>;
+                    };
+                    i2c@2 {	
+                        reg = <2>;
+                        i2c-mux,deselect-on-exit;
+                        #address-cells = <1>;
+                        #size-cells = <0>;
+                        
 
-							ALVIUM_DEFAULT_MODE
-						};
-					};
-				};
-				i2c@1 {
-					status = "okay";
-					reg = <1>;
-					#address-cells = <1>;
-					#size-cells = <0>;
+                        avt_csi2_b@3c {
+                            status = "okay";
+                            reg = <0x3c>;
+                            compatible =  "alliedvision,avt_csi2";
+                                                    
+                            devnode = "video1";
+                            avt3,userptr;
 
-					rbpcv2_imx219_c@10 {
-						status = "disabled";
-					};
+                            ports {
+                                #address-cells = <1>;
+                                #size-cells = <0>;
 
-					avt_csi2_b@3c {
-						status = "okay";
-                        reg = <0x3c>;
-                        compatible =  "alliedvision,avt_csi2";
-                                                
-						devnode = "video1";
-						avt3,userptr;
+                                port@0 {
+                                    reg = <0>;
+                                    avt_csi2_out1: endpoint {
+                                        port-index = <2>;
+                                        bus-width = <4>;
+                                        data-lanes = <1 2 3 4>;
+                                        clock-lanes = <0>;
+                                        link-frequencies = /bits/ 64 <750000000>;
+                                        remote-endpoint = <&avt_csi2_csi_in1>;
+                                    };
+                                };
+                            };
 
-						ports {
-							#address-cells = <1>;
-							#size-cells = <0>;
-
-							port@0 {
-								reg = <0>;
-								avt_csi2_out1: endpoint {
-									port-index = <2>;
-									bus-width = <4>;
-									data-lanes = <1 2 3 4>;
-									clock-lanes = <0>;
-									link-frequencies = /bits/ 64 <750000000>;
-									remote-endpoint = <&avt_csi2_csi_in1>;
-								};
-							};
-						};
-
-						mode0 {
-							num_lanes = "4";
-							tegra_sinterface = "serial_c";
-							
-							ALVIUM_DEFAULT_MODE
-						};
-					};
-				};
-			};
+                            mode0 {
+                                num_lanes = "4";
+                                tegra_sinterface = "serial_c";
+                                
+                                ALVIUM_DEFAULT_MODE
+                            };
+                        };
+                    };
+                    i2c@3 {
+                        reg = <1>;
+                        i2c-mux,deselect-on-exit;
+                        #address-cells = <1>;
+                        #size-cells = <0>;
+                    };
+                };
+            };
 		};
 	};
 
@@ -250,6 +257,7 @@
 
 			tegra-camera-platform {
 				status = "okay";
+                compatible = "nvidia, tegra-camera-platform";
 
 				num_csi_lanes = <8>;
 				max_lane_speed = <1500000>;
