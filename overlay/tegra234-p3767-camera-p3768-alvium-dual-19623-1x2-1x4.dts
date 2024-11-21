@@ -198,8 +198,8 @@
                         reg = <0x3c>;
                         compatible =  "alliedvision,avt_csi2";
                                                 
-						devnode = "video1";				
-						avt3,userptr;		
+						devnode = "video1";
+						avt3,userptr;
 
 						ports {
 							#address-cells = <1>;
