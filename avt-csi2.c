@@ -5550,7 +5550,11 @@ static struct i2c_driver avt_i2c_driver = {
 		.of_match_table = avt_dt_ids,
 	},
 	.id_table = avt_id,
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 3, 0))
 	.probe_new = avt_probe,
+#else
+	.probe = avt_probe,
+#endif
 	.remove = avt_remove,
 };
 
