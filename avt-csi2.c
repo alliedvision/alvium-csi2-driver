@@ -22,6 +22,7 @@
  *
  */
 
+//#define DEBUG
 #define ENABLE_STEPWISE_IMAGE_SIZE
 #define AVT_MAX_FORMAT_ENTRIES 40
 
@@ -66,7 +67,13 @@
 
 #include "avt-csi2.h"
 
+#define AVT_DBG_LVL 2
+
+#ifdef DEBUG
+static int debug = AVT_DBG_LVL;
+#else
 static int debug = 0;
+#endif
 module_param(debug, int, 0644); /* S_IRUGO */
 MODULE_PARM_DESC(debug, "Debug level (0-2)");
 
@@ -74,7 +81,7 @@ static int add_wait_time_ms = 2000;
 module_param(add_wait_time_ms, int, 0600);
 
 
-#define AVT_DBG_LVL 2
+
 
 #define avt_dbg(sd, fmt, args...)                       \
 	v4l2_dbg(AVT_DBG_LVL, debug, sd, "%s[%d]: " fmt "", \
@@ -107,7 +114,7 @@ struct avt_val64
 	};
 } __attribute__((packed));
 
-#define BCRM_WAIT_HANDSHAKE_TIMEOUT_MS 3000000
+#define BCRM_WAIT_HANDSHAKE_TIMEOUT_MS 5000
 
 //Define formats for GenICam for CSI2, if they not exist
 #ifndef V4L2_PIX_FMT_CUSTOM
@@ -274,6 +281,8 @@ static ssize_t avt_read_raw(struct avt_dev *camera, u16 reg,
 {
 	int ret;
 
+	dev_dbg(&camera->i2c_client->dev, "read raw reg %x len %lu", reg, len);
+
 	ret = regmap_bulk_read(camera->regmap, reg, buf, len);
 	if (ret) {
 		return ret;
@@ -286,6 +295,8 @@ static ssize_t avt_write_raw(struct avt_dev *camera, u16 reg,
 	const u8 *buf, size_t len)
 {
 	int ret;
+
+	dev_dbg(&camera->i2c_client->dev, "write raw reg %x len %lu", reg, len);
 
 	ret = regmap_bulk_write(camera->regmap, reg, buf, len);
 	if (ret) {
@@ -2155,50 +2166,80 @@ static int avt_core_ops_s_power(struct v4l2_subdev *sd, int on)
 	return ret;
 }
 
-static int avt_pad_ops_get_fmt(struct v4l2_subdev *sd,
-#if (LINUX_VERSION_CODE > KERNEL_VERSION(5, 14, 0))
-								struct v4l2_subdev_state *sd_state,
-#else
-								struct v4l2_subdev_pad_config *cfg,
-#endif
-								struct v4l2_subdev_format *format)
+static int avt_get_fmt_bcm(struct avt_dev *camera,
+			   struct v4l2_subdev_state *sd_state,
+			   struct v4l2_subdev_format *format)
 {
-	struct avt_dev *sensor = to_avt_dev(sd);
 	struct v4l2_mbus_framefmt *fmt;
-
-	dev_info(&sensor->i2c_client->dev, "%s[%d]",
-			 __func__, __LINE__);
-
-	if (format->pad != 0)
-	{
-		avt_err(sd, "format->pad != 0");
-		return -EINVAL;
-	}
-
-	mutex_lock(&sensor->lock);
-
-	if (format->which == V4L2_SUBDEV_FORMAT_TRY)
-	{
-		dev_info(&sensor->i2c_client->dev, "%s[%d]", __func__, __LINE__);
-#if (LINUX_VERSION_CODE > KERNEL_VERSION(5, 14, 0))
-		fmt = v4l2_subdev_get_try_format(get_sd(sensor), sd_state, format->pad);
-#else
-		fmt = v4l2_subdev_get_try_format(sd_of(sensor), cfg, format->pad);
-#endif
-	}
-	else
-	{
-		dev_info(&sensor->i2c_client->dev, "%s[%d]: %u x %u 0x%04X", __func__, __LINE__,
-				 sensor->mbus_framefmt.width, sensor->mbus_framefmt.height,
-				 sensor->mbus_framefmt.code);
-		fmt = &sensor->mbus_framefmt;
+	
+	if (format->which == V4L2_SUBDEV_FORMAT_TRY) 	{
+		dev_dbg(&camera->i2c_client->dev, "%s[%d]", __func__, __LINE__);
+		fmt = v4l2_subdev_get_try_format(get_sd(camera), sd_state, format->pad);
+	} else {
+		dev_dbg(&camera->i2c_client->dev, "%s[%d]: %u x %u 0x%04X", __func__, __LINE__,
+				 camera->mbus_framefmt.width, camera->mbus_framefmt.height,
+				 camera->mbus_framefmt.code);
+		fmt = &camera->mbus_framefmt;
 	}
 
 	format->format = *fmt;
 
-	mutex_unlock(&sensor->lock);
-
 	return 0;
+}
+
+static int avt_get_fmt_gencp(struct avt_dev *camera,
+			   struct v4l2_subdev_state *sd_state,
+			   struct v4l2_subdev_format *format)
+{
+	struct v4l2_mbus_framefmt *fmt = &format->format;
+
+	fmt->width = camera->curr_rect.width;
+	fmt->height = camera->curr_rect.height;
+	fmt->code = MEDIA_BUS_FMT_CUSTOM;
+	fmt->field = V4L2_FIELD_NONE;
+	fmt->colorspace = V4L2_COLORSPACE_RAW;
+	fmt->quantization = V4L2_QUANTIZATION_DEFAULT;
+	fmt->xfer_func = V4L2_XFER_FUNC_NONE;
+
+	
+	return 0;
+}			
+
+static int avt_pad_ops_get_fmt(struct v4l2_subdev *sd,
+			       struct v4l2_subdev_state *sd_state,
+			       struct v4l2_subdev_format *format)
+{
+	struct avt_dev *camera = to_avt_dev(sd);
+	int ret;
+	
+
+	dev_info(&camera->i2c_client->dev, "%s[%d]",
+			 __func__, __LINE__);
+
+	if (format->pad != 0) {
+		avt_err(sd, "format->pad != 0");
+		return -EINVAL;
+	}
+
+	
+	mutex_lock(&camera->lock);
+
+	switch (camera->mode) {
+		case AVT_BCRM_MODE:
+			ret = avt_get_fmt_bcm(camera, sd_state, format);
+			break;
+		case AVT_GENCP_MODE:
+			ret = avt_get_fmt_gencp(camera, sd_state, format);
+			break;
+		default:
+			ret = -EINVAL;
+			break;
+	}
+
+	mutex_unlock(&camera->lock);
+
+
+	return ret;
 }
 
 static void avt_calc_compose(const struct avt_dev * const camera,
@@ -2472,15 +2513,18 @@ static int avt_set_fmt_internal_bcrm(struct avt_dev *camera,
 	int ret = 0;
 
 	if (mbus_fmt->code == MEDIA_BUS_FMT_CUSTOM) {
-		*mbus_fmt = camera->mbus_framefmt;
-		goto out;
+		if (format->which != V4L2_SUBDEV_FORMAT_TRY) {
+			*mbus_fmt = camera->mbus_framefmt;
+			goto out;
+		}
+	} else {
+		ret = avt_try_fmt_internal(sd, mbus_fmt, &new_binning);
+		if (ret)
+			goto out;
 	}
 
 
-	ret = avt_try_fmt_internal(sd, mbus_fmt, &new_binning);
-	if (ret)
-		goto out;
-
+	
 	if (format->which == V4L2_SUBDEV_FORMAT_TRY) {
 		avt_dbg(sd,  "format->which == V4L2_SUBDEV_FORMAT_TRY");
 		fmt = v4l2_subdev_get_try_format(sd, sd_state, format->pad);
