@@ -5419,12 +5419,21 @@ static int avt_probe(struct i2c_client *client)
 		goto entity_cleanup;
 	}
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 0))
+	ret = v4l2_subdev_init_finalize(sd);
+
+	if (ret) {
+		dev_err(dev, "Failed to finalize subdev init!");
+		goto free_ctrls;
+	}
+#endif
+
 	ret = v4l2_async_register_subdev(sd);
 
 	if (ret)
 	{
 		dev_err(dev, "%s[%d]: v4l2_async_register_subdev_sensor_common failed with (%d)\n", __func__, __LINE__, ret);
-		goto free_ctrls;
+		goto sd_cleanup;
 	}
 	dev_info(&client->dev, "sensor %s registered\n", sd->name);
 
@@ -5433,7 +5442,7 @@ static int avt_probe(struct i2c_client *client)
 	if (ret)
 	{
 		dev_err(dev, "%s[%d]: Failed to create sysfs group (%d)\n", __func__, __LINE__, ret);
-		goto free_ctrls;
+		goto sd_cleanup;
 	}
 
 	ret = avt_mode_attr_init(sensor);
@@ -5462,6 +5471,11 @@ static int avt_probe(struct i2c_client *client)
 
 sysfs_cleanup:
 	device_remove_group(dev, &avt_attr_grp);
+
+sd_cleanup:
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 0))
+	v4l2_subdev_cleanup(sd);
+#endif
 
 free_ctrls:
 
@@ -5505,6 +5519,10 @@ static void avt_remove(struct i2c_client *client)
 
 	device_remove_group(dev, &avt_attr_grp);
 	media_entity_cleanup(&sd->entity);
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 0))
+	v4l2_subdev_cleanup(sd);
+#endif
 
 	v4l2_ctrl_handler_free(&sensor->v4l2_ctrl_hdl);
 
