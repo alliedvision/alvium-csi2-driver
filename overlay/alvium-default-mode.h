@@ -26,7 +26,7 @@
     line_length = "5488"; \
     inherent_gain = "1"; \
     mclk_multiplier = "31.25"; \
-    pix_clk_hz = "1500000000"; \
+    pix_clk_hz = "750000000"; \
     \
     gain_factor = "16"; \
     framerate_factor = "1000000"; \
