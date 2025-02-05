@@ -3568,11 +3568,13 @@ static int avt_video_ops_g_frame_interval(struct v4l2_subdev *sd,
 					   struct v4l2_subdev_frame_interval *fi)
 {
 	struct avt_dev *camera = to_avt_dev(sd);
+	int ret = 0;
 
 	mutex_lock(&camera->lock);
 	
 	if (avt_trigger_mode_enabled(camera)) {
-		return -EINVAL;
+		ret = -EINVAL;
+		goto exit;
 	}
 
 	fi->interval = camera->frame_interval;
@@ -3580,9 +3582,10 @@ static int avt_video_ops_g_frame_interval(struct v4l2_subdev *sd,
 			camera->frame_interval.denominator, camera->frame_interval.numerator,
 			fi->interval.numerator, fi->interval.denominator);
 
+exit:
 	mutex_unlock(&camera->lock);
 
-	return 0;
+	return ret;
 }
 
 
@@ -3616,7 +3619,7 @@ static int avt_video_ops_s_frame_interval(struct v4l2_subdev *sd,
 	if (ret < 0)
 	{
 		avt_err(sd, "regmap_read failed (%d)\n", ret);
-		return ret;
+		goto out;
 	}
 
 	ret = bcrm_read64(camera,BCRM_ACQUISITION_FRAME_RATE_MAX_64R,
@@ -3625,7 +3628,7 @@ static int avt_video_ops_s_frame_interval(struct v4l2_subdev *sd,
 	if (ret < 0)
 	{
 		avt_err(sd, "regmap_read failed (%d)\n", ret);
-		return ret;
+		goto out;
 	}
 
 	if (fi->interval.numerator == 0 || fi->interval.denominator == 0) {
