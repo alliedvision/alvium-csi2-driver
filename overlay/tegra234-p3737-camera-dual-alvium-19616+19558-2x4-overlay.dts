@@ -156,7 +156,7 @@
 							bus-width = <4>;
 							data-lanes = <1 2 3 4>;
 							clock-lanes = <0>;
-							link-frequencies = /bits/ 64 <650000000>;
+							link-frequencies = /bits/ 64 <625000000>;
 							remote-endpoint = <&avt_csi2_csi_in0>;
 						};
 					};
@@ -195,7 +195,7 @@
 							bus-width = <4>;
 							data-lanes = <1 2 3 4>;
 							clock-lanes = <0>;
-							link-frequencies = /bits/ 64 <650000000>;
+							link-frequencies = /bits/ 64 <625000000>;
 							remote-endpoint = <&avt_csi2_csi_in1>;
 						};
 					};
