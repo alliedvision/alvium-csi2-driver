@@ -114,7 +114,10 @@ struct avt_val64
 	};
 } __attribute__((packed));
 
-#define BCRM_WAIT_HANDSHAKE_TIMEOUT_MS 3000
+#define BCRM_WAIT_HANDSHAKE_TIMEOUT_MS 	3000
+
+#define MODE_SWITCH_TIMEOUT_US		5 * USEC_PER_SEC
+#define MODE_SWTICH_POLL_INTERVAL_US	10 * USEC_PER_MSEC 
 
 //Define formats for GenICam for CSI2, if they not exist
 #ifndef V4L2_PIX_FMT_CUSTOM
@@ -463,8 +466,9 @@ static int avt_change_mode(struct avt_dev *camera, u8 req_mode)
 
 
 	ret = read_poll_timeout(avt_read8, ret, cur_mode == req_mode,
-		10 * USEC_PER_MSEC, 500 * USEC_PER_MSEC, true,
-		camera, GENCP_CURRENTMODE_8R, &cur_mode);
+				MODE_SWTICH_POLL_INTERVAL_US,
+				MODE_SWITCH_TIMEOUT_US, true,
+				camera, GENCP_CURRENTMODE_8R, &cur_mode);
 	if (ret < 0)
 		goto out;
 
