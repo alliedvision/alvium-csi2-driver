@@ -16,6 +16,7 @@ overlay_install:
 	install -m 0644 $(SRC)/overlay/tegra234-p3767-camera-forecr-ornx-alvium-dual-19623+19502-2x4.dtbo $(INSTALL_MOD_PATH)/boot/
 	install -m 0644 $(SRC)/overlay/tegra234-p3737-camera-dual-alvium-19616+19502-2x4-overlay.dtbo $(INSTALL_MOD_PATH)/boot/
 	install -m 0644 $(SRC)/overlay/tegra234-p3737-camera-dual-alvium-19616+19558-2x4-overlay.dtbo $(INSTALL_MOD_PATH)/boot/
+	install -m 0644 $(SRC)/overlay/tegra234-p3737-camera-dual-alvium-19616+19558-2x4-single-deser-overlay.dtbo $(INSTALL_MOD_PATH)/boot/
 
 
 header_install:
