@@ -3325,6 +3325,18 @@ static void avt_ctrl_added(struct avt_dev *camera,struct v4l2_ctrl *ctrl)
 
 		break;
 	}
+	case V4L2_CID_TEST_PATTERN: {
+		int ret;
+		u32 inq;
+
+		ret = bcrm_read32(camera, BCRM_TEST_PATTERN_INQ_32R, &inq);
+		if (ret < 0) {
+			break;
+		}
+
+		ctrl->menu_skip_mask = ((~inq) << 1);
+	}
+		break;
 	default:
 		break;
 	}

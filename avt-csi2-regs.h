@@ -165,7 +165,10 @@
 #define BCRM_GAIN_AUTO_MIN_64RW 			0x0340
 #define BCRM_GAIN_AUTO_MAX_64RW 			0x0348
 
-#define _BCRM_LAST_ADDR 				BCRM_GAIN_AUTO_MAX_64RW
+#define BCRM_TEST_PATTERN_INQ_32R			0x03B0
+#define BCRM_TEST_PATTERN_SETTING_32RW			0x03B4
+
+#define _BCRM_LAST_ADDR 				BCRM_TEST_PATTERN_SETTING_32R
 
 /************************************************/
 

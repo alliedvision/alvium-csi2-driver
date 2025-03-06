@@ -155,6 +155,26 @@ static const char * const avt_intensity_auto_precendence_menu[] = {
 };
 
 
+static const char * const avt_test_pattern_menu[] = {
+	[AVT_TEST_PATTERN_OFF] = "Off",
+	[AVT_TEST_PATTERN_BLACK] = "Black",
+	[AVT_TEST_PATTERN_WHITE] = "White",
+	[AVT_TEST_PATTERN_GREY] = "Grey",
+	[AVT_TEST_PATTERN_RED] = "Red",
+	[AVT_TEST_PATTERN_GREEN] = "Green",
+	[AVT_TEST_PATTERN_BLUE] = "Blue",
+	[AVT_TEST_PATTERN_COLOR_HBAR] = "Color Horizontal Bar",
+	[AVT_TEST_PATTERN_COLOR_VBAR] = "Color Vertical Bar",
+	[AVT_TEST_PATTERN_COLOR_VBAR_FADE_GREY] = "Color Vertical Bar Fade Grey",
+	[AVT_TEST_PATTERN_GREY_ALT_STRIPE] = "Grey Alternating Stripe",
+	[AVT_TEST_PATTERN_GREY_ALT_PIXEL] = "Grey Alternating Pixel",
+	[AVT_TEST_PATTERN_GREY_VBAR1] = "Grey Vertical Bar1",
+	[AVT_TEST_PATTERN_GREY_VBAR2] = "Grey Vertical Bar2",
+	[AVT_TEST_PATTERN_GREY_HRAMP] = "Grey Horizontal Ramp",
+	[AVT_TEST_PATTERN_GREY_DRAMP_MOVING] = "Grey Diagonal Ramp Moving",
+	[AVT_TEST_PATTERN_GREY_DRAMP] = "Grey Diagonal Ramp",
+};
+
 
 const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
@@ -545,6 +565,18 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.step_offset	= BCRM_INTENSITY_AUTO_PRECEDENCE_INC_32R,
 		.reg_offset	= BCRM_INTENSITY_AUTO_PRECEDENCE_VALUE_32RW,
 		.reg_length	= AV_CAM_DATA_SIZE_32,
+	},
+	{
+		.id		= V4L2_CID_TEST_PATTERN,
+		.attr		= { "Test Pattern", -1 },
+		.type		= V4L2_CTRL_TYPE_MENU,
+		.qmenu		= avt_test_pattern_menu,
+		.flags 		= 0,
+		.min_value 	= 0,
+		.max_value	= ARRAY_SIZE(avt_test_pattern_menu) - 1,
+		.reg_offset	= BCRM_TEST_PATTERN_SETTING_32RW,
+		.reg_length	= AV_CAM_DATA_SIZE_32,
+		.avt_flags 	= AVT_CTRL_FLAG_STREAM_DISABLED,
 	}
 };
 
