@@ -11,6 +11,34 @@
 // BCRM register offsets
 #define BCRM_VERSION_32R 				0x0000
 #define BCRM_FEATURE_INQUIRY_64R 			0x0008
+#define BCRM_FEATURE_INQ_REVERSE_X_BIT			0
+#define BCRM_FEATURE_INQ_REVERSE_Y_BIT			1
+#define BCRM_FEATURE_INQ_INTENSITY_AUTO_PRECEDENCE_BIT 	2
+#define BCRM_FEATURE_INQ_BLACK_LEVEL_BIT		3
+#define BCRM_FEATURE_INQ_GAIN_BIT			4
+#define BCRM_FEATURE_INQ_GAMMA_BIT			5
+#define BCRM_FEATURE_INQ_CONTRAST_BIT			6
+#define BCRM_FEATURE_INQ_SATURATION_BIT			7
+#define BCRM_FEATURE_INQ_HUE_BIT			8
+#define BCRM_FEATURE_INQ_WHITE_BALANCE_BIT		9
+#define BCRM_FEATURE_INQ_SHARPNESS_BIT			10
+#define BCRM_FEATURE_INQ_EXPOSURE_AUTO_BIT		11
+#define BCRM_FEATURE_INQ_GAIN_AUTO_BIT			12
+#define BCRM_FEATURE_INQ_WHITE_BALANCE_AUTO_BIT		13
+#define BCRM_FEATURE_INQ_DEVICE_TEMPERATURE_BIT		14
+#define BCRM_FEATURE_INQ_ACQUISTION_ABORT_BIT		15
+#define BCRM_FEATURE_INQ_ACQUISTION_FRAME_RATE_BIT	16
+#define BCRM_FEATURE_INQ_FRAME_TRIGGER_BIT		17
+#define BCRM_FEATURE_INQ_EXPOSURE_ACTIVE_LINE_BIT	18
+#define BCRM_FEATURE_INQ_AUTO_REGION_BIT		19
+#define BCRM_FEATURE_INQ_FRAME_TRIGGER_WAIT_LINE_BIT	20
+#define BCRM_FEATURE_INQ_COLOR_TRANSFORM_MATRIX_BIT	21
+#define BCRM_FEATURE_INQ_USER_DATA_STORAGE_BIT		22
+#define BCRM_FEATURE_INQ_DEVICE_STATUS_BIT		23
+#define BCRM_FEATURE_INQ_REVISION_ID_BIT		24
+#define BCRM_FEATURE_INQ_DIRECT_MEMORY_ACCESS_BIT	25
+#define BCRM_FEATURE_INQ_EXPOSURE_MODE_BIT		26
+
 #define BCRM_DEVICE_FIRMWARE_VERSION_64R 		0x0010
 #define BCRM_WRITE_HANDSHAKE_8RW 			0x0018
 
@@ -299,29 +327,37 @@ struct __attribute__((__packed__)) gencp_reg {
 
 union bcrm_feature_inquiry_reg {
 	struct {
-		unsigned long long reverse_x_avail:1;
-		unsigned long long reverse_y_avail:1;
-		unsigned long long intensity_auto_precedence_avail:1;
-		unsigned long long black_level_avail:1;
-		unsigned long long gain_avail:1;
-		unsigned long long gamma_avail:1;
-		unsigned long long contrast_avail:1;
-		unsigned long long saturation_avail:1;
-		unsigned long long hue_avail:1;
-		unsigned long long white_balance_avail:1;
-		unsigned long long sharpness_avail:1;
-		unsigned long long exposure_auto_avail:1;
-		unsigned long long gain_auto_avail:1;
-		unsigned long long white_balance_auto_avail:1;
-		unsigned long long device_temperature_avail:1;
-		unsigned long long acquisition_abort:1;
-		unsigned long long acquisition_frame_rate:1;
-		unsigned long long frame_trigger:1;
-		unsigned long long exposure_active_line_available:1;
-		unsigned long long reserved:45;
+		u64 reverse_x_avail:1;
+		u64 reverse_y_avail:1;
+		u64 intensity_auto_precedence_avail:1;
+		u64 black_level_avail:1;
+		u64 gain_avail:1;
+		u64 gamma_avail:1;
+		u64 contrast_avail:1;
+		u64 saturation_avail:1;
+		u64 hue_avail:1;
+		u64 white_balance_avail:1;
+		u64 sharpness_avail:1;
+		u64 exposure_auto_avail:1;
+		u64 gain_auto_avail:1;
+		u64 white_balance_auto_avail:1;
+		u64 device_temperature_avail:1;
+		u64 acquisition_abort:1;
+		u64 acquisition_frame_rate:1;
+		u64 frame_trigger:1;
+		u64 exposure_active_line_available:1;
+		u64 auto_region:1;
+		u64 frame_trigger_wait_line:1;
+		u64 color_transformation_matrix:1;
+		u64 user_data_storage:1;
+		u64 device_status:1;
+		u64 revision_id:1;
+		u64 direct_memory_access:1;
+		u64 exposure_mode:1;
+		u64 reserved:37;
 	} feature_inq;
 
-	unsigned long long value;
+	u64 value;
 };
 
 union device_firmware_version_reg {

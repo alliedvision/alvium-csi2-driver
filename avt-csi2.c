@@ -1036,49 +1036,69 @@ static ssize_t bcrm_feature_inquiry_reg_show(struct device *dev,
 }
 
 static ssize_t bcrm_feature_inquiry_reg_text_show(struct device *dev,
-												  struct device_attribute *attr, char *buf)
+						  struct device_attribute *attr,
+						  char *buf)
 {
 	struct avt_dev *camera = client_to_avt_dev(to_i2c_client(dev));
+	union bcrm_feature_inquiry_reg *inq_reg = &camera->feature_inquiry_reg;
+	
 	ssize_t ret = 0;
 
-	ret = sprintf(buf, "reverse_x_avail                 %d\n"
-					   "reverse_y_avail                 %d\n"
-					   "intensity_auto_precedence_avail %d\n"
-					   "black_level_avail               %d\n"
-					   "gain_avail                      %d\n"
-					   "gamma_avail                     %d\n"
-					   "contrast_avail                  %d\n"
-					   "saturation_avail                %d\n"
-					   "hue_avail                       %d\n"
-					   "white_balance_avail             %d\n"
-					   "sharpness_avail                 %d\n"
-					   "exposure_auto                   %d\n"
-					   "gain_auto                       %d\n"
-					   "white_balance_auto_avail        %d\n"
-					   "device_temperature_avail        %d\n"
-					   "acquisition_abort               %d\n"
-					   "acquisition_frame_rate          %d\n"
-					   "frame_trigger                   %d\n"
-					   "exposure active line available  %d\n",
-				  camera->feature_inquiry_reg.feature_inq.reverse_x_avail,
-				  camera->feature_inquiry_reg.feature_inq.reverse_y_avail,
-				  camera->feature_inquiry_reg.feature_inq.intensity_auto_precedence_avail,
-				  camera->feature_inquiry_reg.feature_inq.black_level_avail,
-				  camera->feature_inquiry_reg.feature_inq.gain_avail,
-				  camera->feature_inquiry_reg.feature_inq.gamma_avail,
-				  camera->feature_inquiry_reg.feature_inq.contrast_avail,
-				  camera->feature_inquiry_reg.feature_inq.saturation_avail,
-				  camera->feature_inquiry_reg.feature_inq.hue_avail,
-				  camera->feature_inquiry_reg.feature_inq.white_balance_avail,
-				  camera->feature_inquiry_reg.feature_inq.sharpness_avail,
-				  camera->feature_inquiry_reg.feature_inq.exposure_auto_avail,
-				  camera->feature_inquiry_reg.feature_inq.gain_auto_avail,
-				  camera->feature_inquiry_reg.feature_inq.white_balance_auto_avail,
-				  camera->feature_inquiry_reg.feature_inq.device_temperature_avail,
-				  camera->feature_inquiry_reg.feature_inq.acquisition_abort,
-				  camera->feature_inquiry_reg.feature_inq.acquisition_frame_rate,
-				  camera->feature_inquiry_reg.feature_inq.frame_trigger,
-				  camera->feature_inquiry_reg.feature_inq.exposure_active_line_available);
+	ret = sprintf(buf,
+		      "reverse_x_avail                 %d\n"
+		      "reverse_y_avail                 %d\n"
+		      "intensity_auto_precedence_avail %d\n"
+		      "black_level_avail               %d\n"
+		      "gain_avail                      %d\n"
+		      "gamma_avail                     %d\n"
+		      "contrast_avail                  %d\n"
+		      "saturation_avail                %d\n"
+		      "hue_avail                       %d\n"
+		      "white_balance_avail             %d\n"
+		      "sharpness_avail                 %d\n"
+		      "exposure_auto                   %d\n"
+		      "gain_auto                       %d\n"
+		      "white_balance_auto_avail        %d\n"
+		      "device_temperature_avail        %d\n"
+		      "acquisition_abort               %d\n"
+		      "acquisition_frame_rate          %d\n"
+		      "frame_trigger                   %d\n"
+		      "exposure active line available  %d\n"
+		      "auto region                     %d\n"
+		      "frame trigger wait line         %d\n"
+		      "color transformation matrix     %d\n"
+		      "user data storage               %d\n"
+		      "device status                   %d\n"
+		      "revision id                     %d\n"
+		      "direct memory access            %d\n"
+		      "exposure mode                   %d\n",
+		      inq_reg->feature_inq.reverse_x_avail,
+		      inq_reg->feature_inq.reverse_y_avail,
+		      inq_reg->feature_inq.intensity_auto_precedence_avail,
+		      inq_reg->feature_inq.black_level_avail,
+		      inq_reg->feature_inq.gain_avail,
+		      inq_reg->feature_inq.gamma_avail,
+		      inq_reg->feature_inq.contrast_avail,
+		      inq_reg->feature_inq.saturation_avail,
+		      inq_reg->feature_inq.hue_avail,
+		      inq_reg->feature_inq.white_balance_avail,
+		      inq_reg->feature_inq.sharpness_avail,
+		      inq_reg->feature_inq.exposure_auto_avail,
+		      inq_reg->feature_inq.gain_auto_avail,
+		      inq_reg->feature_inq.white_balance_auto_avail,
+		      inq_reg->feature_inq.device_temperature_avail,
+		      inq_reg->feature_inq.acquisition_abort,
+		      inq_reg->feature_inq.acquisition_frame_rate,
+		      inq_reg->feature_inq.frame_trigger,
+		      inq_reg->feature_inq.exposure_active_line_available,
+		      inq_reg->feature_inq.auto_region,
+		      inq_reg->feature_inq.frame_trigger_wait_line,
+		      inq_reg->feature_inq.color_transformation_matrix,
+		      inq_reg->feature_inq.user_data_storage,
+		      inq_reg->feature_inq.device_status,
+		      inq_reg->feature_inq.revision_id,
+		      inq_reg->feature_inq.direct_memory_access,
+		      inq_reg->feature_inq.exposure_mode);
 	return ret;
 }
 
@@ -3100,7 +3120,7 @@ static int avt_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 
 
 		dev_dbg(&client->dev, "%s[%d]: Write custom ctrl %s (%x)\n",
-			 __func__, __LINE__, ctrl_mapping->attr.name, ctrl->id);
+			 __func__, __LINE__, ctrl_mapping->name, ctrl->id);
 
 		if (ctrl_mapping->reg_length != 0) {
 			ret = write_ctrl_value(camera,ctrl,ctrl_mapping);
@@ -3136,7 +3156,7 @@ static int avt_fill_ctrl_config(struct avt_dev *camera,
 
 	config->ops = &avt_ctrl_ops;
 	config->id = mapping->id;
-	config->name = mapping->attr.name;
+	config->name = mapping->name;
 	config->type = mapping->type;
 	config->flags = mapping->flags;
 
@@ -3364,20 +3384,20 @@ static int avt_init_controls(struct avt_dev *camera)
 	{
 		const struct avt_ctrl_mapping * const ctrl_mapping
 			= &avt_ctrl_mappings[j];
-		const s8 feat_bit = ctrl_mapping->attr.feature_avail;
+		const s8 feat_bit = ctrl_mapping->inq_bit;
 		const u64 inq_reg = camera->feature_inquiry_reg.value;
 
 		if ((feat_bit != -1 && (inq_reg & (1 << feat_bit)) == 0)) {
 			avt_info(get_sd(camera),
 				 "Control %s (0x%x) not supported by camera\n",
-				 ctrl_mapping->attr.name,ctrl_mapping->id);
+				 ctrl_mapping->name,ctrl_mapping->id);
 			continue;
 		}
 
 		CLEAR(config);
 
 		avt_dbg(get_sd(camera), "Init ctrl %s (0x%x)\n",
-			 ctrl_mapping->attr.name,ctrl_mapping->id);
+			 ctrl_mapping->name,ctrl_mapping->id);
 
 
 		avt_fill_ctrl_config(camera,&config,ctrl_mapping);
