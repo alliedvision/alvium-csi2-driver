@@ -78,6 +78,7 @@ struct avt_ctrl_mapping {
 	s64 default_value;
 	const char * const * qmenu;
 	u32 avt_flags;
+	u32 dims[V4L2_CTRL_MAX_DIMS];
 };
 
 static const char * const v4l2_triggeractivation_menu[] = {
@@ -573,6 +574,25 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.reg_offset	= BCRM_TEST_PATTERN_SETTING_32RW,
 		.reg_length	= AV_CAM_DATA_SIZE_32,
 		.avt_flags 	= AVT_CTRL_FLAG_STREAM_DISABLED,
+	},
+	{
+		.id 		= AVT_CID_COLOR_TRANSFORM_MATRIX_ENABLE,
+		.name		= "Color Transform Matrix Enable",
+		.inq_bit	= BCRM_FEATURE_INQ_COLOR_TRANSFORM_MATRIX_BIT,
+		.type		= V4L2_CTRL_TYPE_BOOLEAN,
+		.reg_offset	= BCRM_COLOR_TRANSFORM_MATRIX_ENABLE_8RW,
+		.reg_length	= AV_CAM_DATA_SIZE_8,
+	},
+	{
+		.id 		= AVT_CID_COLOR_TRANSFORM_MATRIX,
+		.name		= "Color Transform Matrix",
+		.inq_bit	= BCRM_FEATURE_INQ_COLOR_TRANSFORM_MATRIX_BIT,
+		.type		= V4L2_CTRL_TYPE_INTEGER,
+		.min_value 	= -400,
+		.max_value 	= 400,
+		.default_value	= 0,
+		.step_value	= 1,
+		.dims		= { 3, 3, 0, 0},
 	}
 };
 
@@ -694,6 +714,8 @@ struct avt_dev
 	struct avt_i2c_xfer	next_fw_rd_transfer;
 
 	struct device_attribute	*mode_attr;
+
+	s32 color_transform_matrix[BCRM_COLOR_TRANSFORM_MATRIX_SIZE];
 };
 
 enum avt_ctrl {

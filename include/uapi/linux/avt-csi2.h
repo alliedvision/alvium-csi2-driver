@@ -90,6 +90,8 @@ enum avt_test_pattern {
 };
 
 #define AVT_CID_DO_AUTO_EXPOSURE		 (AVT_CID_CAMERA_BASE + 21)
+#define AVT_CID_COLOR_TRANSFORM_MATRIX_ENABLE	 (AVT_CID_CAMERA_BASE + 22)
+#define AVT_CID_COLOR_TRANSFORM_MATRIX		 (AVT_CID_CAMERA_BASE + 23)
 
 struct avt_i2c_xfer {
     __u16 addr;

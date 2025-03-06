@@ -3056,6 +3056,87 @@ static int write_ctrl_value(struct avt_dev *camera,struct v4l2_ctrl *ctrl,
 	return ret;
 }
 
+
+static int __set_exposure_active_mode(struct avt_dev *camera, bool active)
+{
+	struct v4l2_ctrl *sel_ctrl,*invert_ctrl;
+	u8 output_line_shift,invert;
+	u32 line_config;
+	int ret = 0;
+
+	sel_ctrl = avt_ctrl_find(camera, AVT_CID_EXPOSURE_ACTIVE_LINE_SELECTOR);
+
+	if (sel_ctrl == NULL) {
+		return -EINVAL;
+	}
+
+	output_line_shift = sel_ctrl->val * 8;
+
+	invert_ctrl = avt_ctrl_find(camera, AVT_CID_EXPOSURE_ACTIVE_INVERT);
+
+	if (invert_ctrl == NULL) {
+		return -EINVAL;
+	}
+
+	invert = invert_ctrl->val ? 2 : 0;
+
+	line_config = (active ? (1 | invert ) : 0) << output_line_shift;
+
+	ret = bcrm_write32(camera, BCRM_LINE_CONFIGURATION_32RW, line_config);
+	
+	if (ret < 0)
+		return ret;
+
+	__v4l2_ctrl_grab(sel_ctrl,active);
+	__v4l2_ctrl_grab(invert_ctrl,active);
+
+	return 0;
+}
+
+
+
+static int __set_color_transform_matrix(struct avt_dev *camera,
+					 s32 *cur, s32* new)
+{
+	int i, ret;
+	s16 tmp[10]; // Overallocate on for aligend u32 access
+
+	for (i = 0; i < BCRM_COLOR_TRANSFORM_MATRIX_SIZE; i++) {
+		tmp[i] = new[i];
+	}
+	
+
+	for (i = 0; i < ARRAY_SIZE(tmp) / 2; i++) {
+		const u32 val = *((u32*)&tmp[2 * i]);
+		const u16 reg = BCRM_COLOR_MATRIX_BASE_32RW + i*sizeof(val);
+
+		avt_info(get_sd(camera), "Write value %u\n", val);
+
+		ret = bcrm_write32(camera, reg, val);
+		if (ret < 0)
+			return ret;
+
+	}
+
+	return 0;
+}
+
+static int __set_special_ctrl(struct avt_dev *camera, struct v4l2_ctrl *ctrl)
+{
+	switch (ctrl->id) {
+	case AVT_CID_EXPOSURE_ACTIVE_LINE_MODE:
+		return __set_exposure_active_mode(camera, ctrl->val);
+	case AVT_CID_COLOR_TRANSFORM_MATRIX:
+		return  __set_color_transform_matrix(camera,
+						     ctrl->p_cur.p_s32,
+						     ctrl->p_new.p_s32);
+	default:
+		break;
+	}
+
+	return 0;
+}
+
 static int avt_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 {
 	struct avt_dev *camera = container_of(ctrl->handler, struct avt_dev, v4l2_ctrl_hdl);
@@ -3079,40 +3160,6 @@ static int avt_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 		avt_info(get_sd(camera), "ctrl->id 0x%08X, camera->power_count %d", ctrl->id, camera->power_count);
 	}
 
-	if (ctrl->id == AVT_CID_EXPOSURE_ACTIVE_LINE_MODE)
-	{
-		struct v4l2_ctrl *sel_ctrl,*invert_ctrl;
-		u8 output_line_shift,invert,active = ctrl->val;
-		u32 line_config;
-
-		sel_ctrl = avt_ctrl_find(camera,
-					  AVT_CID_EXPOSURE_ACTIVE_LINE_SELECTOR);
-
-		if (sel_ctrl == NULL) {
-			return -EINVAL;
-		}
-
-		output_line_shift = sel_ctrl->val * 8;
-
-		invert_ctrl = avt_ctrl_find(camera,
-					     AVT_CID_EXPOSURE_ACTIVE_INVERT);
-
-		if (invert_ctrl == NULL) {
-			return -EINVAL;
-		}
-
-		invert = invert_ctrl->val ? 2 : 0;
-
-		line_config = (active ? (1 | invert ) : 0) << output_line_shift;
-
-		ret = bcrm_write32(camera, BCRM_LINE_CONFIGURATION_32RW, line_config);
-		
-		if (ret < 0)
-			return ret;
-
-		__v4l2_ctrl_grab(sel_ctrl,active);
-		__v4l2_ctrl_grab(invert_ctrl,active);
-	}
 
 	if (ctrl->priv != NULL)
 	{
@@ -3123,7 +3170,9 @@ static int avt_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 			 __func__, __LINE__, ctrl_mapping->name, ctrl->id);
 
 		if (ctrl_mapping->reg_length != 0) {
-			ret = write_ctrl_value(camera,ctrl,ctrl_mapping);
+			ret = write_ctrl_value(camera, ctrl, ctrl_mapping);
+		} else {
+			ret = __set_special_ctrl(camera, ctrl);
 		}
 
 
@@ -3159,6 +3208,8 @@ static int avt_fill_ctrl_config(struct avt_dev *camera,
 	config->name = mapping->name;
 	config->type = mapping->type;
 	config->flags = mapping->flags;
+	if (mapping->dims[0])
+		memcpy(config->dims, mapping->dims, sizeof(config->dims));
 
 	switch (mapping->type)
 	{
@@ -3355,6 +3406,12 @@ static void avt_ctrl_added(struct avt_dev *camera,struct v4l2_ctrl *ctrl)
 		}
 
 		ctrl->menu_skip_mask = ((~inq) << 1);
+	}
+		break;
+	case AVT_CID_COLOR_TRANSFORM_MATRIX: {
+
+
+
 	}
 		break;
 	default:
