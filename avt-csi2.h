@@ -71,7 +71,7 @@ struct avt_ctrl_mapping {
 	u32 type;
 	u32 flags;
 	const char *name;
-	s8 inq_bit;
+	u64 inq_mask;
 	s64 min_value;
 	s64 max_value;
 	s64 step_value;
@@ -138,7 +138,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id		= V4L2_CID_EXPOSURE,
 		.name		= "Exposure Absolute",
-		.inq_bit	= -1,
+		.inq_mask	= 0,
 		.min_offset	= BCRM_EXPOSURE_TIME_MIN_64R,
 		.max_offset	= BCRM_EXPOSURE_TIME_MAX_64R,
 		.reg_offset	= BCRM_EXPOSURE_TIME_64RW,
@@ -151,7 +151,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id		= V4L2_CID_EXPOSURE_ABSOLUTE,
 		.name		= "Exposure Absolute",
-		.inq_bit	= -1,
+		.inq_mask	= 0,
 		.min_offset	= BCRM_EXPOSURE_TIME_MIN_64R,
 		.max_offset	= BCRM_EXPOSURE_TIME_MAX_64R,
 		.reg_offset	= BCRM_EXPOSURE_TIME_64RW,
@@ -164,7 +164,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id		= V4L2_CID_GAIN,
 		.name		= "Gain",
-		.inq_bit	= BCRM_FEATURE_INQ_GAIN_BIT,
+		.inq_mask	= BCRM_FEATURE_INQ_GAIN,
 		.min_offset	= BCRM_GAIN_MIN_64R,
 		.max_offset	= BCRM_GAIN_MAX_64R,
 		.reg_offset	= BCRM_GAIN_64RW,
@@ -178,7 +178,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id		= V4L2_CID_HFLIP,
 		.name		= "Reverse X",
-		.inq_bit	= BCRM_FEATURE_INQ_REVERSE_X_BIT,
+		.inq_mask	= BCRM_FEATURE_INQ_REVERSE_X,
 		.reg_offset	= BCRM_IMG_REVERSE_X_8RW,
 		.reg_length	= AV_CAM_DATA_SIZE_8,
 		.type		= V4L2_CTRL_TYPE_BOOLEAN,
@@ -188,7 +188,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id		= V4L2_CID_VFLIP,
 		.name		= "Reverse Y",
-		.inq_bit	= BCRM_FEATURE_INQ_REVERSE_Y_BIT,
+		.inq_mask	= BCRM_FEATURE_INQ_REVERSE_Y,
 		.reg_offset	= BCRM_IMG_REVERSE_Y_8RW,
 		.reg_length	= AV_CAM_DATA_SIZE_8,
 		.type		= V4L2_CTRL_TYPE_BOOLEAN,
@@ -198,7 +198,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id		= V4L2_CID_BRIGHTNESS,
 		.name		= "Brightness",
-		.inq_bit	= BCRM_FEATURE_INQ_BLACK_LEVEL_BIT,
+		.inq_mask	= BCRM_FEATURE_INQ_BLACK_LEVEL,
 		.min_offset	= BCRM_BLACK_LEVEL_MIN_32R,
 		.max_offset	= BCRM_BLACK_LEVEL_MAX_32R,
 		.reg_offset	= BCRM_BLACK_LEVEL_32RW,
@@ -211,7 +211,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id		= V4L2_CID_CONTRAST,
 		.name		= "Contrast",
-		.inq_bit	= BCRM_FEATURE_INQ_CONTRAST_BIT,
+		.inq_mask	= BCRM_FEATURE_INQ_CONTRAST,
 		.min_offset	= BCRM_CONTRAST_VALUE_MIN_32R,
 		.max_offset	= BCRM_CONTRAST_VALUE_MAX_32R,
 		.reg_offset	= BCRM_CONTRAST_VALUE_32RW,
@@ -223,7 +223,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id		= V4L2_CID_SATURATION,
 		.name		= "Saturation",
-		.inq_bit	= BCRM_FEATURE_INQ_SATURATION_BIT,
+		.inq_mask	= BCRM_FEATURE_INQ_SATURATION,
 		.min_offset	= BCRM_SATURATION_MIN_32R,
 		.max_offset	= BCRM_SATURATION_MAX_32R,
 		.reg_offset	= BCRM_SATURATION_32RW,
@@ -235,7 +235,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id		= V4L2_CID_HUE,
 		.name		= "Hue",
-		.inq_bit	= BCRM_FEATURE_INQ_HUE_BIT,
+		.inq_mask	= BCRM_FEATURE_INQ_HUE,
 		.min_offset	= BCRM_HUE_MIN_32R,
 		.max_offset	= BCRM_HUE_MAX_32R,
 		.reg_offset	= BCRM_HUE_32RW,
@@ -247,7 +247,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id		= V4L2_CID_AUTO_WHITE_BALANCE,
 		.name		= "Auto White Balance",
-		.inq_bit	= BCRM_FEATURE_INQ_WHITE_BALANCE_AUTO_BIT,
+		.inq_mask	= BCRM_FEATURE_INQ_WHITE_BALANCE_AUTO,
 		.reg_offset	= BCRM_WHITE_BALANCE_AUTO_8RW,
 		.reg_length	= AV_CAM_DATA_SIZE_8,
 		.type		= V4L2_CTRL_TYPE_BOOLEAN,
@@ -256,7 +256,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id		= V4L2_CID_DO_WHITE_BALANCE,
 		.name		= "Do White Balance",
-		.inq_bit	= BCRM_FEATURE_INQ_WHITE_BALANCE_AUTO_BIT,
+		.inq_mask	= BCRM_FEATURE_INQ_WHITE_BALANCE_AUTO,
 		.reg_offset	= BCRM_WHITE_BALANCE_AUTO_8RW,
 		.reg_length	= AV_CAM_DATA_SIZE_8,
 		.type		= V4L2_CTRL_TYPE_BUTTON,
@@ -265,7 +265,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id		= V4L2_CID_RED_BALANCE,
 		.name		= "Red Balance",
-		.inq_bit	= BCRM_FEATURE_INQ_WHITE_BALANCE_BIT,
+		.inq_mask	= BCRM_FEATURE_INQ_WHITE_BALANCE,
 		.min_offset	= BCRM_RED_BALANCE_RATIO_MIN_64R,
 		.max_offset	= BCRM_RED_BALANCE_RATIO_MAX_64R,
 		.reg_offset	= BCRM_RED_BALANCE_RATIO_64RW,
@@ -277,7 +277,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id		= V4L2_CID_BLUE_BALANCE,
 		.name		= "Blue Balance",
-		.inq_bit	= BCRM_FEATURE_INQ_WHITE_BALANCE_BIT,
+		.inq_mask	= BCRM_FEATURE_INQ_WHITE_BALANCE,
 		.min_offset	= BCRM_BLUE_BALANCE_RATIO_MIN_64R,
 		.max_offset	= BCRM_BLUE_BALANCE_RATIO_MAX_64R,
 		.reg_offset	= BCRM_BLUE_BALANCE_RATIO_64RW,
@@ -289,7 +289,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id		= V4L2_CID_GAMMA,
 		.name		= "Gamma",
-		.inq_bit	= BCRM_FEATURE_INQ_GAMMA_BIT,
+		.inq_mask	= BCRM_FEATURE_INQ_GAMMA,
 		.min_offset	= BCRM_GAMMA_MIN_64R,
 		.max_offset	= BCRM_GAMMA_MAX_64R,
 		.reg_offset	= BCRM_GAMMA_64RW,
@@ -301,7 +301,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id		= V4L2_CID_AUTOGAIN,
 		.name		= "Gain Auto",
-		.inq_bit	= BCRM_FEATURE_INQ_GAIN_AUTO_BIT,
+		.inq_mask	= BCRM_FEATURE_INQ_GAIN_AUTO,
 		.reg_offset	= BCRM_GAIN_AUTO_8RW,
 		.reg_length	= AV_CAM_DATA_SIZE_8,
 		.type		= V4L2_CTRL_TYPE_BOOLEAN,
@@ -310,7 +310,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id		= V4L2_CID_SHARPNESS,
 		.name		= "Sharpness",
-		.inq_bit	= BCRM_FEATURE_INQ_SHARPNESS_BIT,
+		.inq_mask	= BCRM_FEATURE_INQ_SHARPNESS,
 		.min_offset	= BCRM_SHARPNESS_MIN_32R,
 		.max_offset	= BCRM_SHARPNESS_MAX_32R,
 		.reg_offset	= BCRM_SHARPNESS_32RW,
@@ -322,7 +322,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id 		= V4L2_CID_EXPOSURE_AUTO,
 		.name		= "Exposure Auto",
-		.inq_bit	= BCRM_FEATURE_INQ_EXPOSURE_AUTO_BIT,
+		.inq_mask	= BCRM_FEATURE_INQ_EXPOSURE_AUTO,
 		.reg_offset 	= BCRM_EXPOSURE_AUTO_8RW,
 		.reg_length 	= AV_CAM_DATA_SIZE_8,
 		.type 		= V4L2_CTRL_TYPE_MENU,
@@ -334,7 +334,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id 		= AVT_CID_TRIGGER_MODE,
 		.name		= "Trigger Mode",
-		.inq_bit	= BCRM_FEATURE_INQ_FRAME_TRIGGER_BIT,
+		.inq_mask	= BCRM_FEATURE_INQ_FRAME_TRIGGER,
 		.reg_offset 	= BCRM_FRAME_START_TRIGGER_MODE_8RW,
 		.reg_length 	= AV_CAM_DATA_SIZE_8,
 		.type 		= V4L2_CTRL_TYPE_BOOLEAN,
@@ -344,7 +344,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id 		= AVT_CID_TRIGGER_ACTIVATION,
 		.name		= "Trigger Activation",
-		.inq_bit	= BCRM_FEATURE_INQ_FRAME_TRIGGER_BIT,
+		.inq_mask	= BCRM_FEATURE_INQ_FRAME_TRIGGER,
 		.reg_offset 	= BCRM_FRAME_START_TRIGGER_ACTIVATION_8RW,
 		.reg_length 	= AV_CAM_DATA_SIZE_8,
 		.type 		= V4L2_CTRL_TYPE_MENU,
@@ -357,7 +357,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id 		= AVT_CID_TRIGGER_SOURCE,
 		.name		= "Trigger Source",
-		.inq_bit	= BCRM_FEATURE_INQ_FRAME_TRIGGER_BIT,
+		.inq_mask	= BCRM_FEATURE_INQ_FRAME_TRIGGER,
 		.reg_offset 	= BCRM_FRAME_START_TRIGGER_SOURCE_8RW,
 		.reg_length 	= AV_CAM_DATA_SIZE_8,
 		.type 		= V4L2_CTRL_TYPE_MENU,
@@ -370,7 +370,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id 		= AVT_CID_TRIGGER_SOFTWARE,
 		.name		= "Trigger Software",
-		.inq_bit	= BCRM_FEATURE_INQ_FRAME_TRIGGER_BIT,
+		.inq_mask	= BCRM_FEATURE_INQ_FRAME_TRIGGER,
 		.reg_offset 	= BCRM_FRAME_START_TRIGGER_SOFTWARE_8W,
 		.reg_length 	= AV_CAM_DATA_SIZE_8,
 		.type 		= V4L2_CTRL_TYPE_BUTTON,
@@ -379,7 +379,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id 		= AVT_CID_BINNING_MODE,
 		.name		= "Binning Mode",
-		.inq_bit	= -1,
+		.inq_mask	= 0,
 		.reg_offset	= BCRM_BINNING_MODE_8RW,
 		.reg_length	= AV_CAM_DATA_SIZE_8,
 		.type		= V4L2_CTRL_TYPE_MENU,
@@ -392,14 +392,14 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id 		= AVT_CID_BINNING_SETTING,
 		.name		= "Binning Setting",
-		.inq_bit	= -1,
+		.inq_mask	= 0,
 		.type		= V4L2_CTRL_TYPE_AREA,
 		.flags		= V4L2_CTRL_FLAG_VOLATILE,
 	},
 	{
 		.id 		= AVT_CID_FIRMWARE_VERSION,
 		.name		= "Firmware Version",
-		.inq_bit	= -1,
+		.inq_mask	= 0,
 		.type		= V4L2_CTRL_TYPE_STRING,
 		.flags		= V4L2_CTRL_FLAG_READ_ONLY,
 		.min_value	= 0,
@@ -409,7 +409,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id 		= AVT_CID_CAMERA_NAME,
 		.name 		= "Camera Name",
-		.inq_bit	= -1,
+		.inq_mask	= 0,
 		.type		= V4L2_CTRL_TYPE_STRING,
 		.flags		= V4L2_CTRL_FLAG_READ_ONLY,
 		.min_value	= 0,
@@ -419,7 +419,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id 		= AVT_CID_SERIAL_NUMBER,
 		.name		= "Serial Number",
-		.inq_bit	= -1,
+		.inq_mask	= 0,
 		.type		= V4L2_CTRL_TYPE_STRING,
 		.flags		= V4L2_CTRL_FLAG_READ_ONLY,
 		.min_value	= 0,
@@ -429,7 +429,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id 		= AVT_CID_ACQUISITION_STATUS,
 		.name		= "Acquisition status",
-		.inq_bit	= -1,
+		.inq_mask	= 0,
 		.reg_length	= AV_CAM_DATA_SIZE_8,
 		.reg_offset 	= BCRM_ACQUISITION_STATUS_8R,
 		.type		= V4L2_CTRL_TYPE_BOOLEAN,
@@ -439,7 +439,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id		= AVT_CID_EXPOSURE_AUTO_MIN,
 		.name		= "Exposure Auto Min",
-		.inq_bit	= BCRM_FEATURE_INQ_EXPOSURE_AUTO_BIT,
+		.inq_mask	= BCRM_FEATURE_INQ_EXPOSURE_AUTO,
 		.min_offset	= BCRM_EXPOSURE_TIME_MIN_64R,
 		.max_offset	= BCRM_EXPOSURE_AUTO_MAX_64RW,
 		.reg_offset	= BCRM_EXPOSURE_AUTO_MIN_64RW,
@@ -452,7 +452,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id		= AVT_CID_EXPOSURE_AUTO_MAX,
 		.name		= "Exposure Auto Max",
-		.inq_bit	= BCRM_FEATURE_INQ_EXPOSURE_AUTO_BIT,
+		.inq_mask	= BCRM_FEATURE_INQ_EXPOSURE_AUTO,
 		.min_offset	= BCRM_EXPOSURE_AUTO_MIN_64RW,
 		.max_offset	= BCRM_EXPOSURE_TIME_MAX_64R,
 		.reg_offset	= BCRM_EXPOSURE_AUTO_MAX_64RW,
@@ -465,7 +465,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id		= AVT_CID_GAIN_AUTO_MIN,
 		.name		= "Gain Auto Min",
-		.inq_bit	= BCRM_FEATURE_INQ_GAIN_AUTO_BIT,
+		.inq_mask	= BCRM_FEATURE_INQ_GAIN_AUTO,
 		.min_offset	= BCRM_GAIN_MIN_64R,
 		.max_offset	= BCRM_GAIN_AUTO_MAX_64RW,
 		.reg_offset	= BCRM_GAIN_AUTO_MIN_64RW,
@@ -478,7 +478,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id		= AVT_CID_GAIN_AUTO_MAX,
 		.name		= "Gain Auto Max",
-		.inq_bit	= BCRM_FEATURE_INQ_GAIN_AUTO_BIT,
+		.inq_mask	= BCRM_FEATURE_INQ_GAIN_AUTO,
 		.min_offset	= BCRM_GAIN_AUTO_MIN_64RW,
 		.max_offset	= BCRM_GAIN_MAX_64R,
 		.reg_offset	= BCRM_GAIN_AUTO_MAX_64RW,
@@ -491,7 +491,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id		= AVT_CID_DEVICE_TEMPERATURE,
 		.name		= "Device Temperature",
-		.inq_bit	= BCRM_FEATURE_INQ_DEVICE_TEMPERATURE_BIT,
+		.inq_mask	= BCRM_FEATURE_INQ_DEVICE_TEMPERATURE,
 		.reg_offset	= BCRM_DEVICE_TEMPERATURE_32R,
 		.reg_length	= AV_CAM_DATA_SIZE_32,
 		.min_value	= -1000,
@@ -504,13 +504,13 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id		= AVT_CID_EXPOSURE_ACTIVE_LINE_MODE,
 		.name		= "Exposure Active Line Mode",
-		.inq_bit	= BCRM_FEATURE_INQ_EXPOSURE_ACTIVE_LINE_BIT,
+		.inq_mask	= BCRM_FEATURE_INQ_EXPOSURE_ACTIVE_LINE,
 		.type		= V4L2_CTRL_TYPE_BOOLEAN,
 	},
 	{
 		.id		= AVT_CID_EXPOSURE_ACTIVE_LINE_SELECTOR,
 		.name		= "Exposure Active Line Selector",
-		.inq_bit	= BCRM_FEATURE_INQ_EXPOSURE_ACTIVE_LINE_BIT,
+		.inq_mask	= BCRM_FEATURE_INQ_EXPOSURE_ACTIVE_LINE,
 		.reg_offset	= BCRM_EXPOSURE_ACTIVE_LINE_SELECTOR_8RW,
 		.reg_length	= AV_CAM_DATA_SIZE_8,
 		.min_value	= 0,
@@ -521,13 +521,13 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id		= AVT_CID_EXPOSURE_ACTIVE_INVERT,
 		.name		= "Exposure Active Invert",
-		.inq_bit	= BCRM_FEATURE_INQ_EXPOSURE_ACTIVE_LINE_BIT,
+		.inq_mask	= BCRM_FEATURE_INQ_EXPOSURE_ACTIVE_LINE,
 		.type		= V4L2_CTRL_TYPE_BOOLEAN,
 	},
 	{
 		.id		= AVT_CID_BINNING_SELECTOR,
 		.name 		= "Binning Selector",
-		.inq_bit	= -1,
+		.inq_mask	= 0,
 		.type		= V4L2_CTRL_TYPE_MENU,
 		.qmenu		= v4l2_binning_selector_menu,
 		.flags		= 0,
@@ -538,7 +538,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id 		= AVT_CID_INTENSITY_AUTO_PRECEDENCE,
 		.name		= "Intensity Auto Precedence",
-		.inq_bit	= BCRM_FEATURE_INQ_INTENSITY_AUTO_PRECEDENCE_BIT,
+		.inq_mask	= BCRM_FEATURE_INQ_INTENSITY_AUTO_PRECEDENCE,
 		.type		= V4L2_CTRL_TYPE_MENU,
 		.qmenu		= avt_intensity_auto_precendence_menu,
 		.flags		= 0,
@@ -551,7 +551,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id		= AVT_CID_INTENSITY_AUTO_PRECEDENCE_TARGET,
 		.name		= "Intensity Auto Precedence Target",
-		.inq_bit	= BCRM_FEATURE_INQ_INTENSITY_AUTO_PRECEDENCE_BIT,
+		.inq_mask	= BCRM_FEATURE_INQ_INTENSITY_AUTO_PRECEDENCE,
 		.type		= V4L2_CTRL_TYPE_INTEGER,
 		.flags		= 0,
 		.min_offset	= BCRM_INTENSITY_AUTO_PRECEDENCE_MIN_32R,
@@ -563,7 +563,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id		= V4L2_CID_TEST_PATTERN,
 		.name		= "Test Pattern",
-		.inq_bit	= -1,
+		.inq_mask	= 0,
 		.type		= V4L2_CTRL_TYPE_MENU,
 		.qmenu		= avt_test_pattern_menu,
 		.flags 		= 0,
@@ -576,7 +576,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id 		= AVT_CID_COLOR_TRANSFORM_MATRIX_ENABLE,
 		.name		= "Color Transform Matrix Enable",
-		.inq_bit	= BCRM_FEATURE_INQ_COLOR_TRANSFORM_MATRIX_BIT,
+		.inq_mask	= BCRM_FEATURE_INQ_COLOR_TRANSFORM_MATRIX,
 		.type		= V4L2_CTRL_TYPE_BOOLEAN,
 		.reg_offset	= BCRM_COLOR_TRANSFORM_MATRIX_ENABLE_8RW,
 		.reg_length	= AV_CAM_DATA_SIZE_8,
@@ -584,7 +584,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id 		= AVT_CID_COLOR_TRANSFORM_MATRIX,
 		.name		= "Color Transform Matrix",
-		.inq_bit	= BCRM_FEATURE_INQ_COLOR_TRANSFORM_MATRIX_BIT,
+		.inq_mask	= BCRM_FEATURE_INQ_COLOR_TRANSFORM_MATRIX,
 		.type		= V4L2_CTRL_TYPE_INTEGER,
 		.min_value 	= -400,
 		.max_value 	= 400,

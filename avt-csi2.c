@@ -3450,10 +3450,10 @@ static int avt_init_controls(struct avt_dev *camera)
 	{
 		const struct avt_ctrl_mapping * const ctrl_mapping
 			= &avt_ctrl_mappings[j];
-		const s8 feat_bit = ctrl_mapping->inq_bit;
+		const u64 mask = ctrl_mapping->inq_mask;
 		const u64 inq_reg = camera->feature_inquiry_reg.value;
 
-		if ((feat_bit != -1 && (inq_reg & (1 << feat_bit)) == 0)) {
+		if (mask && ((inq_reg & mask) == 0)) {
 			avt_info(get_sd(camera),
 				 "Control %s (0x%x) not supported by camera\n",
 				 ctrl_mapping->name,ctrl_mapping->id);
