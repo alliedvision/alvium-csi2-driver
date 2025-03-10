@@ -605,6 +605,16 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.flags		= V4L2_CTRL_FLAG_VOLATILE
 			 	| V4L2_CTRL_FLAG_READ_ONLY,
 	},
+	{
+		.id 		= AVT_CID_REVISION_ID,
+		.name		= "Revision ID",
+		.inq_mask 	= BCRM_FEATURE_INQ_REVISION_ID,
+		.type		= V4L2_CTRL_TYPE_STRING,
+		.min_value	= 0,
+		.max_value	= 2,
+		.step_value	= 1,
+		.flags		= V4L2_CTRL_FLAG_READ_ONLY,
+	}
 };
 
 
