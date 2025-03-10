@@ -3243,6 +3243,7 @@ static int avt_fill_ctrl_config(struct avt_dev *camera,
 		break;
 	case V4L2_CTRL_TYPE_INTEGER:
 	case V4L2_CTRL_TYPE_INTEGER64:
+	case V4L2_CTRL_TYPE_BITMASK:
 	case V4L2_CTRL_TYPE_STRING:
 		if (!mapping->min_offset)
 			config->min = mapping->min_value;
@@ -3985,7 +3986,7 @@ int avt_core_ops_s_register(struct v4l2_subdev *sd, const struct v4l2_dbg_regist
 }
 
 static int avt_core_ops_subscribe_event(struct v4l2_subdev *sd, struct v4l2_fh *fh,
-										 struct v4l2_event_subscription *sub)
+					struct v4l2_event_subscription *sub)
 {
 	avt_dbg(sd, "event type %u", sub->type);
 
@@ -4000,9 +4001,50 @@ static int avt_core_ops_subscribe_event(struct v4l2_subdev *sd, struct v4l2_fh *
 	}
 }
 
+static int avt_log_status(struct v4l2_subdev *sd)
+{
+	struct avt_dev *camera = to_avt_dev(sd);
+	struct device *dev = sd->dev;
+	u8 acq_active;
+	u32 status;
+	int ret;
+
+	ret = bcrm_read32(camera, BCRM_DEVICE_STATUS_32R, &status);
+	if (ret < 0)
+		return ret;
+
+	dev_info(dev, "**** Device status ****\n");
+	
+	dev_info(dev, "Backend buffer okay = %s\n", 
+		 status & BCRM_DEVICE_STATUS_BACKEND_BUFFER_OKAY
+		 ? "true" : "false" );
+
+	dev_info(dev, "Temperature okay = %s\n", 
+		 status & BCRM_DEVICE_STATUS_TEMPERATURE_OKAY
+		 ? "true" : "false" );
+
+	dev_info(dev, "Stream ready = %s\n", 
+		 status & BCRM_DEVICE_STATUS_STREAM_READY
+		 ? "true" : "false" );	
+
+	dev_info(dev, "MIPI Phy okay = %s\n", 
+		 status & BCRM_DEVICE_STATUS_MIPI_PHY_OKAY
+		 ? "true" : "false" );	
+
+	ret = bcrm_read8(camera, BCRM_ACQUISITION_STATUS_8R, &acq_active);
+	if (ret < 0)
+		return ret;
+
+	dev_info(dev, "**** Acqusition status ****\n");
+	dev_info(dev, "Acqusition active = %s\n",
+		 acq_active ? "true" : "false");
+
+	return 0;
+}
+
 static const struct v4l2_subdev_core_ops avt_core_ops = {
 	.s_power = avt_core_ops_s_power,
-	.log_status = v4l2_ctrl_subdev_log_status,
+	.log_status = avt_log_status,
 	.reset = avt_core_ops_reset,
 	.subscribe_event = avt_core_ops_subscribe_event,
 	.unsubscribe_event = v4l2_event_subdev_unsubscribe,

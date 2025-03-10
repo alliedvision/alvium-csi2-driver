@@ -591,7 +591,20 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.default_value	= 0,
 		.step_value	= 1,
 		.dims		= { 3, 3, 0, 0},
-	}
+	},
+	{
+		.id 		= AVT_CID_DEVICE_STATUS,
+		.name		= "Device Status",
+		.inq_mask	= BCRM_FEATURE_INQ_DEVICE_STATUS,
+		.type		= V4L2_CTRL_TYPE_BITMASK,
+		.min_value	= 0,
+		.max_value	= 0xf,
+		.step_value	= 0,
+		.reg_offset	= BCRM_DEVICE_STATUS_32R,
+		.reg_length	= AV_CAM_DATA_SIZE_32,
+		.flags		= V4L2_CTRL_FLAG_VOLATILE
+			 	| V4L2_CTRL_FLAG_READ_ONLY,
+	},
 };
 
 
