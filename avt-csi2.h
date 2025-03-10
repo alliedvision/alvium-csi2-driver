@@ -505,8 +505,6 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.id		= AVT_CID_EXPOSURE_ACTIVE_LINE_MODE,
 		.name		= "Exposure Active Line Mode",
 		.inq_bit	= BCRM_FEATURE_INQ_EXPOSURE_ACTIVE_LINE_BIT,
-		.reg_offset	= BCRM_EXPOSURE_ACTIVE_LINE_MODE_8RW,
-		.reg_length	= AV_CAM_DATA_SIZE_8,
 		.type		= V4L2_CTRL_TYPE_BOOLEAN,
 	},
 	{

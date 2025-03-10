@@ -3064,26 +3064,35 @@ static int __set_exposure_active_mode(struct avt_dev *camera, bool active)
 	u32 line_config;
 	int ret = 0;
 
-	sel_ctrl = avt_ctrl_find(camera, AVT_CID_EXPOSURE_ACTIVE_LINE_SELECTOR);
+	if (active) {
+		sel_ctrl = avt_ctrl_find(camera,
+					 AVT_CID_EXPOSURE_ACTIVE_LINE_SELECTOR);
 
-	if (sel_ctrl == NULL) {
-		return -EINVAL;
+		if (sel_ctrl == NULL) {
+			return -EINVAL;
+		}
+
+		output_line_shift = sel_ctrl->val * 8;
+
+		invert_ctrl = avt_ctrl_find(camera,
+					    AVT_CID_EXPOSURE_ACTIVE_INVERT);
+
+		if (invert_ctrl == NULL) {
+			return -EINVAL;
+		}
+
+		invert = invert_ctrl->val ? 2 : 0;
+
+		line_config = (active ? (1 | invert ) : 0) << output_line_shift;
+
+		ret = bcrm_write32(camera, BCRM_LINE_CONFIGURATION_32RW,
+				   line_config);
+		
+		if (ret < 0)
+			return ret;
 	}
 
-	output_line_shift = sel_ctrl->val * 8;
-
-	invert_ctrl = avt_ctrl_find(camera, AVT_CID_EXPOSURE_ACTIVE_INVERT);
-
-	if (invert_ctrl == NULL) {
-		return -EINVAL;
-	}
-
-	invert = invert_ctrl->val ? 2 : 0;
-
-	line_config = (active ? (1 | invert ) : 0) << output_line_shift;
-
-	ret = bcrm_write32(camera, BCRM_LINE_CONFIGURATION_32RW, line_config);
-	
+	ret = bcrm_write8(camera, BCRM_EXPOSURE_ACTIVE_LINE_MODE_8RW, active);
 	if (ret < 0)
 		return ret;
 
