@@ -102,6 +102,8 @@ enum avt_test_pattern {
 
 #define AVT_CID_REVISION_ID			 (AVT_CID_CAMERA_BASE + 25)
 
+#define AVT_CID_USER_DATA_STORAGE		 (AVT_CID_CAMERA_BASE + 26)
+
 struct avt_i2c_xfer {
     __u16 addr;
     __u16 len;

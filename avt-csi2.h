@@ -614,6 +614,17 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.max_value	= 2,
 		.step_value	= 1,
 		.flags		= V4L2_CTRL_FLAG_READ_ONLY,
+	},
+	{
+		.id		= AVT_CID_USER_DATA_STORAGE,
+		.name		= "User Data Storage",
+		.inq_mask	= BCRM_FEATURE_INQ_USER_DATA_STORAGE,
+		.type		= V4L2_CTRL_TYPE_U32,
+		.min_value	= U32_MIN,
+		.max_value	= U32_MAX,
+		.default_value	= 0,
+		.step_value	= 1,
+		.dims		= { BCRM_USER_DATA_INDEX_COUNT, 0, 0, 0 },
 	}
 };
 

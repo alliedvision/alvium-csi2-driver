@@ -1370,7 +1370,7 @@ static ssize_t debug_en_store(struct device *dev,
 }
 
 static ssize_t mipiclk_show(struct device *dev,
-							struct device_attribute *attr, char *buf)
+			    struct device_attribute *attr, char *buf)
 {
 	ssize_t ret;
 
@@ -1382,7 +1382,8 @@ static ssize_t mipiclk_show(struct device *dev,
 }
 
 static ssize_t mipiclk_store(struct device *dev,
-							 struct device_attribute *attr, const char *buf, size_t count)
+			     struct device_attribute *attr,
+			     const char *buf, size_t count)
 {
 	ssize_t ret;
 	uint32_t avt_next_clk = 0;
@@ -3105,7 +3106,7 @@ static int __set_exposure_active_mode(struct avt_dev *camera, bool active)
 
 
 static int __set_color_transform_matrix(struct avt_dev *camera,
-					 s32 *cur, s32* new)
+					s32 *cur, s32* new)
 {
 	int i, ret;
 	s16 tmp[10]; // Overallocate on for aligend u32 access
@@ -3130,6 +3131,37 @@ static int __set_color_transform_matrix(struct avt_dev *camera,
 	return 0;
 }
 
+static inline int __write_user_data_value(struct avt_dev *camera,
+				 	  int idx, u32 val)
+{
+	int ret;
+
+	ret = bcrm_write8(camera, BCRM_USER_DATA_INDEX_8RW, idx);
+	if (ret < 0)
+		return ret;
+	
+	ret = bcrm_write32(camera, BCRM_USER_DATA_VALUE_32RW, val);
+	if (ret < 0)
+		return ret;
+
+	return 0;
+}
+
+static int __set_user_data_ctrl(struct avt_dev *camera, u32 *cur, u32 *new)
+{
+	int i, ret = 0;
+
+	for (i = 0; i < BCRM_USER_DATA_INDEX_COUNT; i++, cur++, new++) {
+		if (*cur != *new) {
+			ret = __write_user_data_value(camera, i, *new);
+			if (ret < 0)
+				break;
+		}
+	}
+
+	return ret;
+}
+
 static int __set_special_ctrl(struct avt_dev *camera, struct v4l2_ctrl *ctrl)
 {
 	switch (ctrl->id) {
@@ -3139,6 +3171,9 @@ static int __set_special_ctrl(struct avt_dev *camera, struct v4l2_ctrl *ctrl)
 		return  __set_color_transform_matrix(camera,
 						     ctrl->p_cur.p_s32,
 						     ctrl->p_new.p_s32);
+	case AVT_CID_USER_DATA_STORAGE: 
+		return __set_user_data_ctrl(camera, ctrl->p_cur.p_u32,
+					    ctrl->p_new.p_u32);
 	default:
 		break;
 	}
@@ -3244,6 +3279,9 @@ static int avt_fill_ctrl_config(struct avt_dev *camera,
 	case V4L2_CTRL_TYPE_INTEGER:
 	case V4L2_CTRL_TYPE_INTEGER64:
 	case V4L2_CTRL_TYPE_BITMASK:
+	case V4L2_CTRL_TYPE_U8:
+	case V4L2_CTRL_TYPE_U16:
+	case V4L2_CTRL_TYPE_U32:
 	case V4L2_CTRL_TYPE_STRING:
 		if (!mapping->min_offset)
 			config->min = mapping->min_value;
@@ -3436,7 +3474,22 @@ static void avt_ctrl_added(struct avt_dev *camera,struct v4l2_ctrl *ctrl)
 		snprintf(ctrl->p_cur.p_char, ctrl->maximum, "%s", revid);
 
 		break;
-	}		
+	}	
+	case AVT_CID_USER_DATA_STORAGE: {
+		int i, ret;
+		u32 *ptr = ctrl->p_cur.p_u32;
+
+		for (i = 0; i < BCRM_USER_DATA_INDEX_COUNT; i++, ptr++) {
+			ret = bcrm_write8(camera, BCRM_USER_DATA_INDEX_8RW, i);
+			if (ret < 0)
+				break;
+			
+			ret = bcrm_read32(camera, BCRM_USER_DATA_VALUE_32RW,
+					  ptr);
+		}
+
+		break;
+	}	
 	default:
 		break;
 	}
