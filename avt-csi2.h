@@ -58,6 +58,13 @@ enum avt_mode {
 	AVT_GENCP_MODE,
 };
 
+enum line_usage {
+	LINE_USAGE_NONE,
+	LINE_USAGE_TRIGGER,
+	LINE_USAGE_EXPOSURE_ACTIVE,
+	LINE_USAGE_FRAME_TRIGGER_WAIT,
+};
+
 #define AVT_CTRL_FLAG_STREAM_DISABLED 		(1 << 1)
 #define AVT_CTRL_FLAG_READ_BACK 		(1 << 2)
 
@@ -335,8 +342,6 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.id 		= AVT_CID_TRIGGER_MODE,
 		.name		= "Trigger Mode",
 		.inq_mask	= BCRM_FEATURE_INQ_FRAME_TRIGGER,
-		.reg_offset 	= BCRM_FRAME_START_TRIGGER_MODE_8RW,
-		.reg_length 	= AV_CAM_DATA_SIZE_8,
 		.type 		= V4L2_CTRL_TYPE_BOOLEAN,
 		.flags 		= 0,
 		.avt_flags 	= AVT_CTRL_FLAG_STREAM_DISABLED,
@@ -747,7 +752,7 @@ struct avt_dev
 
 	struct device_attribute	*mode_attr;
 
-	s32 color_transform_matrix[BCRM_COLOR_TRANSFORM_MATRIX_SIZE];
+	enum line_usage line_usage[2];
 };
 
 enum avt_ctrl {

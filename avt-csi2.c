@@ -131,6 +131,17 @@ struct avt_val64
 #define AVT_BINNING_MODE_FLAG_AVERAGE 		0b01
 #define AVT_BINNING_MODE_FLAG_SUM 		0b10
 
+#define LINE_OFFSET		8
+
+#define LINE_DIR_INPUT		0
+#define LINE_DIR_OUTPUT(x)	(BIT(0) << (x *LINE_OFFSET))
+
+#define LINE_INVERT(x)		(BIT(1) << (x *LINE_OFFSET))
+
+#define LINE_MASK(x) \
+	(LINE_DIR_OUTPUT(x) | LINE_INVERT(x))
+
+
 
 enum avt_binning_type {
 	NONE = -1,
@@ -3057,48 +3068,126 @@ static int write_ctrl_value(struct avt_dev *camera,struct v4l2_ctrl *ctrl,
 	return ret;
 }
 
-
-static int __set_exposure_active_mode(struct avt_dev *camera, bool active)
+static int avt_line_get(struct avt_dev *camera, int line, bool output,
+			bool invert, enum line_usage usage)
 {
-	struct v4l2_ctrl *sel_ctrl,*invert_ctrl;
-	u8 output_line_shift,invert;
-	u32 line_config;
-	int ret = 0;
+	int ret;
+	u32 config;
 
-	if (active) {
-		sel_ctrl = avt_ctrl_find(camera,
-					 AVT_CID_EXPOSURE_ACTIVE_LINE_SELECTOR);
+	if (line >= ARRAY_SIZE(camera->line_usage)) 
+		return -EINVAL;
 
-		if (sel_ctrl == NULL) {
-			return -EINVAL;
-		}
+	if (camera->line_usage[line] != LINE_USAGE_NONE)
+		return -EBUSY;
 
-		output_line_shift = sel_ctrl->val * 8;
+	ret = bcrm_read32(camera, BCRM_LINE_CONFIGURATION_32RW, &config);
+	if (ret < 0) 
+		return ret;
 
-		invert_ctrl = avt_ctrl_find(camera,
-					    AVT_CID_EXPOSURE_ACTIVE_INVERT);
+	// Clear all line bits and apply configuration
+	config = (config & ~LINE_MASK(line)) 
+		 | (output ? LINE_DIR_OUTPUT(line) : 0)
+		 | (invert ? LINE_INVERT(line) : 0);
+	
+	avt_info(get_sd(camera), "Set line configuration %x\n", config);
 
-		if (invert_ctrl == NULL) {
-			return -EINVAL;
-		}
+	ret = bcrm_write32(camera, BCRM_LINE_CONFIGURATION_32RW, config);
+	if (ret < 0)
+		return ret;
 
-		invert = invert_ctrl->val ? 2 : 0;
+	camera->line_usage[line] = usage;
 
-		line_config = (active ? (1 | invert ) : 0) << output_line_shift;
+	return 0;
+}
 
-		ret = bcrm_write32(camera, BCRM_LINE_CONFIGURATION_32RW,
-				   line_config);
-		
+static int avt_line_put(struct avt_dev *camera, int line)
+{
+	int ret;
+	u32 config;
+
+	if (line >= ARRAY_SIZE(camera->line_usage)) 
+		return -EINVAL;
+	
+	
+	ret = bcrm_read32(camera, BCRM_LINE_CONFIGURATION_32RW, &config);
+	if (ret < 0) 
+		return ret;
+	
+	config &= ~LINE_MASK(line);
+
+	ret = bcrm_write32(camera, BCRM_LINE_CONFIGURATION_32RW, config);
+	if (ret < 0) 
+		return ret;
+
+	camera->line_usage[line] = LINE_USAGE_NONE;
+
+	return 0;
+}
+
+static int __set_trigger_mode(struct avt_dev *camera, bool active)
+{
+	int ret;
+	struct v4l2_ctrl *src_ctrl;
+
+	src_ctrl = avt_ctrl_find(camera, AVT_CID_TRIGGER_SOURCE);
+	if (!src_ctrl)
+		return -EINVAL;
+
+	if (src_ctrl->val <= AVT_TRIGGER_SOURCE_LINE3 && active) {
+		ret = avt_line_get(camera, src_ctrl->val, false, false,
+				   LINE_USAGE_TRIGGER);
 		if (ret < 0)
 			return ret;
 	}
 
+	ret = bcrm_write8(camera, BCRM_FRAME_START_TRIGGER_MODE_8RW, active);
+	if (ret < 0)
+		return ret;
+
+	if (src_ctrl->val <= AVT_TRIGGER_SOURCE_LINE3 && !active) {
+		ret = avt_line_put(camera, src_ctrl->val);
+		if (ret < 0)
+			return ret;
+	}
+
+	return 0;
+}
+
+static int __set_exposure_active_mode(struct avt_dev *camera, bool active)
+{
+	struct v4l2_ctrl *sel_ctrl,*invert_ctrl;
+	int ret = 0;
+	
+	sel_ctrl = avt_ctrl_find(camera, AVT_CID_EXPOSURE_ACTIVE_LINE_SELECTOR);
+
+	if (sel_ctrl == NULL)
+		return -EINVAL;
+
+	invert_ctrl = avt_ctrl_find(camera, AVT_CID_EXPOSURE_ACTIVE_INVERT);
+
+	if (invert_ctrl == NULL)
+		return -EINVAL;
+
+	if (active) {
+		ret = avt_line_get(camera, sel_ctrl->val,
+				   true, invert_ctrl->val,
+				   LINE_USAGE_EXPOSURE_ACTIVE);
+		if (ret < 0)
+			return ret;
+	}
+	
 	ret = bcrm_write8(camera, BCRM_EXPOSURE_ACTIVE_LINE_MODE_8RW, active);
 	if (ret < 0)
 		return ret;
 
-	__v4l2_ctrl_grab(sel_ctrl,active);
-	__v4l2_ctrl_grab(invert_ctrl,active);
+	if (!active) {
+		ret = avt_line_put(camera, sel_ctrl->val);
+		if (ret < 0)
+			return ret;
+	}
+
+	__v4l2_ctrl_grab(sel_ctrl, active);
+	__v4l2_ctrl_grab(invert_ctrl, active);
 
 	return 0;
 }
@@ -3179,6 +3268,8 @@ static int __set_user_data_ctrl(struct avt_dev *camera, u32 *cur, u32 *new)
 static int __set_special_ctrl(struct avt_dev *camera, struct v4l2_ctrl *ctrl)
 {
 	switch (ctrl->id) {
+	case AVT_CID_TRIGGER_MODE:
+		return __set_trigger_mode(camera, ctrl->val);
 	case AVT_CID_EXPOSURE_ACTIVE_LINE_MODE:
 		return __set_exposure_active_mode(camera, ctrl->val);
 	case AVT_CID_COLOR_TRANSFORM_MATRIX:
@@ -3189,10 +3280,8 @@ static int __set_special_ctrl(struct avt_dev *camera, struct v4l2_ctrl *ctrl)
 		return __set_user_data_ctrl(camera, ctrl->p_cur.p_u32,
 					    ctrl->p_new.p_u32);
 	default:
-		break;
+		return 0;
 	}
-
-	return 0;
 }
 
 static int avt_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
