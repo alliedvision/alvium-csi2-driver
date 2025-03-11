@@ -1082,7 +1082,10 @@ static ssize_t bcrm_feature_inquiry_reg_text_show(struct device *dev,
 		      "device status                   %d\n"
 		      "revision id                     %d\n"
 		      "direct memory access            %d\n"
-		      "exposure mode                   %d\n",
+		      "exposure mode                   %d\n"
+		      "power save mode                 %d\n"
+		      "sensorboard temperature         %d\n"
+		      "temperature warning level       %d\n",
 		      inq_reg->feature_inq.reverse_x_avail,
 		      inq_reg->feature_inq.reverse_y_avail,
 		      inq_reg->feature_inq.intensity_auto_precedence_avail,
@@ -1109,7 +1112,10 @@ static ssize_t bcrm_feature_inquiry_reg_text_show(struct device *dev,
 		      inq_reg->feature_inq.device_status,
 		      inq_reg->feature_inq.revision_id,
 		      inq_reg->feature_inq.direct_memory_access,
-		      inq_reg->feature_inq.exposure_mode);
+		      inq_reg->feature_inq.exposure_mode,
+		      inq_reg->feature_inq.power_save_mode,
+		      inq_reg->feature_inq.sensorboard_temperature,
+		      inq_reg->feature_inq.temperature_warning_level);
 	return ret;
 }
 

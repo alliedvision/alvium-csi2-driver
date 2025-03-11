@@ -38,6 +38,9 @@
 #define BCRM_FEATURE_INQ_REVISION_ID			BIT(24)
 #define BCRM_FEATURE_INQ_DIRECT_MEMORY_ACCESS		BIT(25)
 #define BCRM_FEATURE_INQ_EXPOSURE_MODE			BIT(26)
+#define BCRM_FEATURE_INQ_POWER_SAVE_MODE		BIT(27)
+#define BCRM_FEATURE_INQ_SENSORBOARD_TEMPERATURE	BIT(28)
+#define BCRM_FEATURE_INQ_TEMPERATURE_WARNING_REGISTER	BIT(29)
 
 #define BCRM_DEVICE_FIRMWARE_VERSION_64R 		0x0010
 #define BCRM_WRITE_HANDSHAKE_8RW 			0x0018
@@ -380,7 +383,10 @@ union bcrm_feature_inquiry_reg {
 		u64 revision_id:1;
 		u64 direct_memory_access:1;
 		u64 exposure_mode:1;
-		u64 reserved:37;
+		u64 power_save_mode:1;
+		u64 sensorboard_temperature:1;
+		u64 temperature_warning_level:1;
+		u64 reserved:36;
 	} feature_inq;
 
 	u64 value;
