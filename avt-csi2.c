@@ -3103,28 +3103,42 @@ static int __set_exposure_active_mode(struct avt_dev *camera, bool active)
 	return 0;
 }
 
+static int __write_color_transform_word(struct avt_dev *camera,
+					int idx, u32 word)
+{
+	const int reg_idx = (idx / 2);
+	const int reg_off = reg_idx * sizeof(word);
+	const u16 reg = BCRM_COLOR_TRANSFORM_MATRIX_0_1_32RW + reg_off;
 
+	avt_info(get_sd(camera), "Write value [%d]=%u\n", reg_idx, word);
+
+	return bcrm_write32(camera, reg, word);
+}
 
 static int __set_color_transform_matrix(struct avt_dev *camera,
 					s32 *cur, s32* new)
 {
 	int i, ret;
-	s16 tmp[10]; // Overallocate on for aligend u32 access
+	u32 tmp = 0;
 
-	for (i = 0; i < BCRM_COLOR_TRANSFORM_MATRIX_SIZE; i++) {
-		tmp[i] = new[i];
-	}
-	
+	for (i = 0; i < BCRM_COLOR_TRANSFORM_MATRIX_SIZE; i++, new++, cur++) {
+		if (i % 2) {
+			tmp |= ((((s16)*new) & 0xFFFF) << 16) ;
 
-	for (i = 0; i < ARRAY_SIZE(tmp) / 2; i++) {
-		const u32 val = *((u32*)&tmp[2 * i]);
-		const u16 reg = BCRM_COLOR_MATRIX_BASE_32RW + i*sizeof(val);
+			ret = __write_color_transform_word(camera, i, tmp);
+			if (ret < 0)
+				return ret;
+			tmp = 0;
+		} else {
+			tmp = ((s16)*new) & 0xFFFF;
 
-		avt_info(get_sd(camera), "Write value %u\n", val);
-
-		ret = bcrm_write32(camera, reg, val);
-		if (ret < 0)
-			return ret;
+			if (i == (BCRM_COLOR_TRANSFORM_MATRIX_SIZE - 1)) {
+				ret = __write_color_transform_word(camera, i,	
+								   tmp);
+				if (ret < 0)
+					return ret;
+			}
+		}
 
 	}
 
@@ -3458,7 +3472,23 @@ static void avt_ctrl_added(struct avt_dev *camera,struct v4l2_ctrl *ctrl)
 		break;
 	}
 	case AVT_CID_COLOR_TRANSFORM_MATRIX: {
+		int i, ret;
+		s32 *val = ctrl->p_cur.p_s32;
+		u32 tmp;
 
+		for (i = 0; i < BCRM_COLOR_TRANSFORM_MATRIX_SIZE; i++, val++) {
+			if ((i % 2) == 0) {
+				u16 reg = BCRM_COLOR_TRANSFORM_MATRIX_0_1_32RW 
+					  + (i / 2) * sizeof(tmp);
+				ret = bcrm_read32(camera, reg, &tmp);
+				if (ret < 0)
+					break;
+
+				*val = ((s16)(tmp & 0xFFFF));
+			} else {
+				*val = ((s16)((tmp >> 16) & 0xFFFF));
+			}
+		}
 
 		break;
 	}
