@@ -3124,6 +3124,45 @@ static int avt_line_put(struct avt_dev *camera, int line)
 	return 0;
 }
 
+static int __set_frame_trigger_wait_line_mode(struct avt_dev *camera,
+					      bool active)
+{
+	int ret;
+	struct v4l2_ctrl *line_ctrl, *invert_ctrl;
+
+	line_ctrl = avt_ctrl_find(camera,
+				  AVT_CID_FRAME_TRIGGER_WAIT_OUTPUT_LINE);
+	if (!line_ctrl)
+		return -EINVAL;
+	
+	invert_ctrl = avt_ctrl_find(camera, AVT_CID_FRAME_TRIGGER_WAIT_INVERT);
+	if (!invert_ctrl)
+		return -EINVAL;
+
+	if (active) {
+		ret = avt_line_get(camera, line_ctrl->val, 
+				   true, invert_ctrl->val,
+				   LINE_USAGE_FRAME_TRIGGER_WAIT);
+		if (ret < 0)
+			return ret;
+	}
+
+	ret = bcrm_write8(camera, BCRM_FRAME_TRIGGER_WAIT_LINE_MODE_8RW, active);
+	if (ret < 0)
+		return ret;
+
+	if (!active) {
+		ret = avt_line_put(camera, line_ctrl->val);
+		if (ret < 0)
+			return ret;
+	}
+
+	__v4l2_ctrl_grab(line_ctrl, active);
+	__v4l2_ctrl_grab(invert_ctrl, active);
+
+	return 0;
+}					
+
 static int __set_trigger_mode(struct avt_dev *camera, bool active)
 {
 	int ret;
@@ -3279,6 +3318,8 @@ static int __set_special_ctrl(struct avt_dev *camera, struct v4l2_ctrl *ctrl)
 	case AVT_CID_USER_DATA_STORAGE: 
 		return __set_user_data_ctrl(camera, ctrl->p_cur.p_u32,
 					    ctrl->p_new.p_u32);
+	case AVT_CID_FRAME_TRIGGER_WAIT_LINE_MODE:
+		return __set_frame_trigger_wait_line_mode(camera, ctrl->val);
 	default:
 		return 0;
 	}

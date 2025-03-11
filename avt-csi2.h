@@ -140,6 +140,13 @@ static const char * const avt_test_pattern_menu[] = {
 	[AVT_TEST_PATTERN_GREY_DRAMP] = "Grey Diagonal Ramp",
 };
 
+static const char * const avt_frame_trigger_wait_output_line_menu[] = {
+	[AVT_FRAME_TRIGGER_WAIT_OUTPUT_LINE0] = "Line0",
+	[AVT_FRAME_TRIGGER_WAIT_OUTPUT_LINE1] = "Line1",
+	[AVT_FRAME_TRIGGER_WAIT_OUTPUT_LINE2] = "Line2",
+	[AVT_FRAME_TRIGGER_WAIT_OUTPUT_LINE3] = "Line3"
+};
+
 
 const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
@@ -630,6 +637,31 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.default_value	= 0,
 		.step_value	= 1,
 		.dims		= { BCRM_USER_DATA_INDEX_COUNT, 0, 0, 0 },
+	},
+	{
+		.id 		= AVT_CID_FRAME_TRIGGER_WAIT_LINE_MODE,
+		.name		= "Frame Trigger Wait Line Mode",
+		.inq_mask	= BCRM_FEATURE_INQ_FRAME_TRIGGER_WAIT_LINE,
+		.type		= V4L2_CTRL_TYPE_BOOLEAN,
+	},
+	{
+		.id		= AVT_CID_FRAME_TRIGGER_WAIT_OUTPUT_LINE,
+		.name		= "Frame Trigger Wait Output Line",
+		.inq_mask	= BCRM_FEATURE_INQ_FRAME_TRIGGER_WAIT_LINE,
+		.type		= V4L2_CTRL_TYPE_MENU,
+		.qmenu		= avt_frame_trigger_wait_output_line_menu,
+		.flags		= 0,
+		.min_value	= 0,
+		.max_value	= 
+			ARRAY_SIZE(avt_frame_trigger_wait_output_line_menu) - 1,
+		.reg_offset	= BCRM_FRAME_TRIGGER_WAIT_OUTPUT_LINE_8RW,
+		.reg_length	= AV_CAM_DATA_SIZE_8,
+	},
+	{
+		.id		= AVT_CID_FRAME_TRIGGER_WAIT_INVERT,
+		.name		= "Frame Trigger Wait Invert",
+		.inq_mask	= BCRM_FEATURE_INQ_FRAME_TRIGGER_WAIT_LINE,
+		.type		= V4L2_CTRL_TYPE_BOOLEAN,
 	}
 };
 
