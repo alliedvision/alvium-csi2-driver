@@ -744,6 +744,20 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.reg_offset	= BCRM_DPC_ENABLE_8RW,
 		.reg_length	= AV_CAM_DATA_SIZE_8,
 		.avt_flags	= AVT_CTRL_FLAG_STREAM_DISABLED,
+	},
+	{
+		.id		= AVT_CID_EXPOSURE_GAIN,
+		.name		= "Exposure and Gain Combined",
+		// TODO: Dermine if this register is always available 
+		//.inq_mask	= 0,
+		.type		= V4L2_CTRL_TYPE_INTEGER64,
+		.min_value	= S64_MIN,
+		.max_value	= S64_MAX,
+		.step_value	= 1,
+		.reg_offset	= BCRM_EXPOSURE_TIME_GAIN_COMBINED,
+		.reg_length	= AV_CAM_DATA_SIZE_64,
+		.flags		= V4L2_CTRL_FLAG_VOLATILE 
+				| V4L2_CTRL_FLAG_EXECUTE_ON_WRITE
 	}
 };
 
