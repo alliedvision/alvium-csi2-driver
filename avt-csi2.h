@@ -735,6 +735,16 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.reg_offset	= BCRM_TEMPERATURE_WARNING_LEVEL_32RW,
 		.reg_length	= AV_CAM_DATA_SIZE_32,
 	},
+	{
+		.id		= AVT_CID_DPC_ENABLE,
+		.name		= "DPC Enable",
+		// TODO: Dermine if this register is always available 
+		//.inq_mask	= 0,
+		.type		= V4L2_CTRL_TYPE_BOOLEAN,
+		.reg_offset	= BCRM_DPC_ENABLE_8RW,
+		.reg_length	= AV_CAM_DATA_SIZE_8,
+		.avt_flags	= AVT_CTRL_FLAG_STREAM_DISABLED,
+	}
 };
 
 
