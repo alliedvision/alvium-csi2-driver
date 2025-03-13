@@ -758,6 +758,15 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.reg_length	= AV_CAM_DATA_SIZE_64,
 		.flags		= V4L2_CTRL_FLAG_VOLATILE 
 				| V4L2_CTRL_FLAG_EXECUTE_ON_WRITE
+	},
+	{
+		.id 		= AVT_CID_POWER_SAVE_MODE,
+		.name		= "Power Save Mode",
+		.inq_mask	= BCRM_FEATURE_INQ_POWER_SAVE_MODE,
+		.type		= V4L2_CTRL_TYPE_BOOLEAN,
+		.reg_offset	= BCRM_DEVICE_POWER_SAVE_MODE_32RW,
+		.reg_length	= AV_CAM_DATA_SIZE_32,
+		.avt_flags	= AVT_CTRL_FLAG_STREAM_DISABLED,
 	}
 };
 
@@ -881,6 +890,8 @@ struct avt_dev
 	struct device_attribute	*mode_attr;
 
 	enum line_usage line_usage[2];
+
+	bool power_save_mode;
 };
 
 enum avt_ctrl {

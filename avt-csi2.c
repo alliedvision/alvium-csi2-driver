@@ -3091,6 +3091,9 @@ static void avt_ctrl_changed(struct avt_dev *camera,
 
 		break;
 	}
+	case AVT_CID_POWER_SAVE_MODE: 
+		camera->power_save_mode = ctrl->val ? true : false;
+		break;
 	default:
 		break;
 	}
@@ -4187,6 +4190,12 @@ static int avt_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 		struct v4l2_rect binning_rect = {0};
 		const struct avt_binning_info *binning_info = camera->curr_binning_info;
 
+		if (camera->power_save_mode) {
+			ret = -EBUSY;
+			goto out;
+		}
+			
+
 		binning_rect.width = binning_info->max_width;
 		binning_rect.height = binning_info->max_height;
 
@@ -4199,7 +4208,6 @@ static int avt_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 				      binning_rect.height,3,0);
 
 		dev_info(&camera->i2c_client->dev,"Selected crop (%u,%u) %ux%u\n",crop_rect.left,crop_rect.top,crop_rect.width,crop_rect.height);
-
 
 		if (!avt_trigger_mode_enabled(camera)) {
 			ret = write_framerate(camera);

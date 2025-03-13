@@ -122,6 +122,7 @@ enum avt_test_pattern {
 #define AVT_CID_TEMPERATURE_WARINING_LEVEL	 (AVT_CID_CAMERA_BASE + 35)
 #define AVT_CID_DPC_ENABLE			 (AVT_CID_CAMERA_BASE + 36)
 #define AVT_CID_EXPOSURE_GAIN			 (AVT_CID_CAMERA_BASE + 37)
+#define AVT_CID_POWER_SAVE_MODE			 (AVT_CID_CAMERA_BASE + 38)
 
 struct avt_i2c_xfer {
     __u16 addr;
