@@ -673,6 +673,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.step_offset	= BCRM_AUTO_REGION_OFFSET_X_INC_32RW,
 		.reg_offset	= BCRM_AUTO_REGION_OFFSET_X_32RW,
 		.reg_length	= AV_CAM_DATA_SIZE_32,
+		.avt_flags	= AVT_CTRL_FLAG_STREAM_DISABLED,
 	},
 		{
 		.id		= AVT_CID_AUTO_REGION_TOP,
@@ -684,6 +685,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.step_offset	= BCRM_AUTO_REGION_OFFSET_Y_INC_32RW,
 		.reg_offset	= BCRM_AUTO_REGION_OFFSET_Y_32RW,
 		.reg_length	= AV_CAM_DATA_SIZE_32,
+		.avt_flags	= AVT_CTRL_FLAG_STREAM_DISABLED,
 	},
 	{
 		.id		= AVT_CID_AUTO_REGION_WIDTH,
@@ -695,6 +697,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.step_offset	= BCRM_AUTO_REGION_WIDTH_INC_32RW,
 		.reg_offset	= BCRM_AUTO_REGION_WIDTH_32RW,
 		.reg_length	= AV_CAM_DATA_SIZE_32,
+		.avt_flags	= AVT_CTRL_FLAG_STREAM_DISABLED,
 	},
 	{
 		.id		= AVT_CID_AUTO_REGION_HEIGHT,
@@ -706,6 +709,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.step_offset	= BCRM_AUTO_REGION_HEIGHT_INC_32RW,
 		.reg_offset	= BCRM_AUTO_REGION_HEIGHT_32RW,
 		.reg_length	= AV_CAM_DATA_SIZE_32,
+		.avt_flags	= AVT_CTRL_FLAG_STREAM_DISABLED,
 	}
 };
 
