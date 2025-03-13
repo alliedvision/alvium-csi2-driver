@@ -3150,7 +3150,7 @@ static int avt_line_get(struct avt_dev *camera, int line, bool output,
 		return ret;
 
 	// Clear all line bits and apply configuration
-	
+
 	set_flag(&config, LINE_DIR_OUTPUT(line), output);
 	set_flag(&config, LINE_INVERT(line), invert);
 
@@ -4311,8 +4311,8 @@ static int avt_log_status(struct v4l2_subdev *sd)
 		 status & BCRM_DEVICE_STATUS_BACKEND_BUFFER_OKAY
 		 ? "true" : "false" );
 
-	dev_info(dev, "Temperature okay = %s\n", 
-		 status & BCRM_DEVICE_STATUS_TEMPERATURE_OKAY
+	dev_info(dev, "Mainboard temperature okay = %s\n", 
+		 status & BCRM_DEVICE_STATUS_MAINBOARD_TEMPERATURE_OKAY
 		 ? "true" : "false" );
 
 	dev_info(dev, "Stream ready = %s\n", 
@@ -4322,6 +4322,10 @@ static int avt_log_status(struct v4l2_subdev *sd)
 	dev_info(dev, "MIPI Phy okay = %s\n", 
 		 status & BCRM_DEVICE_STATUS_MIPI_PHY_OKAY
 		 ? "true" : "false" );	
+
+	dev_info(dev, "Sensorboard temperature okay = %s\n", 
+		 status & BCRM_DEVICE_STATUS_SENSORBOARD_TEMPERATURE_OKAY
+		 ? "true" : "false" );		
 
 	ret = bcrm_read8(camera, BCRM_ACQUISITION_STATUS_8R, &acq_active);
 	if (ret < 0)
