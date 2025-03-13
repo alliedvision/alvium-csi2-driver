@@ -2898,6 +2898,32 @@ static const struct v4l2_event avt_source_change_event = {
 	.u.src_change.changes = V4L2_EVENT_SRC_CH_RESOLUTION,
 };
 
+static void __auto_region_update_limits(struct avt_dev *camera, int id, 
+					u16 min_reg, u16 max_reg)
+{
+	struct device *dev = &camera->i2c_client->dev;
+	struct v4l2_ctrl *ctrl;
+	u32 min, max;
+	int ret;
+	
+	ctrl = avt_ctrl_find(camera, id);
+	if (!ctrl)
+		return;
+
+	ret = bcrm_read32(camera, min_reg, &min);
+	if (ret < 0)
+		return;
+
+	ret = bcrm_read32(camera, max_reg, &max);
+	if (ret < 0)
+		return;
+
+	dev_info(dev, "Update auto region ctrl %x range (%d, %d)\n",
+		 id, min, max);
+
+	__v4l2_ctrl_modify_range(ctrl, min, max, ctrl->step, max);
+}					
+
 static void avt_ctrl_changed(struct avt_dev *camera,
 			      const struct v4l2_ctrl * const ctrl)
 {
@@ -3032,6 +3058,34 @@ static void avt_ctrl_changed(struct avt_dev *camera,
 
 	}
 		break;
+	case AVT_CID_AUTO_REGION_LEFT: {
+		__auto_region_update_limits(camera, AVT_CID_AUTO_REGION_WIDTH, 
+					    BCRM_AUTO_REGION_WIDTH_MIN_32RW, 
+					    BCRM_AUTO_REGION_WIDTH_MAX_32RW);
+
+		break;
+	}
+	case AVT_CID_AUTO_REGION_TOP: {
+		__auto_region_update_limits(camera, AVT_CID_AUTO_REGION_HEIGHT, 
+					    BCRM_AUTO_REGION_HEIGHT_MIN_32RW, 
+					    BCRM_AUTO_REGION_HEIGHT_MAX_32RW);
+
+		break;
+	}
+	case AVT_CID_AUTO_REGION_WIDTH: {
+		__auto_region_update_limits(camera, AVT_CID_AUTO_REGION_LEFT, 
+					    BCRM_AUTO_REGION_OFFSET_X_MIN_32RW, 
+					    BCRM_AUTO_REGION_OFFSET_X_MAX_32RW);
+
+		break;
+	}
+	case AVT_CID_AUTO_REGION_HEIGHT: {
+		__auto_region_update_limits(camera, AVT_CID_AUTO_REGION_TOP, 
+					    BCRM_AUTO_REGION_OFFSET_Y_MIN_32RW, 
+					    BCRM_AUTO_REGION_OFFSET_Y_MAX_32RW);
+
+		break;
+	}
 	default:
 		break;
 	}
