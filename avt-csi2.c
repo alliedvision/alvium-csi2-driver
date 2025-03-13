@@ -62,9 +62,6 @@
 
 #include "avt-mipi-csi2.h"
 
-// only for dma_get_cache_alignment();
-#include <linux/dma-mapping.h>
-
 #include "avt-csi2.h"
 
 #define AVT_DBG_LVL 2
@@ -289,6 +286,14 @@ static inline struct v4l2_subdev* get_sd(struct avt_dev *priv)
 #endif // #ifdef NVIDIA
 }
 
+
+static inline void set_flag(u32 *pval, u32 mask, int set)
+{
+	if (set) 
+		*pval |= mask;
+	else 
+		*pval &= ~mask;
+}
 
 static ssize_t avt_read_raw(struct avt_dev *camera, u16 reg,
 	u8 *buf, size_t len)
@@ -3145,10 +3150,10 @@ static int avt_line_get(struct avt_dev *camera, int line, bool output,
 		return ret;
 
 	// Clear all line bits and apply configuration
-	config = (config & ~LINE_MASK(line)) 
-		 | (output ? LINE_DIR_OUTPUT(line) : 0)
-		 | (invert ? LINE_INVERT(line) : 0);
 	
+	set_flag(&config, LINE_DIR_OUTPUT(line), output);
+	set_flag(&config, LINE_INVERT(line), invert);
+
 	avt_info(get_sd(camera), "Set line configuration %x\n", config);
 
 	ret = bcrm_write32(camera, BCRM_LINE_CONFIGURATION_32RW, config);
@@ -3173,7 +3178,8 @@ static int avt_line_put(struct avt_dev *camera, int line)
 	if (ret < 0) 
 		return ret;
 	
-	config &= ~LINE_MASK(line);
+	set_flag(&config, LINE_DIR_OUTPUT(line), false);
+	set_flag(&config, LINE_INVERT(line), false);
 
 	ret = bcrm_write32(camera, BCRM_LINE_CONFIGURATION_32RW, config);
 	if (ret < 0) 
