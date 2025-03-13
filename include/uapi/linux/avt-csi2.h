@@ -117,6 +117,9 @@ enum avt_test_pattern {
 #define AVT_CID_AUTO_REGION_WIDTH		 (AVT_CID_CAMERA_BASE + 32)
 #define AVT_CID_AUTO_REGION_HEIGHT		 (AVT_CID_CAMERA_BASE + 33)
 
+#define AVT_CID_SENSORBOARD_TEMPERATURE		 (AVT_CID_CAMERA_BASE + 34)
+#define AVT_CID_TEMPERATURE_WARINING_LEVEL	 (AVT_CID_CAMERA_BASE + 35)
+
 struct avt_i2c_xfer {
     __u16 addr;
     __u16 len;

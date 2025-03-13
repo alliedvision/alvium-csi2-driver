@@ -710,7 +710,31 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.reg_offset	= BCRM_AUTO_REGION_HEIGHT_32RW,
 		.reg_length	= AV_CAM_DATA_SIZE_32,
 		.avt_flags	= AVT_CTRL_FLAG_STREAM_DISABLED,
-	}
+	}, 
+	{
+		.id		= AVT_CID_SENSORBOARD_TEMPERATURE,
+		.name		= "Sensorboard Temperature",
+		.inq_mask	= BCRM_FEATURE_INQ_SENSORBOARD_TEMPERATURE,
+		.type		= V4L2_CTRL_TYPE_INTEGER,
+		.min_value	= S32_MIN,
+		.min_value	= S32_MAX,
+		.step_value	= 1,
+		.reg_offset	= BCRM_SENSORBOARD_TEMPERATURE_32R,
+		.reg_length	= AV_CAM_DATA_SIZE_32,
+		.flags		= V4L2_CTRL_FLAG_VOLATILE
+			 	| V4L2_CTRL_FLAG_READ_ONLY,
+	},
+	{
+		.id		= AVT_CID_TEMPERATURE_WARINING_LEVEL,
+		.name		= "Temperature Warning Level",
+		.inq_mask	= BCRM_FEATURE_INQ_TEMPERATURE_WARNING_REGISTER,
+		.type		= V4L2_CTRL_TYPE_INTEGER,
+		.min_value	= 650,
+		.max_value	= 1000,
+		.step_value	= 1,
+		.reg_offset	= BCRM_TEMPERATURE_WARNING_LEVEL_32RW,
+		.reg_length	= AV_CAM_DATA_SIZE_32,
+	},
 };
 
 
