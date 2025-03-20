@@ -147,6 +147,11 @@ static const char * const avt_frame_trigger_wait_output_line_menu[] = {
 	[AVT_FRAME_TRIGGER_WAIT_OUTPUT_LINE3] = "Line3"
 };
 
+static const char * const avt_power_save_mode_menu[] = {
+	[AVT_POWER_SAVE_DISABLED] = "Disabled",
+	[AVT_POWER_SAVE_STANDBY] = "Standby",
+};
+
 
 const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
@@ -763,10 +768,14 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.id 		= AVT_CID_POWER_SAVE_MODE,
 		.name		= "Power Save Mode",
 		.inq_mask	= BCRM_FEATURE_INQ_POWER_SAVE_MODE,
-		.type		= V4L2_CTRL_TYPE_BOOLEAN,
+		.type		= V4L2_CTRL_TYPE_MENU,
+		.qmenu		= avt_power_save_mode_menu,
+		.min_value	= 0,
+		.max_value	= ARRAY_SIZE(avt_power_save_mode_menu) - 1,
 		.reg_offset	= BCRM_DEVICE_POWER_SAVE_MODE_32RW,
 		.reg_length	= AV_CAM_DATA_SIZE_32,
 		.avt_flags	= AVT_CTRL_FLAG_STREAM_DISABLED,
+		
 	}
 };
 

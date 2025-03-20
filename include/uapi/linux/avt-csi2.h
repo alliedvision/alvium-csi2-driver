@@ -124,6 +124,10 @@ enum avt_frame_trigger_wait_output_line {
 #define AVT_CID_DPC_ENABLE			 (AVT_CID_CAMERA_BASE + 36)
 #define AVT_CID_EXPOSURE_GAIN			 (AVT_CID_CAMERA_BASE + 37)
 #define AVT_CID_POWER_SAVE_MODE			 (AVT_CID_CAMERA_BASE + 38)
+enum avt_power_save_mode {
+	AVT_POWER_SAVE_DISABLED,
+	AVT_POWER_SAVE_STANDBY,
+};
 
 struct avt_i2c_xfer {
     __u16 addr;
