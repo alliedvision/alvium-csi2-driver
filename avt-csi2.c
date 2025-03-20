@@ -3569,6 +3569,8 @@ static void avt_ctrl_added(struct avt_dev *camera,struct v4l2_ctrl *ctrl)
 		break;
 	case AVT_CID_TRIGGER_SOURCE:
 		avt_update_sw_ctrl_state(camera);
+		ctrl->menu_skip_mask = BIT(AVT_TRIGGER_SOURCE_LINE2) 
+				     | BIT(AVT_TRIGGER_SOURCE_LINE3);
 		break;
 	case AVT_CID_TRIGGER_SOFTWARE:
 		avt_update_sw_ctrl_state(camera);
@@ -3670,6 +3672,10 @@ static void avt_ctrl_added(struct avt_dev *camera,struct v4l2_ctrl *ctrl)
 
 		break;
 	}
+	case AVT_CID_FRAME_TRIGGER_WAIT_OUTPUT_LINE:
+		ctrl->menu_skip_mask = BIT(AVT_FRAME_TRIGGER_WAIT_OUTPUT_LINE2)
+				     | BIT(AVT_FRAME_TRIGGER_WAIT_OUTPUT_LINE3);
+		break;
 	case AVT_CID_COLOR_TRANSFORM_MATRIX: {
 		int i, ret;
 		s32 *val = ctrl->p_cur.p_s32;
