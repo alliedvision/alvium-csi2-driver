@@ -743,8 +743,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id		= AVT_CID_DPC_ENABLE,
 		.name		= "DPC Enable",
-		// TODO: Dermine if this register is always available 
-		//.inq_mask	= 0,
+		.inq_mask	= BCRM_FEATURE_INQ_DPC_ENABLE,
 		.type		= V4L2_CTRL_TYPE_BOOLEAN,
 		.reg_offset	= BCRM_DPC_ENABLE_8RW,
 		.reg_length	= AV_CAM_DATA_SIZE_8,
@@ -753,8 +752,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id		= AVT_CID_EXPOSURE_GAIN,
 		.name		= "Exposure and Gain Combined",
-		// TODO: Dermine if this register is always available 
-		//.inq_mask	= 0,
+		.inq_mask	= BCRM_FEATURE_INQ_EXPOSURE_AND_GAIN_COMINED,
 		.type		= V4L2_CTRL_TYPE_INTEGER64,
 		.min_value	= S64_MIN,
 		.max_value	= S64_MAX,
