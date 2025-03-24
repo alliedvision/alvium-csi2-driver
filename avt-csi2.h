@@ -843,11 +843,6 @@ struct avt_dev
 
 	struct v4l2_fwnode_endpoint v4l2_fwnode_ep; /* the parsed DT endpoint info */
 	struct fwnode_handle *endpoint;
-	
-	struct gpio_desc *reset_gpio;
-	struct gpio_desc *pwdn_gpio;
-
-	int power_count;
 
 	struct v4l2_mbus_framefmt mbus_framefmt;
 	struct v4l2_captureparm streamcap;
