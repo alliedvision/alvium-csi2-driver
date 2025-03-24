@@ -156,7 +156,7 @@ static const char * const avt_power_save_mode_menu[] = {
 const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id		= V4L2_CID_EXPOSURE,
-		.name		= "Exposure Absolute",
+		.name		= "Exposure",
 		.inq_mask	= 0,
 		.min_offset	= BCRM_EXPOSURE_TIME_MIN_64R,
 		.max_offset	= BCRM_EXPOSURE_TIME_MAX_64R,
@@ -722,7 +722,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.inq_mask	= BCRM_FEATURE_INQ_SENSORBOARD_TEMPERATURE,
 		.type		= V4L2_CTRL_TYPE_INTEGER,
 		.min_value	= S32_MIN,
-		.min_value	= S32_MAX,
+		.max_value	= S32_MAX,
 		.step_value	= 1,
 		.reg_offset	= BCRM_SENSORBOARD_TEMPERATURE_32R,
 		.reg_length	= AV_CAM_DATA_SIZE_32,
