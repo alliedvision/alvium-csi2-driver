@@ -2139,8 +2139,8 @@ static void avt_calc_compose(const struct avt_dev * const camera,
 		}
 	}
 
-	dev_info(&camera->i2c_client->dev,"Selected binning %dx%d type: %s\n",
-		 best->vfact,best->hfact,binning_type_str[type]);
+	dev_dbg(&camera->i2c_client->dev,"Selected binning %dx%d type: %s\n",
+		best->vfact,best->hfact,binning_type_str[type]);
 
 	binning_rect.width = best->max_width;
 	binning_rect.height = best->max_height;
@@ -2155,7 +2155,7 @@ static void avt_calc_compose(const struct avt_dev * const camera,
 	*width = scaled_crop.width;
 	*height = scaled_crop.height;
 
-	dev_info(&camera->i2c_client->dev,"Selected crop (%u,%u) %ux%u\n",
+	dev_dbg(&camera->i2c_client->dev,"Selected crop (%u,%u) %ux%u\n",
 		 scaled_crop.left,scaled_crop.top,
 		 scaled_crop.width,scaled_crop.height);
 
@@ -3825,18 +3825,10 @@ static int avt_pad_ops_enum_frame_interval(
 	u64 max_framerate;
 
 	if (fie->pad != 0)
-	{
-		avt_err(sd, "no pad availble. fie->index %d, fie->pad %d, fie->code 0x%04X, fie->width %d, fie->height %d",
-				fie->index, fie->pad, fie->code, fie->width, fie->height);
 		return -EINVAL;
-	}
 
 	if (fie->index >= 1)
-	{
-		avt_info(sd, "fie->index >= avt_NUM_FRAMERATES fie->index %d, avt_NUM_FRAMERATES %d, fie->pad %d, fie->code 0x%04X, fie->width %d, fie->height %d",
-				 fie->index, 1, fie->pad, fie->code, fie->width, fie->height);
 		return -EINVAL;
-	}
 	/*
 	To enumerate frame intervals applications initialize the index, pad, which, code, width and height fields of
 	struct v4l2_subdev_frame_interval_enum and call the ioctl VIDIOC_SUBDEV_ENUM_FRAME_INTERVAL ioctl with a
