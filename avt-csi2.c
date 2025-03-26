@@ -116,8 +116,8 @@ struct avt_val64
 #define MODE_SWITCH_TIMEOUT_US		5 * USEC_PER_SEC
 #define MODE_SWTICH_POLL_INTERVAL_US	10 * USEC_PER_MSEC 
 
-#define SOFTRESET_BOOT_TIMEOUT_US	10 * USEC_PER_SEC
-#define SOFTRESET_POLL_INTERVAL_US	500 * USEC_PER_MSEC
+#define BOOT_TIMEOUT_US			10 * USEC_PER_SEC
+#define BOOT_POLL_INTERVAL_US		500 * USEC_PER_MSEC
 
 //Define formats for GenICam for CSI2, if they not exist
 #ifndef V4L2_PIX_FMT_CUSTOM
@@ -249,7 +249,6 @@ static const size_t avt_binning_setting_cnt = ARRAY_SIZE(avt_binning_settings);
 
 static int bcrm_write(struct avt_dev *camera, u16 reg, u64 val, size_t len);
 
-static int avt_detect(struct i2c_client *client);
 static int avt_do_softreset(struct avt_dev *camera);
 static void avt_dphy_reset(struct avt_dev *camera, bool bResetPhy);
 
@@ -1982,8 +1981,7 @@ static int avt_do_softreset(struct avt_dev *camera)
 		return ret;
 
 	ret = read_poll_timeout(avt_read8, ret, val > 0 && val < 0x80, 
-				SOFTRESET_POLL_INTERVAL_US, 
-				SOFTRESET_BOOT_TIMEOUT_US,
+				BOOT_POLL_INTERVAL_US, BOOT_TIMEOUT_US,
 			  	true, camera, CCI_HEARTBEAT_8RW, &val);
 	if (ret < 0) {
 		dev_err(dev, "Softreset failed with err: %d\n", ret);
@@ -5250,37 +5248,21 @@ static void bcrm_wrhs_work_func(struct work_struct *work)
 }
 
 
-static int avt_detect(struct i2c_client *client)
+static int avt_detect(struct avt_dev *camera)
 {
-	const u16 address = 0x0;
-	u32 value = 0;
+	u32 version;
 	int ret;
-	struct i2c_msg msgs[2] = {
-			{
-				.addr = client->addr,
-				.flags = 0,
-				.buf = (__u8*)&address,
-				.len = 2,
-			},
-			{
-				.addr = client->addr,
-				.flags = I2C_M_RD,
-				.buf = (__u8*)&value,
-				.len = 4,
-			},
-	};
-
-
-	ret = i2c_transfer(client->adapter, msgs, 2);
+	
+	ret = avt_read32(camera, CCI_REGISTER_LAYOUT_VERSION_32R, &version);
 
 	if (ret < 0)
 	{
 		return ret;
 	}
 
-	if (value == 0)
+	if (version == 0)
 	{
-		return -1;
+		return -ENODEV;
 	}
 
 	return 0;
@@ -5467,26 +5449,42 @@ static int avt_probe(struct i2c_client *client)
 	struct fwnode_handle *fwnode = dev_fwnode(dev);
 	struct v4l2_subdev *sd;
 	int ret;
+	
+	camera = devm_kzalloc(dev, sizeof(*camera), GFP_KERNEL);
+	if (!camera)
+		return -ENOMEM;
 
-	dev_info(&client->dev, "%s[%d]: %s",
-			 __func__, __LINE__, __FILE__);
+	camera->i2c_client = client;
+	camera->streamon_delay = 0;
+	camera->framerate_auto = true;
 
-	if (avt_detect(client) < 0)
+	camera->regmap = devm_regmap_init_i2c(client, &alvium_regmap_config);
+	if (IS_ERR(camera->regmap))
 	{
+		ret = dev_err_probe(dev, PTR_ERR(camera->regmap), 
+				    "i2c regmap init failed\n");
+		goto err_exit;
+	}
+
+	camera->reg_vcc_ext = devm_regulator_get_optional(dev, "vcc-ext");
+	if (IS_ERR(camera->reg_vcc_ext)) 
+		return dev_err_probe(dev, PTR_ERR(camera->reg_vcc_ext),
+				     "failed to get vcc-ext regulator\n");
+
+	if (camera->reg_vcc_ext) {
+		ret = regulator_enable(camera->reg_vcc_ext);
+		if (ret)
+			return dev_err_probe(dev, ret, 
+					     "failed to enable regulator\n");
+	}
+
+	ret = read_poll_timeout(avt_detect, ret, !ret, BOOT_POLL_INTERVAL_US, 
+			  	BOOT_TIMEOUT_US, false, camera);
+	if (ret) {
 		dev_warn(&client->dev,"No camera detected!");
 		return -ENODEV;
 	}
 
-
-	camera = devm_kzalloc(dev, sizeof(*camera), GFP_KERNEL);
-	if (!camera)
-	{
-		return -ENOMEM;
-	}
-	
-	camera->i2c_client = client;
-	camera->streamon_delay = 0;
-	camera->framerate_auto = true;
 
 	sd = get_sd(camera);
 
@@ -5499,16 +5497,6 @@ static int avt_probe(struct i2c_client *client)
 
 	camera->stream_start_phy_reset
 		= fwnode_property_present(fwnode,"phy_reset_on_start");
-
-	camera->regmap = devm_regmap_init_i2c(client, &alvium_regmap_config);
-	if (IS_ERR(camera->regmap))
-	{
-		dev_err(dev, "%s[%d]: regmap init failed: %ld\n", __func__, __LINE__,
-				PTR_ERR(camera->regmap));
-		ret = -ENODEV;
-		goto err_exit;
-	}
-
 
 	ret = fwnode_property_read_u32(dev_fwnode(&client->dev),
 		"bcrm_wait_timeout", &camera->bcrm_handshake_timeout_ms);
@@ -5534,7 +5522,6 @@ static int avt_probe(struct i2c_client *client)
 		ret = -EINVAL;
 		goto fwnode_cleanup;
 	}
-
 
 #ifdef NVIDIA
 	camera->s_data.priv = camera;
@@ -5562,12 +5549,17 @@ static int avt_probe(struct i2c_client *client)
 
 	mutex_init(&camera->lock);
 
-	ret = avt_do_softreset(camera);
-	if(ret < 0) {
-		avt_err(sd, "Camera reset failed");
-		goto fwnode_cleanup;
+	// No regulator specified, but camera is reachable 
+	// -> Must be externally powered 
+	// -> Do softreset so camera is in good state
+	if (!camera->reg_vcc_ext) {
+		ret = avt_do_softreset(camera);
+		if(ret < 0) {
+			avt_err(sd, "Camera reset failed");
+			goto fwnode_cleanup;
+		}
 	}
-
+	
 	ret = read_cci_registers(client);
 
 	if (ret < 0)
@@ -5799,6 +5791,9 @@ static void avt_remove(struct i2c_client *client)
 	mutex_destroy(&camera->lock);
 
 	v4l2_async_unregister_subdev(sd);
+
+	if (camera->reg_vcc_ext) 
+		regulator_disable(camera->reg_vcc_ext);
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
 	return 0;
 #endif
@@ -5821,7 +5816,6 @@ MODULE_DEVICE_TABLE(of, avt_dt_ids);
 static struct i2c_driver avt_i2c_driver = {
 	.driver = {
 		.name = "avt_csi2",
-		.owner = THIS_MODULE,
 		.of_match_table = avt_dt_ids,
 	},
 	.id_table = avt_id,

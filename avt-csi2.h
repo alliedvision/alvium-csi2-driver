@@ -825,6 +825,7 @@ struct avt_dev
 	struct mutex lock;
 
 	struct regmap *regmap;
+	struct regulator *reg_vcc_ext;
 	
 	struct media_pad pad;
 	union device_firmware_version_reg cam_firmware_version;
