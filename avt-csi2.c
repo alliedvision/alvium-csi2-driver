@@ -3576,9 +3576,16 @@ static void avt_ctrl_added(struct avt_dev *camera,struct v4l2_ctrl *ctrl)
 {
 	switch (ctrl->id)
 	{
-	case AVT_CID_TRIGGER_MODE:
+	case AVT_CID_TRIGGER_MODE: {
+		u8 val = 0;
+		
+		bcrm_read8(camera, BCRM_FRAME_START_TRIGGER_MODE_8RW, &val);
+
+		ctrl->val = val ? 1 : 0;
+
 		avt_update_sw_ctrl_state(camera);
 		break;
+	}
 	case AVT_CID_TRIGGER_SOURCE:
 		avt_update_sw_ctrl_state(camera);
 		ctrl->menu_skip_mask = BIT(AVT_TRIGGER_SOURCE_LINE2) 
@@ -3684,6 +3691,24 @@ static void avt_ctrl_added(struct avt_dev *camera,struct v4l2_ctrl *ctrl)
 
 		break;
 	}
+	case AVT_CID_EXPOSURE_ACTIVE_LINE_MODE: {
+		u8 val = 0;
+		
+		bcrm_read8(camera, BCRM_EXPOSURE_ACTIVE_LINE_MODE_8RW, &val);
+
+		ctrl->val = val ? 1 : 0;
+
+		break;
+	}
+	case AVT_CID_FRAME_TRIGGER_WAIT_LINE_MODE: {
+		u8 val = 0;
+		
+		bcrm_read8(camera, BCRM_FRAME_TRIGGER_WAIT_LINE_MODE_8RW, &val);
+
+		ctrl->val = val ? 1 : 0;
+
+		break;
+	}	
 	case AVT_CID_FRAME_TRIGGER_WAIT_OUTPUT_LINE:
 		ctrl->menu_skip_mask = BIT(AVT_FRAME_TRIGGER_WAIT_OUTPUT_LINE2)
 				     | BIT(AVT_FRAME_TRIGGER_WAIT_OUTPUT_LINE3);
