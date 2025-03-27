@@ -3488,6 +3488,18 @@ static int avt_fill_ctrl_config(struct avt_dev *camera,
 		config->min = 0;
 		config->max = 1;
 		config->step = 1;
+		if (!mapping->reg_offset) {
+			config->def = mapping->default_value;
+		} else {
+			ret = read_control_value(camera, &config->def,
+					 	 mapping->reg_offset,
+					 	 mapping->reg_length);
+
+			if (ret < 0)
+				return ret;
+
+			config->def = config->def ? 1 : 0;
+		}
 		break;
 	case V4L2_CTRL_TYPE_INTEGER:
 	case V4L2_CTRL_TYPE_INTEGER64:
