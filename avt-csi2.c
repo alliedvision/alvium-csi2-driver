@@ -3576,12 +3576,18 @@ static void avt_ctrl_added(struct avt_dev *camera,struct v4l2_ctrl *ctrl)
 {
 	switch (ctrl->id)
 	{
-	case AVT_CID_TRIGGER_MODE: {
-		u8 val = 0;
-		
-		bcrm_read8(camera, BCRM_FRAME_START_TRIGGER_MODE_8RW, &val);
+	case AVT_CID_TRIGGER_MODE: {	
+		struct device *dev = &camera->i2c_client->dev;
+		int ret;
+		u8 val = 0; 
 
-		ctrl->val = val ? 1 : 0;
+		ret = bcrm_read8(camera,
+				 BCRM_FRAME_START_TRIGGER_MODE_8RW, &val);
+		if (ret < 0)
+			dev_err(dev, "Failed to update default value\n");
+
+		__v4l2_ctrl_modify_range(ctrl, 0, 1, 1, val);
+		__v4l2_ctrl_s_ctrl(ctrl, val);
 
 		avt_update_sw_ctrl_state(camera);
 		break;
@@ -3692,21 +3698,31 @@ static void avt_ctrl_added(struct avt_dev *camera,struct v4l2_ctrl *ctrl)
 		break;
 	}
 	case AVT_CID_EXPOSURE_ACTIVE_LINE_MODE: {
-		u8 val = 0;
-		
-		bcrm_read8(camera, BCRM_EXPOSURE_ACTIVE_LINE_MODE_8RW, &val);
+		struct device *dev = &camera->i2c_client->dev;
+		int ret;
+		u8 val = 0; 
 
-		ctrl->val = val ? 1 : 0;
+		ret = bcrm_read8(camera,
+				 BCRM_EXPOSURE_ACTIVE_LINE_MODE_8RW, &val);
+		if (ret < 0)
+			dev_err(dev, "Failed to update default value\n");
 
+		__v4l2_ctrl_modify_range(ctrl, 0, 1, 1, val);
+		__v4l2_ctrl_s_ctrl(ctrl, val);
 		break;
 	}
 	case AVT_CID_FRAME_TRIGGER_WAIT_LINE_MODE: {
-		u8 val = 0;
-		
-		bcrm_read8(camera, BCRM_FRAME_TRIGGER_WAIT_LINE_MODE_8RW, &val);
+		struct device *dev = &camera->i2c_client->dev;
+		int ret;
+		u8 val = 0; 
 
-		ctrl->val = val ? 1 : 0;
+		ret = bcrm_read8(camera,
+				 BCRM_FRAME_TRIGGER_WAIT_LINE_MODE_8RW, &val);
+		if (ret < 0)
+			dev_err(dev, "Failed to update default value\n");
 
+		__v4l2_ctrl_modify_range(ctrl, 0, 1, 1, val);
+		__v4l2_ctrl_s_ctrl(ctrl, val);
 		break;
 	}	
 	case AVT_CID_FRAME_TRIGGER_WAIT_OUTPUT_LINE:
