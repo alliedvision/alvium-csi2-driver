@@ -3622,7 +3622,7 @@ static void avt_ctrl_added(struct avt_dev *camera,struct v4l2_ctrl *ctrl)
 	case AVT_CID_FIRMWARE_VERSION: {
 		const union device_firmware_version_reg *fw_version =
 			&camera->cam_firmware_version;
-		snprintf(ctrl->p_cur.p_char,ctrl->maximum,
+		snprintf(ctrl->p_cur.p_char,ctrl->maximum + 1,
 			"%02u.%02u.%02u.%08x",
 			 fw_version->device_firmware.special_version,
 			 fw_version->device_firmware.major_version,
@@ -3631,15 +3631,15 @@ static void avt_ctrl_added(struct avt_dev *camera,struct v4l2_ctrl *ctrl)
 		break;
 	}
 	case AVT_CID_CAMERA_NAME:  {
-		snprintf(ctrl->p_cur.p_char,ctrl->maximum,"%s %s",
+		snprintf(ctrl->p_cur.p_char,ctrl->maximum + 1,"%s %s",
 			 camera->cci_reg.reg.family_name,
 			 camera->cci_reg.reg.model_name);
 
 		break;
 	}
 	case AVT_CID_SERIAL_NUMBER:  {
-		snprintf(ctrl->p_cur.p_char,ctrl->maximum,"%s",
-			 camera->cci_reg.reg.serial_number);
+		__v4l2_ctrl_s_ctrl_string(ctrl,
+					  camera->cci_reg.reg.serial_number);
 
 		break;
 	}
@@ -3793,14 +3793,13 @@ static void avt_ctrl_added(struct avt_dev *camera,struct v4l2_ctrl *ctrl)
 	}
 	case AVT_CID_REVISION_ID: {
 		int ret;
-		char revid[3];
-		memset(revid, 0, 3);
+		char revid[3] = {};
 
 		ret = bcrm_read16(camera, BCRM_REVISION_ID_16R, (u16*)revid);
 		if (ret < 0)
 			break;
 
-		snprintf(ctrl->p_cur.p_char, ctrl->maximum + 1, "%s", revid);
+		__v4l2_ctrl_s_ctrl_string(ctrl, revid);
 
 		break;
 	}	
