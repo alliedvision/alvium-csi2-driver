@@ -3800,7 +3800,7 @@ static void avt_ctrl_added(struct avt_dev *camera,struct v4l2_ctrl *ctrl)
 		if (ret < 0)
 			break;
 
-		snprintf(ctrl->p_cur.p_char, ctrl->maximum, "%s", revid);
+		snprintf(ctrl->p_cur.p_char, ctrl->maximum + 1, "%s", revid);
 
 		break;
 	}	
