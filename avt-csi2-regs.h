@@ -415,7 +415,7 @@ union bcrm_feature_inquiry_reg {
 		u64 power_save_mode:1;
 		u64 sensorboard_temperature:1;
 		u64 temperature_warning_level:1;
-		u64 reserved:36;
+		u64 reserved:34;
 	} feature_inq;
 
 	u64 value;
