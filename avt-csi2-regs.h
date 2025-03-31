@@ -11,8 +11,57 @@
 // BCRM register offsets
 #define BCRM_VERSION_32R 				0x0000
 #define BCRM_FEATURE_INQUIRY_64R 			0x0008
+#define BCRM_FEATURE_INQ_REVERSE_X			BIT(0)
+#define BCRM_FEATURE_INQ_REVERSE_Y			BIT(1)
+#define BCRM_FEATURE_INQ_INTENSITY_AUTO_PRECEDENCE 	BIT(2)
+#define BCRM_FEATURE_INQ_BLACK_LEVEL			BIT(3)
+#define BCRM_FEATURE_INQ_GAIN				BIT(4)
+#define BCRM_FEATURE_INQ_GAMMA				BIT(5)
+#define BCRM_FEATURE_INQ_CONTRAST			BIT(6)
+#define BCRM_FEATURE_INQ_SATURATION			BIT(7)
+#define BCRM_FEATURE_INQ_HUE				BIT(8)
+#define BCRM_FEATURE_INQ_WHITE_BALANCE			BIT(9)
+#define BCRM_FEATURE_INQ_SHARPNESS			BIT(10)
+#define BCRM_FEATURE_INQ_EXPOSURE_AUTO			BIT(11)
+#define BCRM_FEATURE_INQ_GAIN_AUTO			BIT(12)
+#define BCRM_FEATURE_INQ_WHITE_BALANCE_AUTO		BIT(13)
+#define BCRM_FEATURE_INQ_DEVICE_TEMPERATURE		BIT(14)
+#define BCRM_FEATURE_INQ_ACQUISTION_ABORT		BIT(15)
+#define BCRM_FEATURE_INQ_ACQUISTION_FRAME_RATE		BIT(16)
+#define BCRM_FEATURE_INQ_FRAME_TRIGGER			BIT(17)
+#define BCRM_FEATURE_INQ_EXPOSURE_ACTIVE_LINE		BIT(18)
+#define BCRM_FEATURE_INQ_AUTO_REGION			BIT(19)
+#define BCRM_FEATURE_INQ_FRAME_TRIGGER_WAIT_LINE	BIT(20)
+#define BCRM_FEATURE_INQ_COLOR_TRANSFORM_MATRIX		BIT(21)
+#define BCRM_FEATURE_INQ_USER_DATA_STORAGE		BIT(22)
+#define BCRM_FEATURE_INQ_DEVICE_STATUS			BIT(23)
+#define BCRM_FEATURE_INQ_REVISION_ID			BIT(24)
+#define BCRM_FEATURE_INQ_DIRECT_MEMORY_ACCESS		BIT(25)
+#define BCRM_FEATURE_INQ_EXPOSURE_MODE			BIT(26)
+#define BCRM_FEATURE_INQ_POWER_SAVE_MODE		BIT(27)
+#define BCRM_FEATURE_INQ_SENSORBOARD_TEMPERATURE	BIT(28)
+#define BCRM_FEATURE_INQ_TEMPERATURE_WARNING_REGISTER	BIT(29)
+#define BCRM_FEATURE_INQ_EXPOSURE_AND_GAIN_COMINED	BIT(30)
+#define BCRM_FEATURE_INQ_DPC_ENABLE			BIT(31)
+
 #define BCRM_DEVICE_FIRMWARE_VERSION_64R 		0x0010
 #define BCRM_WRITE_HANDSHAKE_8RW 			0x0018
+#define BCRM_USER_DATA_INDEX_8RW			0x001c
+#define BCRM_USER_DATA_INDEX_MIN			0
+#define BCRM_USER_DATA_INDEX_MAX			7
+#define BCRM_USER_DATA_INDEX_COUNT			8
+
+#define BCRM_USER_DATA_VALUE_32RW			0x0020
+#define BCRM_DEVICE_STATUS_32R				0x0024
+#define BCRM_DEVICE_STATUS_BACKEND_BUFFER_OKAY		BIT(0)
+#define BCRM_DEVICE_STATUS_MAINBOARD_TEMPERATURE_OKAY	BIT(1)
+#define BCRM_DEVICE_STATUS_STREAM_READY			BIT(2)
+#define BCRM_DEVICE_STATUS_MIPI_PHY_OKAY		BIT(3)
+#define BCRM_DEVICE_STATUS_SENSORBOARD_TEMPERATURE_OKAY	BIT(4)
+
+#define BCRM_REVISION_ID_16R				0x0028
+
+#define BCRM_DEVICE_POWER_SAVE_MODE_32RW		0x0034
 
 /* Streaming Control Registers */
 #define BCRM_SUPPORTED_CSI2_LANE_COUNTS_8R 		0x0040
@@ -53,6 +102,11 @@
 #define BCRM_EXPOSURE_ACTIVE_LINE_MODE_8RW 		0x00C8
 #define BCRM_EXPOSURE_ACTIVE_LINE_SELECTOR_8RW 		0x00CC
 #define BCRM_LINE_CONFIGURATION_32RW 			0x00D0
+
+#define BCRM_FRAME_TRIGGER_WAIT_OUTPUT_LINE_8RW		0x00D8
+#define BCRM_FRAME_TRIGGER_WAIT_LINE_MODE_8RW		0x00DC
+
+#define BCRM_DPC_ENABLE_8RW				0x00E4
 
 #define BCRM_IMG_WIDTH_32RW 				0x0100
 #define BCRM_IMG_WIDTH_MIN_32R 				0x0104
@@ -123,6 +177,8 @@
 #define BCRM_CONTRAST_VALUE_MAX_32R 			0x021C
 #define BCRM_CONTRAST_VALUE_INC_32R 			0x0220
 
+#define BCRM_EXPOSURE_TIME_GAIN_COMBINED		0x0224
+
 #define BCRM_SATURATION_32RW 				0x0240
 #define BCRM_SATURATION_MIN_32R 			0x0244
 #define BCRM_SATURATION_MAX_32R 			0x0248
@@ -154,6 +210,16 @@
 #define BCRM_BLUE_BALANCE_RATIO_INC_64R 		0x02D8
 
 #define BCRM_WHITE_BALANCE_AUTO_8RW 			0x02E0
+
+#define BCRM_COLOR_TRANSFORM_MATRIX_ENABLE_8RW		0x02E4
+#define BCRM_COLOR_TRANSFORM_MATRIX_0_1_32RW		0x02E8
+#define BCRM_COLOR_TRANSFORM_MATRIX_2_3_32RW		0x02EC
+#define BCRM_COLOR_TRANSFORM_MATRIX_4_5_32RW		0x02F0
+#define BCRM_COLOR_TRANSFORM_MATRIX_6_7_32RW		0x02F4
+#define BCRM_COLOR_TRANSFORM_MATRIX_8_32RW		0x02F8
+#define BCRM_COLOR_TRANSFORM_MATRIX_SIZE		9
+
+// Other
 #define BCRM_SHARPNESS_32RW 				0x0300
 #define BCRM_SHARPNESS_MIN_32R 				0x0304
 #define BCRM_SHARPNESS_MAX_32R 				0x0308
@@ -165,7 +231,30 @@
 #define BCRM_GAIN_AUTO_MIN_64RW 			0x0340
 #define BCRM_GAIN_AUTO_MAX_64RW 			0x0348
 
-#define _BCRM_LAST_ADDR 				BCRM_GAIN_AUTO_MAX_64RW
+#define BCRM_AUTO_REGION_WIDTH_32RW			0x0350
+#define BCRM_AUTO_REGION_WIDTH_MIN_32RW			0x0354
+#define BCRM_AUTO_REGION_WIDTH_MAX_32RW			0x0358
+#define BCRM_AUTO_REGION_WIDTH_INC_32RW			0x035C
+#define BCRM_AUTO_REGION_HEIGHT_32RW			0x0360
+#define BCRM_AUTO_REGION_HEIGHT_MIN_32RW		0x0364
+#define BCRM_AUTO_REGION_HEIGHT_MAX_32RW		0x0368
+#define BCRM_AUTO_REGION_HEIGHT_INC_32RW		0x036C
+#define BCRM_AUTO_REGION_OFFSET_X_32RW			0x0370
+#define BCRM_AUTO_REGION_OFFSET_X_MIN_32RW		0x0374
+#define BCRM_AUTO_REGION_OFFSET_X_MAX_32RW		0x0378
+#define BCRM_AUTO_REGION_OFFSET_X_INC_32RW		0x037C
+#define BCRM_AUTO_REGION_OFFSET_Y_32RW			0x0380
+#define BCRM_AUTO_REGION_OFFSET_Y_MIN_32RW		0x0384
+#define BCRM_AUTO_REGION_OFFSET_Y_MAX_32RW		0x0388
+#define BCRM_AUTO_REGION_OFFSET_Y_INC_32RW		0x038C
+
+#define BCRM_SENSORBOARD_TEMPERATURE_32R		0x0390
+#define BCRM_TEMPERATURE_WARNING_LEVEL_32RW		0x0394
+
+#define BCRM_TEST_PATTERN_INQ_32R			0x03B0
+#define BCRM_TEST_PATTERN_SETTING_32RW			0x03B4
+
+#define _BCRM_LAST_ADDR 				BCRM_TEST_PATTERN_SETTING_32R
 
 /************************************************/
 
@@ -296,29 +385,40 @@ struct __attribute__((__packed__)) gencp_reg {
 
 union bcrm_feature_inquiry_reg {
 	struct {
-		unsigned long long reverse_x_avail:1;
-		unsigned long long reverse_y_avail:1;
-		unsigned long long intensity_auto_precedence_avail:1;
-		unsigned long long black_level_avail:1;
-		unsigned long long gain_avail:1;
-		unsigned long long gamma_avail:1;
-		unsigned long long contrast_avail:1;
-		unsigned long long saturation_avail:1;
-		unsigned long long hue_avail:1;
-		unsigned long long white_balance_avail:1;
-		unsigned long long sharpness_avail:1;
-		unsigned long long exposure_auto_avail:1;
-		unsigned long long gain_auto_avail:1;
-		unsigned long long white_balance_auto_avail:1;
-		unsigned long long device_temperature_avail:1;
-		unsigned long long acquisition_abort:1;
-		unsigned long long acquisition_frame_rate:1;
-		unsigned long long frame_trigger:1;
-		unsigned long long exposure_active_line_available:1;
-		unsigned long long reserved:45;
+		u64 reverse_x_avail:1;
+		u64 reverse_y_avail:1;
+		u64 intensity_auto_precedence_avail:1;
+		u64 black_level_avail:1;
+		u64 gain_avail:1;
+		u64 gamma_avail:1;
+		u64 contrast_avail:1;
+		u64 saturation_avail:1;
+		u64 hue_avail:1;
+		u64 white_balance_avail:1;
+		u64 sharpness_avail:1;
+		u64 exposure_auto_avail:1;
+		u64 gain_auto_avail:1;
+		u64 white_balance_auto_avail:1;
+		u64 device_temperature_avail:1;
+		u64 acquisition_abort:1;
+		u64 acquisition_frame_rate:1;
+		u64 frame_trigger:1;
+		u64 exposure_active_line_available:1;
+		u64 auto_region:1;
+		u64 frame_trigger_wait_line:1;
+		u64 color_transformation_matrix:1;
+		u64 user_data_storage:1;
+		u64 device_status:1;
+		u64 revision_id:1;
+		u64 direct_memory_access:1;
+		u64 exposure_mode:1;
+		u64 power_save_mode:1;
+		u64 sensorboard_temperature:1;
+		u64 temperature_warning_level:1;
+		u64 reserved:34;
 	} feature_inq;
 
-	unsigned long long value;
+	u64 value;
 };
 
 union device_firmware_version_reg {

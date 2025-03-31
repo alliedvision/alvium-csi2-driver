@@ -62,9 +62,6 @@
 
 #include "avt-mipi-csi2.h"
 
-// only for dma_get_cache_alignment();
-#include <linux/dma-mapping.h>
-
 #include "avt-csi2.h"
 
 #define AVT_DBG_LVL 2
@@ -130,6 +127,17 @@ struct avt_val64
 
 #define AVT_BINNING_MODE_FLAG_AVERAGE 		0b01
 #define AVT_BINNING_MODE_FLAG_SUM 		0b10
+
+#define LINE_OFFSET		8
+
+#define LINE_DIR_INPUT		0
+#define LINE_DIR_OUTPUT(x)	(BIT(0) << (x *LINE_OFFSET))
+
+#define LINE_INVERT(x)		(BIT(1) << (x *LINE_OFFSET))
+
+#define LINE_MASK(x) \
+	(LINE_DIR_OUTPUT(x) | LINE_INVERT(x))
+
 
 
 enum avt_binning_type {
@@ -278,6 +286,14 @@ static inline struct v4l2_subdev* get_sd(struct avt_dev *priv)
 #endif // #ifdef NVIDIA
 }
 
+
+static inline void set_flag(u32 *pval, u32 mask, int set)
+{
+	if (set) 
+		*pval |= mask;
+	else 
+		*pval &= ~mask;
+}
 
 static ssize_t avt_read_raw(struct avt_dev *camera, u16 reg,
 	u8 *buf, size_t len)
@@ -1036,49 +1052,75 @@ static ssize_t bcrm_feature_inquiry_reg_show(struct device *dev,
 }
 
 static ssize_t bcrm_feature_inquiry_reg_text_show(struct device *dev,
-												  struct device_attribute *attr, char *buf)
+						  struct device_attribute *attr,
+						  char *buf)
 {
 	struct avt_dev *camera = client_to_avt_dev(to_i2c_client(dev));
+	union bcrm_feature_inquiry_reg *inq_reg = &camera->feature_inquiry_reg;
+	
 	ssize_t ret = 0;
 
-	ret = sprintf(buf, "reverse_x_avail                 %d\n"
-					   "reverse_y_avail                 %d\n"
-					   "intensity_auto_precedence_avail %d\n"
-					   "black_level_avail               %d\n"
-					   "gain_avail                      %d\n"
-					   "gamma_avail                     %d\n"
-					   "contrast_avail                  %d\n"
-					   "saturation_avail                %d\n"
-					   "hue_avail                       %d\n"
-					   "white_balance_avail             %d\n"
-					   "sharpness_avail                 %d\n"
-					   "exposure_auto                   %d\n"
-					   "gain_auto                       %d\n"
-					   "white_balance_auto_avail        %d\n"
-					   "device_temperature_avail        %d\n"
-					   "acquisition_abort               %d\n"
-					   "acquisition_frame_rate          %d\n"
-					   "frame_trigger                   %d\n"
-					   "exposure active line available  %d\n",
-				  camera->feature_inquiry_reg.feature_inq.reverse_x_avail,
-				  camera->feature_inquiry_reg.feature_inq.reverse_y_avail,
-				  camera->feature_inquiry_reg.feature_inq.intensity_auto_precedence_avail,
-				  camera->feature_inquiry_reg.feature_inq.black_level_avail,
-				  camera->feature_inquiry_reg.feature_inq.gain_avail,
-				  camera->feature_inquiry_reg.feature_inq.gamma_avail,
-				  camera->feature_inquiry_reg.feature_inq.contrast_avail,
-				  camera->feature_inquiry_reg.feature_inq.saturation_avail,
-				  camera->feature_inquiry_reg.feature_inq.hue_avail,
-				  camera->feature_inquiry_reg.feature_inq.white_balance_avail,
-				  camera->feature_inquiry_reg.feature_inq.sharpness_avail,
-				  camera->feature_inquiry_reg.feature_inq.exposure_auto_avail,
-				  camera->feature_inquiry_reg.feature_inq.gain_auto_avail,
-				  camera->feature_inquiry_reg.feature_inq.white_balance_auto_avail,
-				  camera->feature_inquiry_reg.feature_inq.device_temperature_avail,
-				  camera->feature_inquiry_reg.feature_inq.acquisition_abort,
-				  camera->feature_inquiry_reg.feature_inq.acquisition_frame_rate,
-				  camera->feature_inquiry_reg.feature_inq.frame_trigger,
-				  camera->feature_inquiry_reg.feature_inq.exposure_active_line_available);
+	ret = sprintf(buf,
+		      "reverse_x_avail                 %d\n"
+		      "reverse_y_avail                 %d\n"
+		      "intensity_auto_precedence_avail %d\n"
+		      "black_level_avail               %d\n"
+		      "gain_avail                      %d\n"
+		      "gamma_avail                     %d\n"
+		      "contrast_avail                  %d\n"
+		      "saturation_avail                %d\n"
+		      "hue_avail                       %d\n"
+		      "white_balance_avail             %d\n"
+		      "sharpness_avail                 %d\n"
+		      "exposure_auto                   %d\n"
+		      "gain_auto                       %d\n"
+		      "white_balance_auto_avail        %d\n"
+		      "device_temperature_avail        %d\n"
+		      "acquisition_abort               %d\n"
+		      "acquisition_frame_rate          %d\n"
+		      "frame_trigger                   %d\n"
+		      "exposure active line available  %d\n"
+		      "auto region                     %d\n"
+		      "frame trigger wait line         %d\n"
+		      "color transformation matrix     %d\n"
+		      "user data storage               %d\n"
+		      "device status                   %d\n"
+		      "revision id                     %d\n"
+		      "direct memory access            %d\n"
+		      "exposure mode                   %d\n"
+		      "power save mode                 %d\n"
+		      "sensorboard temperature         %d\n"
+		      "temperature warning level       %d\n",
+		      inq_reg->feature_inq.reverse_x_avail,
+		      inq_reg->feature_inq.reverse_y_avail,
+		      inq_reg->feature_inq.intensity_auto_precedence_avail,
+		      inq_reg->feature_inq.black_level_avail,
+		      inq_reg->feature_inq.gain_avail,
+		      inq_reg->feature_inq.gamma_avail,
+		      inq_reg->feature_inq.contrast_avail,
+		      inq_reg->feature_inq.saturation_avail,
+		      inq_reg->feature_inq.hue_avail,
+		      inq_reg->feature_inq.white_balance_avail,
+		      inq_reg->feature_inq.sharpness_avail,
+		      inq_reg->feature_inq.exposure_auto_avail,
+		      inq_reg->feature_inq.gain_auto_avail,
+		      inq_reg->feature_inq.white_balance_auto_avail,
+		      inq_reg->feature_inq.device_temperature_avail,
+		      inq_reg->feature_inq.acquisition_abort,
+		      inq_reg->feature_inq.acquisition_frame_rate,
+		      inq_reg->feature_inq.frame_trigger,
+		      inq_reg->feature_inq.exposure_active_line_available,
+		      inq_reg->feature_inq.auto_region,
+		      inq_reg->feature_inq.frame_trigger_wait_line,
+		      inq_reg->feature_inq.color_transformation_matrix,
+		      inq_reg->feature_inq.user_data_storage,
+		      inq_reg->feature_inq.device_status,
+		      inq_reg->feature_inq.revision_id,
+		      inq_reg->feature_inq.direct_memory_access,
+		      inq_reg->feature_inq.exposure_mode,
+		      inq_reg->feature_inq.power_save_mode,
+		      inq_reg->feature_inq.sensorboard_temperature,
+		      inq_reg->feature_inq.temperature_warning_level);
 	return ret;
 }
 
@@ -1350,7 +1392,7 @@ static ssize_t debug_en_store(struct device *dev,
 }
 
 static ssize_t mipiclk_show(struct device *dev,
-							struct device_attribute *attr, char *buf)
+			    struct device_attribute *attr, char *buf)
 {
 	ssize_t ret;
 
@@ -1362,7 +1404,8 @@ static ssize_t mipiclk_show(struct device *dev,
 }
 
 static ssize_t mipiclk_store(struct device *dev,
-							 struct device_attribute *attr, const char *buf, size_t count)
+			     struct device_attribute *attr,
+			     const char *buf, size_t count)
 {
 	ssize_t ret;
 	uint32_t avt_next_clk = 0;
@@ -2860,6 +2903,32 @@ static const struct v4l2_event avt_source_change_event = {
 	.u.src_change.changes = V4L2_EVENT_SRC_CH_RESOLUTION,
 };
 
+static void __auto_region_update_limits(struct avt_dev *camera, int id, 
+					u16 min_reg, u16 max_reg)
+{
+	struct device *dev = &camera->i2c_client->dev;
+	struct v4l2_ctrl *ctrl;
+	u32 min, max;
+	int ret;
+	
+	ctrl = avt_ctrl_find(camera, id);
+	if (!ctrl)
+		return;
+
+	ret = bcrm_read32(camera, min_reg, &min);
+	if (ret < 0)
+		return;
+
+	ret = bcrm_read32(camera, max_reg, &max);
+	if (ret < 0)
+		return;
+
+	dev_info(dev, "Update auto region ctrl %x range (%d, %d)\n",
+		 id, min, max);
+
+	__v4l2_ctrl_modify_range(ctrl, min, max, ctrl->step, max);
+}					
+
 static void avt_ctrl_changed(struct avt_dev *camera,
 			      const struct v4l2_ctrl * const ctrl)
 {
@@ -2994,6 +3063,37 @@ static void avt_ctrl_changed(struct avt_dev *camera,
 
 	}
 		break;
+	case AVT_CID_AUTO_REGION_LEFT: {
+		__auto_region_update_limits(camera, AVT_CID_AUTO_REGION_WIDTH, 
+					    BCRM_AUTO_REGION_WIDTH_MIN_32RW, 
+					    BCRM_AUTO_REGION_WIDTH_MAX_32RW);
+
+		break;
+	}
+	case AVT_CID_AUTO_REGION_TOP: {
+		__auto_region_update_limits(camera, AVT_CID_AUTO_REGION_HEIGHT, 
+					    BCRM_AUTO_REGION_HEIGHT_MIN_32RW, 
+					    BCRM_AUTO_REGION_HEIGHT_MAX_32RW);
+
+		break;
+	}
+	case AVT_CID_AUTO_REGION_WIDTH: {
+		__auto_region_update_limits(camera, AVT_CID_AUTO_REGION_LEFT, 
+					    BCRM_AUTO_REGION_OFFSET_X_MIN_32RW, 
+					    BCRM_AUTO_REGION_OFFSET_X_MAX_32RW);
+
+		break;
+	}
+	case AVT_CID_AUTO_REGION_HEIGHT: {
+		__auto_region_update_limits(camera, AVT_CID_AUTO_REGION_TOP, 
+					    BCRM_AUTO_REGION_OFFSET_Y_MIN_32RW, 
+					    BCRM_AUTO_REGION_OFFSET_Y_MAX_32RW);
+
+		break;
+	}
+	case AVT_CID_POWER_SAVE_MODE: 
+		camera->power_save_mode = ctrl->val ? true : false;
+		break;
 	default:
 		break;
 	}
@@ -3036,6 +3136,264 @@ static int write_ctrl_value(struct avt_dev *camera,struct v4l2_ctrl *ctrl,
 	return ret;
 }
 
+static int avt_line_get(struct avt_dev *camera, int line, bool output,
+			bool invert, enum line_usage usage)
+{
+	int ret;
+	u32 config;
+
+	if (line >= ARRAY_SIZE(camera->line_usage)) 
+		return -EINVAL;
+
+	if (camera->line_usage[line] != LINE_USAGE_NONE)
+		return -EBUSY;
+
+	ret = bcrm_read32(camera, BCRM_LINE_CONFIGURATION_32RW, &config);
+	if (ret < 0) 
+		return ret;
+
+	// Clear all line bits and apply configuration
+
+	set_flag(&config, LINE_DIR_OUTPUT(line), output);
+	set_flag(&config, LINE_INVERT(line), invert);
+
+	avt_info(get_sd(camera), "Set line configuration %x\n", config);
+
+	ret = bcrm_write32(camera, BCRM_LINE_CONFIGURATION_32RW, config);
+	if (ret < 0)
+		return ret;
+
+	camera->line_usage[line] = usage;
+
+	return 0;
+}
+
+static int avt_line_put(struct avt_dev *camera, int line)
+{
+	int ret;
+	u32 config;
+
+	if (line >= ARRAY_SIZE(camera->line_usage)) 
+		return -EINVAL;
+	
+	
+	ret = bcrm_read32(camera, BCRM_LINE_CONFIGURATION_32RW, &config);
+	if (ret < 0) 
+		return ret;
+	
+	set_flag(&config, LINE_DIR_OUTPUT(line), false);
+	set_flag(&config, LINE_INVERT(line), false);
+
+	ret = bcrm_write32(camera, BCRM_LINE_CONFIGURATION_32RW, config);
+	if (ret < 0) 
+		return ret;
+
+	camera->line_usage[line] = LINE_USAGE_NONE;
+
+	return 0;
+}
+
+static int __set_frame_trigger_wait_line_mode(struct avt_dev *camera,
+					      bool active)
+{
+	int ret;
+	struct v4l2_ctrl *line_ctrl, *invert_ctrl;
+
+	line_ctrl = avt_ctrl_find(camera,
+				  AVT_CID_FRAME_TRIGGER_WAIT_OUTPUT_LINE);
+	if (!line_ctrl)
+		return -EINVAL;
+	
+	invert_ctrl = avt_ctrl_find(camera, AVT_CID_FRAME_TRIGGER_WAIT_INVERT);
+	if (!invert_ctrl)
+		return -EINVAL;
+
+	if (active) {
+		ret = avt_line_get(camera, line_ctrl->val, 
+				   true, invert_ctrl->val,
+				   LINE_USAGE_FRAME_TRIGGER_WAIT);
+		if (ret < 0)
+			return ret;
+	}
+
+	ret = bcrm_write8(camera, BCRM_FRAME_TRIGGER_WAIT_LINE_MODE_8RW, active);
+	if (ret < 0)
+		return ret;
+
+	if (!active) {
+		ret = avt_line_put(camera, line_ctrl->val);
+		if (ret < 0)
+			return ret;
+	}
+
+	__v4l2_ctrl_grab(line_ctrl, active);
+	__v4l2_ctrl_grab(invert_ctrl, active);
+
+	return 0;
+}					
+
+static int __set_trigger_mode(struct avt_dev *camera, bool active)
+{
+	int ret;
+	struct v4l2_ctrl *src_ctrl;
+
+	src_ctrl = avt_ctrl_find(camera, AVT_CID_TRIGGER_SOURCE);
+	if (!src_ctrl)
+		return -EINVAL;
+
+	if (src_ctrl->val <= AVT_TRIGGER_SOURCE_LINE3 && active) {
+		ret = avt_line_get(camera, src_ctrl->val, false, false,
+				   LINE_USAGE_TRIGGER);
+		if (ret < 0)
+			return ret;
+	}
+
+	ret = bcrm_write8(camera, BCRM_FRAME_START_TRIGGER_MODE_8RW, active);
+	if (ret < 0)
+		return ret;
+
+	if (src_ctrl->val <= AVT_TRIGGER_SOURCE_LINE3 && !active) {
+		ret = avt_line_put(camera, src_ctrl->val);
+		if (ret < 0)
+			return ret;
+	}
+
+	return 0;
+}
+
+static int __set_exposure_active_mode(struct avt_dev *camera, bool active)
+{
+	struct v4l2_ctrl *sel_ctrl,*invert_ctrl;
+	int ret = 0;
+	
+	sel_ctrl = avt_ctrl_find(camera, AVT_CID_EXPOSURE_ACTIVE_LINE_SELECTOR);
+
+	if (sel_ctrl == NULL)
+		return -EINVAL;
+
+	invert_ctrl = avt_ctrl_find(camera, AVT_CID_EXPOSURE_ACTIVE_INVERT);
+
+	if (invert_ctrl == NULL)
+		return -EINVAL;
+
+	if (active) {
+		ret = avt_line_get(camera, sel_ctrl->val,
+				   true, invert_ctrl->val,
+				   LINE_USAGE_EXPOSURE_ACTIVE);
+		if (ret < 0)
+			return ret;
+	}
+	
+	ret = bcrm_write8(camera, BCRM_EXPOSURE_ACTIVE_LINE_MODE_8RW, active);
+	if (ret < 0)
+		return ret;
+
+	if (!active) {
+		ret = avt_line_put(camera, sel_ctrl->val);
+		if (ret < 0)
+			return ret;
+	}
+
+	__v4l2_ctrl_grab(sel_ctrl, active);
+	__v4l2_ctrl_grab(invert_ctrl, active);
+
+	return 0;
+}
+
+static int __write_color_transform_word(struct avt_dev *camera,
+					int idx, u32 word)
+{
+	const int reg_idx = (idx / 2);
+	const int reg_off = reg_idx * sizeof(word);
+	const u16 reg = BCRM_COLOR_TRANSFORM_MATRIX_0_1_32RW + reg_off;
+
+	avt_info(get_sd(camera), "Write value [%d]=%u\n", reg_idx, word);
+
+	return bcrm_write32(camera, reg, word);
+}
+
+static int __set_color_transform_matrix(struct avt_dev *camera,
+					s32 *cur, s32* new)
+{
+	int i, ret;
+	u32 tmp = 0;
+
+	for (i = 0; i < BCRM_COLOR_TRANSFORM_MATRIX_SIZE; i++, new++, cur++) {
+		if (i % 2) {
+			tmp |= ((((s16)*new) & 0xFFFF) << 16) ;
+
+			ret = __write_color_transform_word(camera, i, tmp);
+			if (ret < 0)
+				return ret;
+			tmp = 0;
+		} else {
+			tmp = ((s16)*new) & 0xFFFF;
+
+			if (i == (BCRM_COLOR_TRANSFORM_MATRIX_SIZE - 1)) {
+				ret = __write_color_transform_word(camera, i,	
+								   tmp);
+				if (ret < 0)
+					return ret;
+			}
+		}
+
+	}
+
+	return 0;
+}
+
+static inline int __write_user_data_value(struct avt_dev *camera,
+				 	  int idx, u32 val)
+{
+	int ret;
+
+	ret = bcrm_write8(camera, BCRM_USER_DATA_INDEX_8RW, idx);
+	if (ret < 0)
+		return ret;
+	
+	ret = bcrm_write32(camera, BCRM_USER_DATA_VALUE_32RW, val);
+	if (ret < 0)
+		return ret;
+
+	return 0;
+}
+
+static int __set_user_data_ctrl(struct avt_dev *camera, u32 *cur, u32 *new)
+{
+	int i, ret = 0;
+
+	for (i = 0; i < BCRM_USER_DATA_INDEX_COUNT; i++, cur++, new++) {
+		if (*cur != *new) {
+			ret = __write_user_data_value(camera, i, *new);
+			if (ret < 0)
+				break;
+		}
+	}
+
+	return ret;
+}
+
+static int __set_special_ctrl(struct avt_dev *camera, struct v4l2_ctrl *ctrl)
+{
+	switch (ctrl->id) {
+	case AVT_CID_TRIGGER_MODE:
+		return __set_trigger_mode(camera, ctrl->val);
+	case AVT_CID_EXPOSURE_ACTIVE_LINE_MODE:
+		return __set_exposure_active_mode(camera, ctrl->val);
+	case AVT_CID_COLOR_TRANSFORM_MATRIX:
+		return  __set_color_transform_matrix(camera,
+						     ctrl->p_cur.p_s32,
+						     ctrl->p_new.p_s32);
+	case AVT_CID_USER_DATA_STORAGE: 
+		return __set_user_data_ctrl(camera, ctrl->p_cur.p_u32,
+					    ctrl->p_new.p_u32);
+	case AVT_CID_FRAME_TRIGGER_WAIT_LINE_MODE:
+		return __set_frame_trigger_wait_line_mode(camera, ctrl->val);
+	default:
+		return 0;
+	}
+}
+
 static int avt_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 {
 	struct avt_dev *camera = container_of(ctrl->handler, struct avt_dev, v4l2_ctrl_hdl);
@@ -3059,40 +3417,6 @@ static int avt_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 		avt_info(get_sd(camera), "ctrl->id 0x%08X, camera->power_count %d", ctrl->id, camera->power_count);
 	}
 
-	if (ctrl->id == AVT_CID_EXPOSURE_ACTIVE_LINE_MODE)
-	{
-		struct v4l2_ctrl *sel_ctrl,*invert_ctrl;
-		u8 output_line_shift,invert,active = ctrl->val;
-		u32 line_config;
-
-		sel_ctrl = avt_ctrl_find(camera,
-					  AVT_CID_EXPOSURE_ACTIVE_LINE_SELECTOR);
-
-		if (sel_ctrl == NULL) {
-			return -EINVAL;
-		}
-
-		output_line_shift = sel_ctrl->val * 8;
-
-		invert_ctrl = avt_ctrl_find(camera,
-					     AVT_CID_EXPOSURE_ACTIVE_INVERT);
-
-		if (invert_ctrl == NULL) {
-			return -EINVAL;
-		}
-
-		invert = invert_ctrl->val ? 2 : 0;
-
-		line_config = (active ? (1 | invert ) : 0) << output_line_shift;
-
-		ret = bcrm_write32(camera, BCRM_LINE_CONFIGURATION_32RW, line_config);
-		
-		if (ret < 0)
-			return ret;
-
-		__v4l2_ctrl_grab(sel_ctrl,active);
-		__v4l2_ctrl_grab(invert_ctrl,active);
-	}
 
 	if (ctrl->priv != NULL)
 	{
@@ -3100,10 +3424,12 @@ static int avt_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 
 
 		dev_dbg(&client->dev, "%s[%d]: Write custom ctrl %s (%x)\n",
-			 __func__, __LINE__, ctrl_mapping->attr.name, ctrl->id);
+			 __func__, __LINE__, ctrl_mapping->name, ctrl->id);
 
 		if (ctrl_mapping->reg_length != 0) {
-			ret = write_ctrl_value(camera,ctrl,ctrl_mapping);
+			ret = write_ctrl_value(camera, ctrl, ctrl_mapping);
+		} else {
+			ret = __set_special_ctrl(camera, ctrl);
 		}
 
 
@@ -3136,9 +3462,11 @@ static int avt_fill_ctrl_config(struct avt_dev *camera,
 
 	config->ops = &avt_ctrl_ops;
 	config->id = mapping->id;
-	config->name = mapping->attr.name;
+	config->name = mapping->name;
 	config->type = mapping->type;
 	config->flags = mapping->flags;
+	if (mapping->dims[0])
+		memcpy(config->dims, mapping->dims, sizeof(config->dims));
 
 	switch (mapping->type)
 	{
@@ -3160,9 +3488,25 @@ static int avt_fill_ctrl_config(struct avt_dev *camera,
 		config->min = 0;
 		config->max = 1;
 		config->step = 1;
+		if (!mapping->reg_offset) {
+			config->def = mapping->default_value;
+		} else {
+			ret = read_control_value(camera, &config->def,
+					 	 mapping->reg_offset,
+					 	 mapping->reg_length);
+
+			if (ret < 0)
+				return ret;
+
+			config->def = config->def ? 1 : 0;
+		}
 		break;
 	case V4L2_CTRL_TYPE_INTEGER:
 	case V4L2_CTRL_TYPE_INTEGER64:
+	case V4L2_CTRL_TYPE_BITMASK:
+	case V4L2_CTRL_TYPE_U8:
+	case V4L2_CTRL_TYPE_U16:
+	case V4L2_CTRL_TYPE_U32:
 	case V4L2_CTRL_TYPE_STRING:
 		if (!mapping->min_offset)
 			config->min = mapping->min_value;
@@ -3232,19 +3576,53 @@ static void avt_ctrl_added(struct avt_dev *camera,struct v4l2_ctrl *ctrl)
 {
 	switch (ctrl->id)
 	{
-	case AVT_CID_TRIGGER_MODE:
+	case AVT_CID_TRIGGER_MODE: {	
+		struct device *dev = &camera->i2c_client->dev;
+		int ret;
+		u8 val = 0; 
+
+		ret = bcrm_read8(camera,
+				 BCRM_FRAME_START_TRIGGER_MODE_8RW, &val);
+		if (ret < 0)
+			dev_err(dev, "Failed to update default value\n");
+
+		__v4l2_ctrl_modify_range(ctrl, 0, 1, 1, val);
+		*ctrl->p_cur.p_s32 = val;
+		*ctrl->p_new.p_s32 = val;
+
 		avt_update_sw_ctrl_state(camera);
 		break;
-	case AVT_CID_TRIGGER_SOURCE:
+	}
+	case AVT_CID_TRIGGER_SOURCE: {
+		struct v4l2_ctrl *mode_ctrl;
+
+		mode_ctrl = avt_ctrl_find(camera, AVT_CID_TRIGGER_MODE);
+		if (mode_ctrl) {
+			__v4l2_ctrl_grab(ctrl, mode_ctrl->val);
+		}
+
 		avt_update_sw_ctrl_state(camera);
+		ctrl->menu_skip_mask = BIT(AVT_TRIGGER_SOURCE_LINE2) 
+				     | BIT(AVT_TRIGGER_SOURCE_LINE3);
 		break;
+	}
+	case AVT_CID_TRIGGER_ACTIVATION: {
+		struct v4l2_ctrl *mode_ctrl;
+
+		mode_ctrl = avt_ctrl_find(camera, AVT_CID_TRIGGER_MODE);
+		if (mode_ctrl) {
+			__v4l2_ctrl_grab(ctrl, mode_ctrl->val);
+		}
+
+		break;
+	}
 	case AVT_CID_TRIGGER_SOFTWARE:
 		avt_update_sw_ctrl_state(camera);
 		break;
 	case AVT_CID_FIRMWARE_VERSION: {
 		const union device_firmware_version_reg *fw_version =
 			&camera->cam_firmware_version;
-		snprintf(ctrl->p_cur.p_char,ctrl->elem_size,
+		snprintf(ctrl->p_cur.p_char,ctrl->maximum + 1,
 			"%02u.%02u.%02u.%08x",
 			 fw_version->device_firmware.special_version,
 			 fw_version->device_firmware.major_version,
@@ -3253,15 +3631,15 @@ static void avt_ctrl_added(struct avt_dev *camera,struct v4l2_ctrl *ctrl)
 		break;
 	}
 	case AVT_CID_CAMERA_NAME:  {
-		snprintf(ctrl->p_cur.p_char,ctrl->elem_size,"%s %s",
+		snprintf(ctrl->p_cur.p_char,ctrl->maximum + 1,"%s %s",
 			 camera->cci_reg.reg.family_name,
 			 camera->cci_reg.reg.model_name);
 
 		break;
 	}
 	case AVT_CID_SERIAL_NUMBER:  {
-		snprintf(ctrl->p_cur.p_char,ctrl->elem_size,"%s",
-			 camera->cci_reg.reg.serial_number);
+		__v4l2_ctrl_s_ctrl_string(ctrl,
+					  camera->cci_reg.reg.serial_number);
 
 		break;
 	}
@@ -3325,6 +3703,121 @@ static void avt_ctrl_added(struct avt_dev *camera,struct v4l2_ctrl *ctrl)
 
 		break;
 	}
+	case V4L2_CID_TEST_PATTERN: {
+		int ret;
+		u32 inq;
+
+		ret = bcrm_read32(camera, BCRM_TEST_PATTERN_INQ_32R, &inq);
+		if (ret < 0) {
+			break;
+		}
+
+		ctrl->menu_skip_mask = ((~inq) << 1);
+
+		break;
+	}
+	case AVT_CID_EXPOSURE_ACTIVE_LINE_MODE: {
+		struct device *dev = &camera->i2c_client->dev;
+		int ret;
+		u8 val = 0; 
+
+		ret = bcrm_read8(camera,
+				 BCRM_EXPOSURE_ACTIVE_LINE_MODE_8RW, &val);
+		if (ret < 0)
+			dev_err(dev, "Failed to update default value\n");
+
+		__v4l2_ctrl_modify_range(ctrl, 0, 1, 1, val);
+		*ctrl->p_cur.p_s32 = val;
+		*ctrl->p_new.p_s32 = val;
+		break;
+	}
+	case AVT_CID_FRAME_TRIGGER_WAIT_LINE_MODE: {
+		struct device *dev = &camera->i2c_client->dev;
+		int ret;
+		u8 val = 0; 
+
+		ret = bcrm_read8(camera,
+				 BCRM_FRAME_TRIGGER_WAIT_LINE_MODE_8RW, &val);
+		if (ret < 0)
+			dev_err(dev, "Failed to update default value\n");
+
+		__v4l2_ctrl_modify_range(ctrl, 0, 1, 1, val);
+		*ctrl->p_cur.p_s32 = val;
+		*ctrl->p_new.p_s32 = val;
+		break;
+	}	
+	case AVT_CID_FRAME_TRIGGER_WAIT_OUTPUT_LINE: {
+		struct v4l2_ctrl *mode_ctrl;
+
+		mode_ctrl = avt_ctrl_find(camera,
+					  AVT_CID_FRAME_TRIGGER_WAIT_LINE_MODE);
+		if (mode_ctrl) {
+			__v4l2_ctrl_grab(ctrl, mode_ctrl->val);
+		}
+
+		ctrl->menu_skip_mask = BIT(AVT_FRAME_TRIGGER_WAIT_OUTPUT_LINE2)
+				     | BIT(AVT_FRAME_TRIGGER_WAIT_OUTPUT_LINE3);
+		break;
+	}
+	case AVT_CID_FRAME_TRIGGER_WAIT_INVERT: {
+		struct v4l2_ctrl *mode_ctrl;
+
+		mode_ctrl = avt_ctrl_find(camera,
+					  AVT_CID_FRAME_TRIGGER_WAIT_LINE_MODE);
+		if (mode_ctrl) {
+			__v4l2_ctrl_grab(ctrl, mode_ctrl->val);
+		}
+
+		break;
+	}
+	case AVT_CID_COLOR_TRANSFORM_MATRIX: {
+		int i, ret;
+		s32 *val = ctrl->p_cur.p_s32;
+		u32 tmp;
+
+		for (i = 0; i < BCRM_COLOR_TRANSFORM_MATRIX_SIZE; i++, val++) {
+			if ((i % 2) == 0) {
+				u16 reg = BCRM_COLOR_TRANSFORM_MATRIX_0_1_32RW 
+					  + (i / 2) * sizeof(tmp);
+				ret = bcrm_read32(camera, reg, &tmp);
+				if (ret < 0)
+					break;
+
+				*val = ((s16)(tmp & 0xFFFF));
+			} else {
+				*val = ((s16)((tmp >> 16) & 0xFFFF));
+			}
+		}
+
+		break;
+	}
+	case AVT_CID_REVISION_ID: {
+		int ret;
+		char revid[3] = {};
+
+		ret = bcrm_read16(camera, BCRM_REVISION_ID_16R, (u16*)revid);
+		if (ret < 0)
+			break;
+
+		__v4l2_ctrl_s_ctrl_string(ctrl, revid);
+
+		break;
+	}	
+	case AVT_CID_USER_DATA_STORAGE: {
+		int i, ret;
+		u32 *ptr = ctrl->p_cur.p_u32;
+
+		for (i = 0; i < BCRM_USER_DATA_INDEX_COUNT; i++, ptr++) {
+			ret = bcrm_write8(camera, BCRM_USER_DATA_INDEX_8RW, i);
+			if (ret < 0)
+				break;
+			
+			ret = bcrm_read32(camera, BCRM_USER_DATA_VALUE_32RW,
+					  ptr);
+		}
+
+		break;
+	}	
 	default:
 		break;
 	}
@@ -3352,20 +3845,20 @@ static int avt_init_controls(struct avt_dev *camera)
 	{
 		const struct avt_ctrl_mapping * const ctrl_mapping
 			= &avt_ctrl_mappings[j];
-		const s8 feat_bit = ctrl_mapping->attr.feature_avail;
+		const u64 mask = ctrl_mapping->inq_mask;
 		const u64 inq_reg = camera->feature_inquiry_reg.value;
 
-		if ((feat_bit != -1 && (inq_reg & (1 << feat_bit)) == 0)) {
+		if (mask && ((inq_reg & mask) == 0)) {
 			avt_info(get_sd(camera),
 				 "Control %s (0x%x) not supported by camera\n",
-				 ctrl_mapping->attr.name,ctrl_mapping->id);
+				 ctrl_mapping->name,ctrl_mapping->id);
 			continue;
 		}
 
 		CLEAR(config);
 
 		avt_dbg(get_sd(camera), "Init ctrl %s (0x%x)\n",
-			 ctrl_mapping->attr.name,ctrl_mapping->id);
+			 ctrl_mapping->name,ctrl_mapping->id);
 
 
 		avt_fill_ctrl_config(camera,&config,ctrl_mapping);
@@ -3796,6 +4289,12 @@ static int avt_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 		struct v4l2_rect binning_rect = {0};
 		const struct avt_binning_info *binning_info = camera->curr_binning_info;
 
+		if (camera->power_save_mode) {
+			ret = -EBUSY;
+			goto out;
+		}
+			
+
 		binning_rect.width = binning_info->max_width;
 		binning_rect.height = binning_info->max_height;
 
@@ -3808,7 +4307,6 @@ static int avt_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 				      binning_rect.height,3,0);
 
 		dev_info(&camera->i2c_client->dev,"Selected crop (%u,%u) %ux%u\n",crop_rect.left,crop_rect.top,crop_rect.width,crop_rect.height);
-
 
 		if (!avt_trigger_mode_enabled(camera)) {
 			ret = write_framerate(camera);
@@ -3887,7 +4385,7 @@ int avt_core_ops_s_register(struct v4l2_subdev *sd, const struct v4l2_dbg_regist
 }
 
 static int avt_core_ops_subscribe_event(struct v4l2_subdev *sd, struct v4l2_fh *fh,
-										 struct v4l2_event_subscription *sub)
+					struct v4l2_event_subscription *sub)
 {
 	avt_dbg(sd, "event type %u", sub->type);
 
@@ -3902,9 +4400,54 @@ static int avt_core_ops_subscribe_event(struct v4l2_subdev *sd, struct v4l2_fh *
 	}
 }
 
+static int avt_log_status(struct v4l2_subdev *sd)
+{
+	struct avt_dev *camera = to_avt_dev(sd);
+	struct device *dev = sd->dev;
+	u8 acq_active;
+	u32 status;
+	int ret;
+
+	ret = bcrm_read32(camera, BCRM_DEVICE_STATUS_32R, &status);
+	if (ret < 0)
+		return ret;
+
+	dev_info(dev, "**** Device status ****\n");
+	
+	dev_info(dev, "Backend buffer okay = %s\n", 
+		 status & BCRM_DEVICE_STATUS_BACKEND_BUFFER_OKAY
+		 ? "true" : "false" );
+
+	dev_info(dev, "Mainboard temperature okay = %s\n", 
+		 status & BCRM_DEVICE_STATUS_MAINBOARD_TEMPERATURE_OKAY
+		 ? "true" : "false" );
+
+	dev_info(dev, "Stream ready = %s\n", 
+		 status & BCRM_DEVICE_STATUS_STREAM_READY
+		 ? "true" : "false" );	
+
+	dev_info(dev, "MIPI Phy okay = %s\n", 
+		 status & BCRM_DEVICE_STATUS_MIPI_PHY_OKAY
+		 ? "true" : "false" );	
+
+	dev_info(dev, "Sensorboard temperature okay = %s\n", 
+		 status & BCRM_DEVICE_STATUS_SENSORBOARD_TEMPERATURE_OKAY
+		 ? "true" : "false" );		
+
+	ret = bcrm_read8(camera, BCRM_ACQUISITION_STATUS_8R, &acq_active);
+	if (ret < 0)
+		return ret;
+
+	dev_info(dev, "**** Acqusition status ****\n");
+	dev_info(dev, "Acqusition active = %s\n",
+		 acq_active ? "true" : "false");
+
+	return 0;
+}
+
 static const struct v4l2_subdev_core_ops avt_core_ops = {
 	.s_power = avt_core_ops_s_power,
-	.log_status = v4l2_ctrl_subdev_log_status,
+	.log_status = avt_log_status,
 	.reset = avt_core_ops_reset,
 	.subscribe_event = avt_core_ops_subscribe_event,
 	.unsubscribe_event = v4l2_event_subdev_unsubscribe,
