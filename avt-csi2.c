@@ -3587,16 +3587,35 @@ static void avt_ctrl_added(struct avt_dev *camera,struct v4l2_ctrl *ctrl)
 			dev_err(dev, "Failed to update default value\n");
 
 		__v4l2_ctrl_modify_range(ctrl, 0, 1, 1, val);
-		__v4l2_ctrl_s_ctrl(ctrl, val);
+		*ctrl->p_cur.p_s32 = val;
+		*ctrl->p_new.p_s32 = val;
 
 		avt_update_sw_ctrl_state(camera);
 		break;
 	}
-	case AVT_CID_TRIGGER_SOURCE:
+	case AVT_CID_TRIGGER_SOURCE: {
+		struct v4l2_ctrl *mode_ctrl;
+
+		mode_ctrl = avt_ctrl_find(camera, AVT_CID_TRIGGER_MODE);
+		if (mode_ctrl) {
+			__v4l2_ctrl_grab(ctrl, mode_ctrl->val);
+		}
+
 		avt_update_sw_ctrl_state(camera);
 		ctrl->menu_skip_mask = BIT(AVT_TRIGGER_SOURCE_LINE2) 
 				     | BIT(AVT_TRIGGER_SOURCE_LINE3);
 		break;
+	}
+	case AVT_CID_TRIGGER_ACTIVATION: {
+		struct v4l2_ctrl *mode_ctrl;
+
+		mode_ctrl = avt_ctrl_find(camera, AVT_CID_TRIGGER_MODE);
+		if (mode_ctrl) {
+			__v4l2_ctrl_grab(ctrl, mode_ctrl->val);
+		}
+
+		break;
+	}
 	case AVT_CID_TRIGGER_SOFTWARE:
 		avt_update_sw_ctrl_state(camera);
 		break;
@@ -3708,7 +3727,8 @@ static void avt_ctrl_added(struct avt_dev *camera,struct v4l2_ctrl *ctrl)
 			dev_err(dev, "Failed to update default value\n");
 
 		__v4l2_ctrl_modify_range(ctrl, 0, 1, 1, val);
-		__v4l2_ctrl_s_ctrl(ctrl, val);
+		*ctrl->p_cur.p_s32 = val;
+		*ctrl->p_new.p_s32 = val;
 		break;
 	}
 	case AVT_CID_FRAME_TRIGGER_WAIT_LINE_MODE: {
@@ -3722,13 +3742,34 @@ static void avt_ctrl_added(struct avt_dev *camera,struct v4l2_ctrl *ctrl)
 			dev_err(dev, "Failed to update default value\n");
 
 		__v4l2_ctrl_modify_range(ctrl, 0, 1, 1, val);
-		__v4l2_ctrl_s_ctrl(ctrl, val);
+		*ctrl->p_cur.p_s32 = val;
+		*ctrl->p_new.p_s32 = val;
 		break;
 	}	
-	case AVT_CID_FRAME_TRIGGER_WAIT_OUTPUT_LINE:
+	case AVT_CID_FRAME_TRIGGER_WAIT_OUTPUT_LINE: {
+		struct v4l2_ctrl *mode_ctrl;
+
+		mode_ctrl = avt_ctrl_find(camera,
+					  AVT_CID_FRAME_TRIGGER_WAIT_LINE_MODE);
+		if (mode_ctrl) {
+			__v4l2_ctrl_grab(ctrl, mode_ctrl->val);
+		}
+
 		ctrl->menu_skip_mask = BIT(AVT_FRAME_TRIGGER_WAIT_OUTPUT_LINE2)
 				     | BIT(AVT_FRAME_TRIGGER_WAIT_OUTPUT_LINE3);
 		break;
+	}
+	case AVT_CID_FRAME_TRIGGER_WAIT_INVERT: {
+		struct v4l2_ctrl *mode_ctrl;
+
+		mode_ctrl = avt_ctrl_find(camera,
+					  AVT_CID_FRAME_TRIGGER_WAIT_LINE_MODE);
+		if (mode_ctrl) {
+			__v4l2_ctrl_grab(ctrl, mode_ctrl->val);
+		}
+
+		break;
+	}
 	case AVT_CID_COLOR_TRANSFORM_MATRIX: {
 		int i, ret;
 		s32 *val = ctrl->p_cur.p_s32;
