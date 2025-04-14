@@ -5482,7 +5482,8 @@ static int avt_probe(struct i2c_client *client)
 			  	BOOT_TIMEOUT_US, false, camera);
 	if (ret) {
 		dev_warn(&client->dev,"No camera detected!");
-		return -ENODEV;
+		ret = -ENODEV;
+		goto regulator_cleanup;
 	}
 
 
@@ -5752,6 +5753,10 @@ fwnode_cleanup:
 
 err_exit:
 	mutex_destroy(&camera->lock);
+
+regulator_cleanup:
+	if (camera->reg_vcc_ext) 
+		regulator_disable(camera->reg_vcc_ext);
 	return ret;
 }
 
