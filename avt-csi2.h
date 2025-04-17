@@ -789,6 +789,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 			ARRAY_SIZE(avt_intensity_controller_region_menu) - 1,
 		.reg_offset	= BCRM_INTENSITY_CONTROLLER_REGION_8RW,
 		.reg_length	= AV_CAM_DATA_SIZE_8,
+		.avt_flags	= AVT_CTRL_FLAG_STREAM_DISABLED,
 	}
 };
 
