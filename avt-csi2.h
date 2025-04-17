@@ -152,6 +152,10 @@ static const char * const avt_power_save_mode_menu[] = {
 	[AVT_POWER_SAVE_STANDBY] = "Standby",
 };
 
+static const char * const avt_intensity_controller_region_menu[] = {
+	[AVT_INTENSITY_CONTROLLER_REGION_FULL_IMAGE] = "Full Image",
+	[AVT_INTENSITY_CONTROLLER_REGION_AUTO_REGION] = "Auto Region",
+};
 
 const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
@@ -757,7 +761,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.min_value	= S64_MIN,
 		.max_value	= S64_MAX,
 		.step_value	= 1,
-		.reg_offset	= BCRM_EXPOSURE_TIME_GAIN_COMBINED,
+		.reg_offset	= BCRM_EXPOSURE_TIME_GAIN_COMBINED_64RW,
 		.reg_length	= AV_CAM_DATA_SIZE_64,
 		.flags		= V4L2_CTRL_FLAG_VOLATILE 
 				| V4L2_CTRL_FLAG_EXECUTE_ON_WRITE
@@ -773,7 +777,18 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.reg_offset	= BCRM_DEVICE_POWER_SAVE_MODE_32RW,
 		.reg_length	= AV_CAM_DATA_SIZE_32,
 		.avt_flags	= AVT_CTRL_FLAG_STREAM_DISABLED,
-		
+	},
+	{
+		.id		= AVT_CID_INTENSITY_CONTROLLER_REGION,
+		.name		= "Intensity Controller Region",
+		.inq_mask	= BCRM_FEATURE_INQ_AUTO_REGION,
+		.type		= V4L2_CTRL_TYPE_MENU,
+		.qmenu		= avt_intensity_controller_region_menu,
+		.min_value	= 0,
+		.max_value 	=
+			ARRAY_SIZE(avt_intensity_controller_region_menu) - 1,
+		.reg_offset	= BCRM_INTENSITY_CONTROLLER_REGION_8RW,
+		.reg_length	= AV_CAM_DATA_SIZE_8,
 	}
 };
 
