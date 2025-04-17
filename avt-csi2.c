@@ -2500,8 +2500,6 @@ static int avt_update_exposure_limits(struct v4l2_subdev *sd) {
 		if(exp_auto_min_ctrl != NULL && exp_auto_max_ctrl != NULL) {
 			__v4l2_ctrl_modify_range(exp_auto_min_ctrl, exp_min, exp_max, exp_inc, exp_min);
 			__v4l2_ctrl_modify_range(exp_auto_max_ctrl, exp_min, exp_max, exp_inc, exp_max);
-			__v4l2_ctrl_s_ctrl_int64(exp_auto_min_ctrl, exp_min);
-			__v4l2_ctrl_s_ctrl_int64(exp_auto_max_ctrl, exp_max);
 		}
 	}
 
