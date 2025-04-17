@@ -129,6 +129,12 @@ enum avt_power_save_mode {
 	AVT_POWER_SAVE_STANDBY,
 };
 
+#define AVT_CID_INTENSITY_CONTROLLER_REGION	(AVT_CID_CAMERA_BASE + 39)
+enum avt_intensity_controller_region {
+	AVT_INTENSITY_CONTROLLER_REGION_FULL_IMAGE,
+	AVT_INTENSITY_CONTROLLER_REGION_AUTO_REGION,
+};
+
 struct avt_i2c_xfer {
     __u16 addr;
     __u16 len;
