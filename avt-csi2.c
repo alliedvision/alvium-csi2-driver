@@ -2764,6 +2764,7 @@ static int avt_update_ctrl_value(struct avt_dev *camera,
 	case V4L2_CTRL_TYPE_MENU:
 	case V4L2_CTRL_TYPE_BOOLEAN:
 	case V4L2_CTRL_TYPE_INTEGER:
+	case V4L2_CTRL_TYPE_BITMASK:
 		ctrl->val = (s32)value;
 		break;
 	case V4L2_CTRL_TYPE_INTEGER64:
@@ -4430,8 +4431,12 @@ static int avt_log_status(struct v4l2_subdev *sd)
 		 status & BCRM_DEVICE_STATUS_MIPI_PHY_OKAY
 		 ? "true" : "false" );	
 
-	dev_info(dev, "Sensorboard temperature okay = %s\n", 
+	dev_info(dev, "Sensorboard temperature okay = %s\n",
 		 status & BCRM_DEVICE_STATUS_SENSORBOARD_TEMPERATURE_OKAY
+		 ? "true" : "false" );
+	
+	dev_info(dev, "Sensor communication okay = %s\n",
+		 status & BCRM_DEVICE_STATUS_SENSOR_COMMUNINICATION_OKAY
 		 ? "true" : "false" );		
 
 	ret = bcrm_read8(camera, BCRM_ACQUISITION_STATUS_8R, &acq_active);
