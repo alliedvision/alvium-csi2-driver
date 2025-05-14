@@ -3372,6 +3372,33 @@ static int __set_user_data_ctrl(struct avt_dev *camera, u32 *cur, u32 *new)
 	return ret;
 }
 
+static int __set_power_save_mode(struct avt_dev *camera, u8 val)
+{
+	u64 start;
+	int ret;
+	u32 device_status = 0;
+
+	start = ktime_get_ns();
+	ret = bcrm_write8(camera, BCRM_DEVICE_POWER_SAVE_MODE_32RW, val);
+	if (ret < 0)
+		return ret;
+
+	if (camera->power_save_mode && val == AVT_POWER_SAVE_DISABLED) {
+		u64 diff;
+
+		while (!(device_status & BCRM_DEVICE_STATUS_STREAM_READY)) {
+			ret = bcrm_read32(camera, BCRM_DEVICE_STATUS_32R, &device_status);
+			if (ret < 0)
+				return ret;
+		}	
+
+		diff = ktime_get_ns() - start;
+		avt_info(get_sd(camera), "Return from power save mode took %llu us\n", diff / 1000);
+	}
+
+	return 0;
+}
+
 static int __set_special_ctrl(struct avt_dev *camera, struct v4l2_ctrl *ctrl)
 {
 	switch (ctrl->id) {
@@ -3388,8 +3415,10 @@ static int __set_special_ctrl(struct avt_dev *camera, struct v4l2_ctrl *ctrl)
 					    ctrl->p_new.p_u32);
 	case AVT_CID_FRAME_TRIGGER_WAIT_LINE_MODE:
 		return __set_frame_trigger_wait_line_mode(camera, ctrl->val);
+	case AVT_CID_POWER_SAVE_MODE:
+		return __set_power_save_mode(camera, ctrl->val);
 	default:
-		return 0;
+		return -ENOTTY;
 	}
 }
 
@@ -3425,12 +3454,11 @@ static int avt_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 		dev_dbg(&client->dev, "%s[%d]: Write custom ctrl %s (%x)\n",
 			 __func__, __LINE__, ctrl_mapping->name, ctrl->id);
 
-		if (ctrl_mapping->reg_length != 0) {
-			ret = write_ctrl_value(camera, ctrl, ctrl_mapping);
-		} else {
-			ret = __set_special_ctrl(camera, ctrl);
-		}
 
+		ret = __set_special_ctrl(camera, ctrl);
+		if (ctrl_mapping->reg_length != 0 && ret == -ENOTTY)
+			ret = write_ctrl_value(camera, ctrl, ctrl_mapping);
+		
 
 		avt_ctrl_changed(camera,ctrl);
 	}
