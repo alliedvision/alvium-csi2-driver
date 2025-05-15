@@ -4890,8 +4890,22 @@ static int avt_get_sensor_capabilities(struct v4l2_subdev *sd)
 	u8 avt_supported_lane_mask = 0;
 	u32 avt_current_clk = 0;
 	u32 clk;
-	u8 bcm_mode = 0;
+	u8 current_mode;
 	u32 temp;
+
+	ret = avt_read8(camera, GENCP_CHANGEMODE_8W, &current_mode);
+
+	if (ret < 0)
+	{
+		avt_err(sd, "Failed to read current mode (%d)\n", ret);
+		return ret;
+	}
+
+	if (current_mode != AVT_BCRM_MODE)
+	{
+		avt_err(sd, "Camera not in BCRM mode\n");
+		return -ENOTSUPP;
+	}
 
 	/* reading the Feature inquiry register */
 	ret = bcrm_read64(camera, BCRM_FEATURE_INQUIRY_64R,
@@ -5088,13 +5102,7 @@ static int avt_get_sensor_capabilities(struct v4l2_subdev *sd)
 	camera->curr_rect.left = 0;
 	camera->curr_rect.top = 0;
 
-	ret = avt_write(camera, GENCP_CHANGEMODE_8W, bcm_mode, AV_CAM_DATA_SIZE_8);
-
-	if (ret < 0)
-	{
-		avt_err(sd, "Failed to set BCM mode: i2c write failed (%d)\n", ret);
-		return ret;
-	}
+	
 	camera->mode = AVT_BCRM_MODE;
 
 	return 0;
