@@ -5448,6 +5448,7 @@ static int avt_probe(struct i2c_client *client)
 	struct v4l2_mbus_framefmt *fmt;
 	struct fwnode_handle *fwnode = dev_fwnode(dev);
 	struct v4l2_subdev *sd;
+	struct regulator *reg_vcc_ext;
 	int ret;
 	
 	camera = devm_kzalloc(dev, sizeof(*camera), GFP_KERNEL);
@@ -5461,21 +5462,18 @@ static int avt_probe(struct i2c_client *client)
 	camera->regmap = devm_regmap_init_i2c(client, &alvium_regmap_config);
 	if (IS_ERR(camera->regmap))
 	{
-		ret = dev_err_probe(dev, PTR_ERR(camera->regmap), 
-				    "i2c regmap init failed\n");
-		goto err_exit;
+		return dev_err_probe(dev, PTR_ERR(camera->regmap), 
+				     "i2c regmap init failed\n");
 	}
 
-	camera->reg_vcc_ext = devm_regulator_get_optional(dev, "vcc-ext");
-	if (IS_ERR(camera->reg_vcc_ext)) 
-		return dev_err_probe(dev, PTR_ERR(camera->reg_vcc_ext),
-				     "failed to get vcc-ext regulator\n");
-
-	if (camera->reg_vcc_ext) {
-		ret = regulator_enable(camera->reg_vcc_ext);
+	reg_vcc_ext = devm_regulator_get_optional(dev, "vcc-ext");
+	if (!IS_ERR(reg_vcc_ext)) {
+		ret = regulator_enable(reg_vcc_ext);
 		if (ret)
 			return dev_err_probe(dev, ret, 
 					     "failed to enable regulator\n");
+
+		camera->reg_vcc_ext = reg_vcc_ext;
 	}
 
 	ret = read_poll_timeout(avt_detect, ret, !ret, BOOT_POLL_INTERVAL_US, 
