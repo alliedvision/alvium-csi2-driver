@@ -116,6 +116,9 @@ struct avt_val64
 #define MODE_SWITCH_TIMEOUT_US		5 * USEC_PER_SEC
 #define MODE_SWTICH_POLL_INTERVAL_US	10 * USEC_PER_MSEC 
 
+#define BOOT_TIMEOUT_US			10 * USEC_PER_SEC
+#define BOOT_POLL_INTERVAL_US		500 * USEC_PER_MSEC
+
 //Define formats for GenICam for CSI2, if they not exist
 #ifndef V4L2_PIX_FMT_CUSTOM
 #define V4L2_PIX_FMT_CUSTOM    v4l2_fourcc('T', 'P', '3', '1') /* 0x31 mipi datatype  */
@@ -246,8 +249,7 @@ static const size_t avt_binning_setting_cnt = ARRAY_SIZE(avt_binning_settings);
 
 static int bcrm_write(struct avt_dev *camera, u16 reg, u64 val, size_t len);
 
-static int avt_detect(struct i2c_client *client);
-static int avt_reset(struct avt_dev *camera, enum avt_reset_type reset_type);
+static int avt_do_softreset(struct avt_dev *camera);
 static void avt_dphy_reset(struct avt_dev *camera, bool bResetPhy);
 
 static void avt_ctrl_changed(struct avt_dev *camera, const struct v4l2_ctrl * const ctrl);
@@ -414,6 +416,11 @@ static ssize_t avt_write(struct avt_dev *camera, u16 reg, u64 val, size_t len)
 		return ret;
 
 	return 0;
+}
+
+static ssize_t avt_write8(struct avt_dev *camera, u16 reg, u8 val)
+{
+	return avt_write(camera, reg, val, sizeof(val));
 }
 
 static inline u16 get_bcrm_addr(struct avt_dev *camera,u16 reg)
@@ -1497,13 +1504,18 @@ static ssize_t softreset_store(struct device *dev,
 	}
 
 	if (value > 0) {
-		avt_reset(camera, RESET_TYPE_SOFT);
+		mutex_lock(&camera->lock);
+		ret = avt_do_softreset(camera);
+		if (ret < 0)
+			goto err;
 
 		/* Re-read and configure MIPI configuration */
 		avt_get_sensor_capabilities(get_sd(camera));
+err:
+		mutex_unlock(&camera->lock);
 	}
 
-	return count;
+	return ret ? ret : count;
 }
 
 static ssize_t dphyreset_show(struct device *dev,
@@ -1583,44 +1595,6 @@ static ssize_t streamon_delay_store(struct device *dev,
 }
 
 
-static ssize_t hardreset_show(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	struct avt_dev *camera = client_to_avt_dev(to_i2c_client(dev));
-	ssize_t ret;
-
-	mutex_lock(&camera->lock);
-
-	ret = sprintf(buf, "%d\n", camera->pending_softreset_request);
-
-	mutex_unlock(&camera->lock);
-
-	return ret;
-}
-
-static ssize_t hardreset_store(struct device *dev,
-	struct device_attribute *attr, const char *buf, size_t count)
-{
-	struct avt_dev *camera = client_to_avt_dev(to_i2c_client(dev));
-	ssize_t ret;
-	int value;
-
-	ret = kstrtoint(buf, 10, &value);
-	if (ret < 0)
-	{
-		return ret;
-	}
-
-	if (value > 0) {
-		avt_reset(camera, RESET_TYPE_HARD);
-
-		/* Re-read and configure MIPI configuration */
-		avt_get_sensor_capabilities(get_sd(camera));
-	}
-
-	return count;
-}
-
 static ssize_t bcrm_dump_show(struct device *dev,
 							  struct device_attribute *attr, char *buf)
 {
@@ -1657,7 +1631,6 @@ static DEVICE_ATTR_RW(debug_en);
 static DEVICE_ATTR_RW(softreset);
 static DEVICE_ATTR_RW(dphyreset);
 static DEVICE_ATTR_RW(streamon_delay);
-static DEVICE_ATTR_RW(hardreset);
 static DEVICE_ATTR_RO(device_temperature);
 static DEVICE_ATTR_RW(mipiclk);
 
@@ -1689,7 +1662,6 @@ static struct attribute *avt_attrs[] = {
 	&dev_attr_dphyreset.attr,
 	&dev_attr_streamon_delay.attr,
 	&dev_attr_softreset.attr,
-	&dev_attr_hardreset.attr,
 	&dev_attr_device_temperature.attr,
 	&dev_attr_mipiclk.attr,
 	NULL};
@@ -1982,188 +1954,44 @@ static int avt_init_current_format(struct avt_dev *camera, struct v4l2_mbus_fram
 	return -EINVAL;
 }
 
-/* hard reset depends on gpio-pins, needs to be completed on
-   suitable board instead of imx8mp-evk */
-static int perform_hard_reset(struct avt_dev *camera)
+static int avt_do_softreset(struct avt_dev *camera)
 {
-	dev_info(&camera->i2c_client->dev, "%s[%d]",
-			 __func__, __LINE__);
+	struct device *dev = &camera->i2c_client->dev;
+	int ret;
+	u8 val;
+	u64 start;
 
-	if (!camera->reset_gpio)
-	{
-		dev_info(&camera->i2c_client->dev, "%s[%d]: - ignore reset request because missing reset gpio",
-				 __func__, __LINE__);
-		camera->pending_hardtreset_request = 0;
+	ret = avt_write8(camera, CCI_HEARTBEAT_8RW, 0x80);
+	if (ret < 0)
+		return ret;
 
-		return -1;
-	}
+	ret = avt_read8(camera, CCI_HEARTBEAT_8RW, &val);
+	if (ret < 0)
+		return ret;
+	
+	if (!(val >= 0x80))
+		return -ENOTSUPP;	
 
-	dev_info(&camera->i2c_client->dev, "%s[%d]: - request hard reset by triggering reset gpio",
-			 __func__, __LINE__);
-	gpiod_set_value_cansleep(camera->reset_gpio, GPIOD_OUT_HIGH);
+	dev_info(dev, "Heartbeat support, performing softreset...\n");
+	
+	start = ktime_get_ns();
 
-	/* Todo: implement usefull camera power cycle timing,
-	 eventually based on additional dts parameters,
-	 can't be checked on imx8mp-evk because shared GPIO lines */
-	//	avt_power(camera, false);
-	usleep_range(5000, 10000);
-	//	avt_power(camera, true);
-	//	usleep_range(5000, 10000);
+	ret = avt_write8(camera, CCI_SOFTRESET_8W, 1);
+	if (ret < 0)
+		return ret;
 
-	gpiod_set_value_cansleep(camera->reset_gpio, GPIOD_OUT_LOW);
-	//	usleep_range(1000, 2000);
-
-	//	gpiod_set_value_cansleep(camera->reset_gpio, 0);
-	usleep_range(20000, 25000);
-
-	return 0;
-}
-
-static const int heartbeat_default = 0x80;
-
-static int heartbeat_write_default(struct avt_dev *camera) {
-	int ret = avt_write(camera, cci_cmd_tbl[HEARTBEAT].address, heartbeat_default, AV_CAM_DATA_SIZE_8);
-	if(ret != 0) {
-		avt_err(get_sd(camera), "Heartbeat write failed (regmap_write returned %d)", ret);
-		return -1;
-	}
-	return 0;
-}
-
-static int heartbeat_read(struct avt_dev *camera, u8 *heartbeat) {
-	int ret = avt_read8(camera, cci_cmd_tbl[HEARTBEAT].address, heartbeat);
-	if(ret != 0) {
-		avt_err(get_sd(camera), "Heartbeat read failed (regmap_read returned %d)", ret);
-		return -1;
-	}
-	return 0;
-}
-
-static int heartbeat_supported(struct avt_dev *camera) {
-	u8 heartbeat;
-
-	int ret = heartbeat_write_default(camera);
-	if(ret != 0) {
-		avt_err(get_sd(camera), "Heartbeat support detection failed (heartbeat_write returned %d)", ret);
+	ret = read_poll_timeout(avt_read8, ret, val > 0 && val < 0x80, 
+				BOOT_POLL_INTERVAL_US, BOOT_TIMEOUT_US,
+			  	true, camera, CCI_HEARTBEAT_8RW, &val);
+	if (ret < 0) {
+		dev_err(dev, "Softreset failed with err: %d\n", ret);
 		return ret;
 	}
 
-	ret = heartbeat_read(camera, &heartbeat);
-	if(ret != 0) {
-		avt_err(get_sd(camera), "Heartbeat support detection failed (heartbeat_read returned %d)", ret);
-		return -1;
-	}
+	dev_info(dev, "Camera boottime %llu ms\n", 
+		 (ktime_get_ns() - start) / NSEC_PER_MSEC);
 
-	return heartbeat != 0;
-}
-
-static int wait_camera_available(struct avt_dev *camera, bool use_heartbeat) {
-	static const unsigned long max_time_ms = 10000;
-	static const unsigned long delay_ms = 400;
-	u64 const start_jiffies = get_jiffies_64();
-	bool device_available = false;
-	u64 duration_ms = 0;
-
-
-	avt_info(get_sd(camera), "Waiting for camera to shutdown...");
-	do
-	{
-		usleep_range(delay_ms*1000, (delay_ms+1)*1000);
-		device_available = avt_detect(camera->i2c_client) == 0;
-		duration_ms = jiffies_to_msecs(get_jiffies_64() - start_jiffies);
-	} while((duration_ms < max_time_ms) && device_available);
-
-	avt_info(get_sd(camera), "Waiting for camera to respond to I2C transfers...");
-	do
-	{
-		usleep_range(delay_ms*1000, (delay_ms+1)*1000);
-		device_available = avt_detect(camera->i2c_client) == 0;
-		duration_ms = jiffies_to_msecs(get_jiffies_64() - start_jiffies);
-	} while((duration_ms < max_time_ms) && !device_available);
-
-	avt_dbg(get_sd(camera), "Camera is responding again");
-
-	if(!device_available) {
-		return -1;
-	}
-
-	if(!use_heartbeat) {
-		avt_info(get_sd(camera), "Heartbeat NOT supported, waiting %dms before continuing", add_wait_time_ms);
-		usleep_range(add_wait_time_ms*1000, (add_wait_time_ms+1)*1000);
-		avt_info(get_sd(camera), "Done waiting, let's hope for the best...");
-
-	} else {
-		u8 heartbeat;
-		avt_info(get_sd(camera), "Heartbeat supported, waiting for heartbeat to become active");
-
-		do
-		{
-			usleep_range(delay_ms*1000, (delay_ms+1)*1000);
-			heartbeat_read(camera, &heartbeat);
-			duration_ms = jiffies_to_msecs(get_jiffies_64() - start_jiffies);
-		} while((duration_ms < max_time_ms) && ((heartbeat == 0) || (heartbeat == heartbeat_default)));
-
-		if(heartbeat >= 0 && heartbeat < heartbeat_default) {
-			avt_info(get_sd(camera), "Heartbeat active");
-			return 0;
-		}
-
-		avt_err(get_sd(camera), "Camera not reconnected (heartbeat timeout)");
-	}
-
-	return -1;
-}
-
-static int avt_reset(struct avt_dev *camera, enum avt_reset_type reset_type)
-{
-	struct i2c_client *client = camera->i2c_client;
-	int ret;
-	int heartbeat;
-
-	dev_info(&client->dev, "%s[%d]",
-			 __func__, __LINE__);
-
-	mutex_lock(&camera->lock);
-
-	heartbeat = heartbeat_supported(camera);
-	if(heartbeat < 0) {
-		avt_err(get_sd(camera), "Heartbeat detection failed");
-		ret = -1;
-		goto out;
-	}
-
-	if(reset_type == RESET_TYPE_HARD) {
-		camera->pending_hardtreset_request = 1;
-		ret = perform_hard_reset(camera);
-		if (ret < 0) {
-			dev_err(&client->dev, "perform_hard_reset request failed (%d)\n", ret);
-			goto out;
-		}
-	} else {
-		camera->pending_softreset_request = 1;
-		ret = avt_write(camera, cci_cmd_tbl[SOFT_RESET].address, 1, AV_CAM_DATA_SIZE_8);
-		if (ret < 0) {
-			dev_err(&client->dev, "avt_soft_reset request by calling regmap_write failed (%d)\n", ret);
-			goto out;
-		}
-	}
-
-	ret = wait_camera_available(camera, heartbeat == 1);
-
-	if(ret != 0) {
-		avt_err(get_sd(camera), "Camera failed to come back online");
-		goto out;
-	}
-
-	if(reset_type == RESET_TYPE_HARD) {
-		camera->pending_hardtreset_request = 0;
-	} else {
-		camera->pending_softreset_request = 0;
-	}
-
-out:
-	mutex_unlock(&camera->lock);
-	return ret;
+	return 0;
 }
 
 static void avt_dphy_reset(struct avt_dev *camera, bool bResetPhy)
@@ -2188,31 +2016,6 @@ out:
 }
 
 /* --------------- Subdev Operations --------------- */
-/* -- Code needs to be completed, e.g. power off the cam and setup on power on to support standby, hybernate, ... --  */
-static int avt_core_ops_s_power(struct v4l2_subdev *sd, int on)
-{
-	struct avt_dev *camera = to_avt_dev(sd);
-	int ret = 0;
-
-	mutex_lock(&camera->lock);
-
-	dev_info(&camera->i2c_client->dev, "%s[%d]+: on %d, camera->power_count %d",
-			 __func__, __LINE__, on, camera->power_count);
-
-	/* Update the power count. */
-	if (on)
-		camera->power_count++;
-	else
-		camera->power_count--;
-
-	WARN_ON(camera->power_count < 0);
-	WARN_ON(camera->power_count > 1);
-
-	mutex_unlock(&camera->lock);
-
-	return ret;
-}
-
 static int avt_get_fmt_bcm(struct avt_dev *camera,
 			   struct v4l2_subdev_state *sd_state,
 			   struct v4l2_subdev_format *format)
@@ -2334,8 +2137,8 @@ static void avt_calc_compose(const struct avt_dev * const camera,
 		}
 	}
 
-	dev_info(&camera->i2c_client->dev,"Selected binning %dx%d type: %s\n",
-		 best->vfact,best->hfact,binning_type_str[type]);
+	dev_dbg(&camera->i2c_client->dev,"Selected binning %dx%d type: %s\n",
+		best->vfact,best->hfact,binning_type_str[type]);
 
 	binning_rect.width = best->max_width;
 	binning_rect.height = best->max_height;
@@ -2350,7 +2153,7 @@ static void avt_calc_compose(const struct avt_dev * const camera,
 	*width = scaled_crop.width;
 	*height = scaled_crop.height;
 
-	dev_info(&camera->i2c_client->dev,"Selected crop (%u,%u) %ux%u\n",
+	dev_dbg(&camera->i2c_client->dev,"Selected crop (%u,%u) %ux%u\n",
 		 scaled_crop.left,scaled_crop.top,
 		 scaled_crop.width,scaled_crop.height);
 
@@ -3432,20 +3235,6 @@ static int avt_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 		return -EBUSY;
 	}
 
-	/* ignore if camera is in sleep mode */
-	if (camera->power_count == 0)
-	{
-		avt_dbg(get_sd(camera), "ToDo: Sensor is in sleep mode. Maybe it is better to ignore ctrl->id 0x%08X, camera->power_count %d",
-				 ctrl->id, camera->power_count);
-		// return -EINVAL;
-	}
-
-	if (camera->power_count > 1)
-	{
-		avt_info(get_sd(camera), "ctrl->id 0x%08X, camera->power_count %d", ctrl->id, camera->power_count);
-	}
-
-
 	if (ctrl->priv != NULL)
 	{
 		const struct avt_ctrl_mapping * const ctrl_mapping = ctrl->priv;
@@ -4034,18 +3823,10 @@ static int avt_pad_ops_enum_frame_interval(
 	u64 max_framerate;
 
 	if (fie->pad != 0)
-	{
-		avt_err(sd, "no pad availble. fie->index %d, fie->pad %d, fie->code 0x%04X, fie->width %d, fie->height %d",
-				fie->index, fie->pad, fie->code, fie->width, fie->height);
 		return -EINVAL;
-	}
 
 	if (fie->index >= 1)
-	{
-		avt_info(sd, "fie->index >= avt_NUM_FRAMERATES fie->index %d, avt_NUM_FRAMERATES %d, fie->pad %d, fie->code 0x%04X, fie->width %d, fie->height %d",
-				 fie->index, 1, fie->pad, fie->code, fie->width, fie->height);
 		return -EINVAL;
-	}
 	/*
 	To enumerate frame intervals applications initialize the index, pad, which, code, width and height fields of
 	struct v4l2_subdev_frame_interval_enum and call the ioctl VIDIOC_SUBDEV_ENUM_FRAME_INTERVAL ioctl with a
@@ -4477,7 +4258,6 @@ static int avt_log_status(struct v4l2_subdev *sd)
 }
 
 static const struct v4l2_subdev_core_ops avt_core_ops = {
-	.s_power = avt_core_ops_s_power,
 	.log_status = avt_log_status,
 	.reset = avt_core_ops_reset,
 	.subscribe_event = avt_core_ops_subscribe_event,
@@ -5468,37 +5248,21 @@ static void bcrm_wrhs_work_func(struct work_struct *work)
 }
 
 
-static int avt_detect(struct i2c_client *client)
+static int avt_detect(struct avt_dev *camera)
 {
-	const u16 address = 0x0;
-	u32 value = 0;
+	u32 version;
 	int ret;
-	struct i2c_msg msgs[2] = {
-			{
-				.addr = client->addr,
-				.flags = 0,
-				.buf = (__u8*)&address,
-				.len = 2,
-			},
-			{
-				.addr = client->addr,
-				.flags = I2C_M_RD,
-				.buf = (__u8*)&value,
-				.len = 4,
-			},
-	};
-
-
-	ret = i2c_transfer(client->adapter, msgs, 2);
+	
+	ret = avt_read32(camera, CCI_REGISTER_LAYOUT_VERSION_32R, &version);
 
 	if (ret < 0)
 	{
 		return ret;
 	}
 
-	if (value == 0)
+	if (version == 0)
 	{
-		return -1;
+		return -ENODEV;
 	}
 
 	return 0;
@@ -5684,27 +5448,42 @@ static int avt_probe(struct i2c_client *client)
 	struct v4l2_mbus_framefmt *fmt;
 	struct fwnode_handle *fwnode = dev_fwnode(dev);
 	struct v4l2_subdev *sd;
+	struct regulator *reg_vcc_ext;
 	int ret;
-
-	dev_info(&client->dev, "%s[%d]: %s",
-			 __func__, __LINE__, __FILE__);
-
-	if (avt_detect(client) < 0)
-	{
-		dev_warn(&client->dev,"No camera detected!");
-		return -ENODEV;
-	}
-
-
+	
 	camera = devm_kzalloc(dev, sizeof(*camera), GFP_KERNEL);
 	if (!camera)
-	{
 		return -ENOMEM;
-	}
-	
+
 	camera->i2c_client = client;
 	camera->streamon_delay = 0;
 	camera->framerate_auto = true;
+
+	camera->regmap = devm_regmap_init_i2c(client, &alvium_regmap_config);
+	if (IS_ERR(camera->regmap))
+	{
+		return dev_err_probe(dev, PTR_ERR(camera->regmap), 
+				     "i2c regmap init failed\n");
+	}
+
+	reg_vcc_ext = devm_regulator_get_optional(dev, "vcc-ext");
+	if (!IS_ERR(reg_vcc_ext)) {
+		ret = regulator_enable(reg_vcc_ext);
+		if (ret)
+			return dev_err_probe(dev, ret, 
+					     "failed to enable regulator\n");
+
+		camera->reg_vcc_ext = reg_vcc_ext;
+	}
+
+	ret = read_poll_timeout(avt_detect, ret, !ret, BOOT_POLL_INTERVAL_US, 
+			  	BOOT_TIMEOUT_US, false, camera);
+	if (ret) {
+		dev_warn(&client->dev,"No camera detected!");
+		ret = -ENODEV;
+		goto regulator_cleanup;
+	}
+
 
 	sd = get_sd(camera);
 
@@ -5717,50 +5496,6 @@ static int avt_probe(struct i2c_client *client)
 
 	camera->stream_start_phy_reset
 		= fwnode_property_present(fwnode,"phy_reset_on_start");
-
-	camera->force_reset_on_init = fwnode_property_present(dev_fwnode(&client->dev), "force_reset_on_init");
-	dev_dbg(dev, "%s[%d]: force_reset_on_init %d\n", __func__, __LINE__, camera->force_reset_on_init);
-
-	/* request optional power down pin */
-	camera->pwdn_gpio = devm_gpiod_get_optional(dev, "powerdown", camera->force_reset_on_init ? GPIOD_OUT_HIGH : GPIOD_ASIS);
-
-	if (NULL == camera->pwdn_gpio || IS_ERR(camera->pwdn_gpio))
-	{
-		dev_warn(&client->dev, "%s[%d]: no powerdown-gpios defined", __func__, __LINE__);
-	}
-	else
-	{
-		dev_info(dev, "%s[%d]: devm_gpiod_get_optional(dev, \"powerdown-gpios\" succeeded\n", __func__, __LINE__);
-		gpiod_set_value_cansleep(camera->pwdn_gpio, GPIOD_OUT_LOW);
-	}
-
-	/* request optional reset pin, only the first one will be used at the moment */
-	camera->reset_gpio = devm_gpiod_get_optional(dev, "reset", GPIOD_ASIS);
-	// GPIOD_OUT_LOW);
-	if (NULL == camera->reset_gpio || IS_ERR(camera->reset_gpio))
-	{
-		dev_warn(&client->dev, "%s[%d]: no reset-gpios defined", __func__, __LINE__);
-	}
-	else
-	{
-		dev_info(dev, "%s[%d]: devm_gpiod_get_optional(dev, \"reset-gpios\" succeeded\n", __func__, __LINE__);
-		gpiod_set_value_cansleep(camera->reset_gpio, GPIOD_OUT_LOW);
-	}
-
-	if (fwnode_property_present(dev_fwnode(&client->dev), "mipi_csi"))
-		dev_info(dev, "%s[%d]: fwnode_property_present mipi_csi\n", __func__, __LINE__);
-	else
-		dev_info(dev, "%s[%d]: fwnode_property_present failed to find mipi_csi\n", __func__, __LINE__);
-
-	camera->regmap = devm_regmap_init_i2c(client, &alvium_regmap_config);
-	if (IS_ERR(camera->regmap))
-	{
-		dev_err(dev, "%s[%d]: regmap init failed: %ld\n", __func__, __LINE__,
-				PTR_ERR(camera->regmap));
-		ret = -ENODEV;
-		goto err_exit;
-	}
-
 
 	ret = fwnode_property_read_u32(dev_fwnode(&client->dev),
 		"bcrm_wait_timeout", &camera->bcrm_handshake_timeout_ms);
@@ -5785,36 +5520,6 @@ static int avt_probe(struct i2c_client *client)
 			__func__, __LINE__, camera->v4l2_fwnode_ep.bus_type);
 		ret = -EINVAL;
 		goto fwnode_cleanup;
-	}
-
-	/* request optional power down pin */
-	camera->pwdn_gpio = devm_gpiod_get_optional(dev, "powerdown",
-												GPIOD_OUT_HIGH);
-	if (NULL == camera->pwdn_gpio || IS_ERR(camera->pwdn_gpio))
-	{
-		dev_warn(&client->dev, "%s[%d]: no powerdown-gpios powerdown defined",
-				 __func__, __LINE__);
-		camera->pwdn_gpio = NULL;
-	}
-	else
-	{
-		dev_info(dev, "%s[%d]: devm_gpiod_get_optional(dev, \"powerdown-gpios\" succeeded\n", __func__, __LINE__);
-		gpiod_set_value(camera->pwdn_gpio, 0);
-	}
-
-	/* request optional reset pin, only the first one will be used at the moment */
-	camera->reset_gpio = devm_gpiod_get_optional(dev, "reset",
-												 GPIOD_OUT_HIGH);
-	if (NULL == camera->reset_gpio || IS_ERR(camera->reset_gpio))
-	{
-		dev_warn(&client->dev, "%s[%d]: no reset-gpios defined",
-				 __func__, __LINE__);
-		camera->reset_gpio = NULL;
-	}
-	else
-	{
-		dev_info(dev, "%s[%d]: devm_gpiod_get_optional(dev, \"reset-gpios\" succeeded\n", __func__, __LINE__);
-		gpiod_set_value(camera->reset_gpio, 0);
 	}
 
 #ifdef NVIDIA
@@ -5843,19 +5548,17 @@ static int avt_probe(struct i2c_client *client)
 
 	mutex_init(&camera->lock);
 
-	{
-		enum avt_reset_type const reset_type = camera->force_reset_on_init ? RESET_TYPE_HARD : RESET_TYPE_SOFT;
-		if(reset_type == RESET_TYPE_HARD) {
-			avt_info(sd, "Hard reset requested by device tree");
-		}
-
-		ret = avt_reset(camera, reset_type);
+	// No regulator specified, but camera is reachable 
+	// -> Must be externally powered 
+	// -> Do softreset so camera is in good state
+	if (!camera->reg_vcc_ext) {
+		ret = avt_do_softreset(camera);
 		if(ret < 0) {
 			avt_err(sd, "Camera reset failed");
 			goto fwnode_cleanup;
 		}
 	}
-
+	
 	ret = read_cci_registers(client);
 
 	if (ret < 0)
@@ -6047,12 +5750,11 @@ fwnode_cleanup:
 	fwnode_handle_put(camera->endpoint);
 
 err_exit:
-	if (camera->pwdn_gpio)
-		devm_gpiod_put(dev, camera->pwdn_gpio);
-	if (camera->reset_gpio)
-		devm_gpiod_put(dev, camera->reset_gpio);
-
 	mutex_destroy(&camera->lock);
+
+regulator_cleanup:
+	if (camera->reg_vcc_ext) 
+		regulator_disable(camera->reg_vcc_ext);
 	return ret;
 }
 
@@ -6089,15 +5791,12 @@ static void avt_remove(struct i2c_client *client)
 	if (camera->bcrm_wrhs_queue)
 		destroy_workqueue(camera->bcrm_wrhs_queue);
 
-	if (camera->pwdn_gpio)
-		devm_gpiod_put(&client->dev, camera->pwdn_gpio);
-
-	if (camera->reset_gpio)
-		devm_gpiod_put(&client->dev, camera->reset_gpio);
-
 	mutex_destroy(&camera->lock);
 
 	v4l2_async_unregister_subdev(sd);
+
+	if (camera->reg_vcc_ext) 
+		regulator_disable(camera->reg_vcc_ext);
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
 	return 0;
 #endif
@@ -6120,7 +5819,6 @@ MODULE_DEVICE_TABLE(of, avt_dt_ids);
 static struct i2c_driver avt_i2c_driver = {
 	.driver = {
 		.name = "avt_csi2",
-		.owner = THIS_MODULE,
 		.of_match_table = avt_dt_ids,
 	},
 	.id_table = avt_id,
