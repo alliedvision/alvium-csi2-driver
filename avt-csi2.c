@@ -250,13 +250,14 @@ static const size_t avt_binning_setting_cnt = ARRAY_SIZE(avt_binning_settings);
 static int bcrm_write(struct avt_dev *camera, u16 reg, u64 val, size_t len);
 
 static int avt_do_softreset(struct avt_dev *camera);
+static int avt_reinit(struct avt_dev *camera);
 static void avt_dphy_reset(struct avt_dev *camera, bool bResetPhy);
 
 static void avt_ctrl_changed(struct avt_dev *camera, const struct v4l2_ctrl * const ctrl);
 static struct v4l2_ctrl* avt_ctrl_find(struct avt_dev *camera,u32 id);
 static int avt_write_media_bus_format(struct avt_dev *camera, int code);
 static int avt_get_sensor_capabilities(struct v4l2_subdev *sd);
-
+static int avt_update_format(struct avt_dev *camera, const struct v4l2_rect *roi, const struct avt_binning_info *info);
 
 #define DUMP_BCRM_REG8(CLIENT, BCRM_REG) dump_bcrm_reg(CLIENT, (BCRM_REG), (#BCRM_REG), AV_CAM_DATA_SIZE_8)
 #define DUMP_BCRM_REG16(CLIENT, BCRM_REG) dump_bcrm_reg(CLIENT, (BCRM_REG), (#BCRM_REG), AV_CAM_DATA_SIZE_16)
@@ -1509,8 +1510,8 @@ static ssize_t softreset_store(struct device *dev,
 		if (ret < 0)
 			goto err;
 
-		/* Re-read and configure MIPI configuration */
-		avt_get_sensor_capabilities(get_sd(camera));
+		/* Reinit v4l2 settings */
+		avt_reinit(camera);                
 err:
 		mutex_unlock(&camera->lock);
 	}
@@ -1839,7 +1840,7 @@ static int avt_init_avail_formats(struct v4l2_subdev *sd)
   #define add_format_gen(avail_field_name, mbus_code, mipi_fmt, colorspace, fourcc, bayer_pattern) \
     if(camera->avail_mipi_reg.avail_mipi.avail_field_name) { \
       adev_info(&client->dev, "add MEDIA_BUS_FMT_" #mbus_code "/V4L2_PIX_FMT_" #fourcc "/MIPI_CSI2_DT_" #mipi_fmt " to list of available formats %d - %d", bayer_pattern, \
-                camera->avail_mipi_reg.avail_mipi.avail_field_name); \
+		camera->avail_mipi_reg.avail_mipi.avail_field_name); \
       add_format_unconditional(MEDIA_BUS_FMT_ ## mbus_code, MIPI_CSI2_DT_ ## mipi_fmt, colorspace, V4L2_PIX_FMT_ ## fourcc, bayer_pattern); \
     }
 
@@ -1912,6 +1913,8 @@ static int avt_init_avail_formats(struct v4l2_subdev *sd)
 static int avt_init_current_format(struct avt_dev *camera, struct v4l2_mbus_framefmt *fmt)
 {
 	u32 current_mipi_format;
+	u32 current_max_width;
+	u32 current_max_height;
 	u8 current_bayer_pattern;
 	int ret, i;
 	
@@ -1929,6 +1932,20 @@ static int avt_init_current_format(struct avt_dev *camera, struct v4l2_mbus_fram
 		return ret;
 	}
 
+	ret = bcrm_read32(camera, BCRM_IMG_WIDTH_MAX_32R, &current_max_width);
+	if (unlikely(ret))
+	{
+		dev_err(&camera->i2c_client->dev, "Failed to read current max image width!");
+		return ret;
+	}
+
+	ret = bcrm_read32(camera, BCRM_IMG_HEIGHT_MAX_32R, &current_max_height);
+	if (unlikely(ret))
+	{
+		dev_err(&camera->i2c_client->dev, "Failed to read current max image height!");
+		return ret;
+	}
+
 	for (i = 0;i < camera->available_fmts_cnt; i++)
 	{
 		const struct avt_csi_mipi_mode_mapping *mapping = &camera->available_fmts[i];
@@ -1943,8 +1960,8 @@ static int avt_init_current_format(struct avt_dev *camera, struct v4l2_mbus_fram
 			fmt->ycbcr_enc = V4L2_MAP_YCBCR_ENC_DEFAULT(fmt->colorspace);
 			fmt->quantization = V4L2_QUANTIZATION_FULL_RANGE;
 			fmt->xfer_func = V4L2_XFER_FUNC_DEFAULT;
-			fmt->width = camera->max_rect.width;
-			fmt->height = camera->max_rect.height;
+			fmt->width = current_max_width;
+			fmt->height = current_max_height;
 			fmt->field = V4L2_FIELD_NONE;
 
 			return 0;
@@ -1992,6 +2009,91 @@ static int avt_do_softreset(struct avt_dev *camera)
 		 (ktime_get_ns() - start) / NSEC_PER_MSEC);
 
 	return 0;
+}
+
+static int avt_reinit(struct avt_dev *camera)
+{
+	int ret;
+	int j;
+
+	// Re-read and configure MIPI configuration
+	avt_get_sensor_capabilities(get_sd(camera));
+
+	// Re-init
+	ret = avt_update_format(camera, &camera->curr_rect, camera->curr_binning_info);
+	if (ret < 0)
+	{
+		dev_err(&camera->i2c_client->dev, "%s[%d]: Error while updating format",
+			__func__, __LINE__);
+		return ret;
+	}
+
+	ret = avt_write_media_bus_format(camera, camera->mbus_framefmt.code);
+	if (ret < 0)
+	{
+		dev_err(&camera->i2c_client->dev, "%s[%d]: Error while writing media bus format",
+			__func__, __LINE__);
+		return ret;
+	}
+	
+	for (j = 0; j < ARRAY_SIZE(camera->avt_ctrls); ++j)
+	{
+		if (!camera->avt_ctrls[j]) continue;
+
+		if ((camera->avt_ctrls[j]->flags & V4L2_CTRL_FLAG_READ_ONLY)) continue;
+
+		switch(camera->avt_ctrls[j]->type)
+		{
+			case V4L2_CTRL_TYPE_INTEGER:
+				dev_info(&camera->i2c_client->dev, "%s[%d]: %s=%lld (INT32)",
+					__func__, __LINE__, 
+					camera->avt_ctrls[j]->name, 
+					camera->avt_ctrls[j]->default_value);
+
+				ret = __v4l2_ctrl_s_ctrl(camera->avt_ctrls[j], (int)camera->avt_ctrls[j]->default_value);
+				break;
+
+			case V4L2_CTRL_TYPE_BOOLEAN:
+				dev_info(&camera->i2c_client->dev, "%s[%d]: %s=%lld (BOOL)",
+					__func__, __LINE__, 
+					camera->avt_ctrls[j]->name,
+					camera->avt_ctrls[j]->default_value);
+
+				ret = __v4l2_ctrl_s_ctrl(camera->avt_ctrls[j], (int)camera->avt_ctrls[j]->default_value);
+				break;
+
+			case V4L2_CTRL_TYPE_INTEGER64:
+				dev_info(&camera->i2c_client->dev, "%s[%d]: %s=%lld (INT64)",
+					__func__, __LINE__, 
+					camera->avt_ctrls[j]->name, 
+					camera->avt_ctrls[j]->default_value);
+
+				ret = __v4l2_ctrl_s_ctrl_int64(camera->avt_ctrls[j], camera->avt_ctrls[j]->default_value);
+				break;
+
+			case V4L2_CTRL_TYPE_MENU:
+				dev_info(&camera->i2c_client->dev, "%s[%d]: %s=%lld (MENU)",
+					__func__, __LINE__, 
+					camera->avt_ctrls[j]->name, 
+					camera->avt_ctrls[j]->default_value);
+				
+				ret = __v4l2_ctrl_s_ctrl(camera->avt_ctrls[j], (int)camera->avt_ctrls[j]->default_value);
+				break;
+
+			default:
+				break;
+		}
+
+		if (ret < 0)
+		{
+			dev_warn(&camera->i2c_client->dev, "%s[%d]: %s return %d",
+				__func__, __LINE__, 
+				camera->avt_ctrls[j]->name, 
+				ret);
+		}
+	}
+
+	return ret;
 }
 
 static void avt_dphy_reset(struct avt_dev *camera, bool bResetPhy)
@@ -3700,7 +3802,7 @@ static int avt_init_controls(struct avt_dev *camera)
 					config.min,config.max,config.step,config.def);
 			}
 
-            		//Clear error
+	    		//Clear error
 			camera->v4l2_ctrl_hdl.error = 0;
 			continue;
 		}
