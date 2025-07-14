@@ -735,7 +735,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	},
 	{
 		.id		= AVT_CID_MAINBOARD_TEMPERATURE_WARINING_LEVEL,
-		.name		= "Mainboard Temperature Warning Level",
+		.name		= "Mainboard Temperature Warning",
 		.inq_mask	=
 			BCRM_FEATURE_INQ_MAINBOARD_TEMPERATURE_WARNING,
 		.type		= V4L2_CTRL_TYPE_INTEGER,
@@ -795,7 +795,7 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 	{
 		.id		=
 			AVT_CID_SENSORBOARD_TEMPERATURE_WARINING_LEVEL,
-		.name		= "Sensorboard Temperature Warning Level",
+		.name		= "Sensorboard Temperature Warning",
 		.inq_mask	=
 			BCRM_FEATURE_INQ_MAINBOARD_TEMPERATURE_WARNING,
 		.type		= V4L2_CTRL_TYPE_INTEGER,
