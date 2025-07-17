@@ -3322,6 +3322,8 @@ static int __set_special_ctrl(struct avt_dev *camera, struct v4l2_ctrl *ctrl)
 		return __set_frame_trigger_wait_line_mode(camera, ctrl->val);
 	case AVT_CID_POWER_SAVE_MODE:
 		return __set_power_save_mode(camera, ctrl->val);
+	case AVT_CID_EXPOSURE_ACTIVE_INVERT:
+		return 0;
 	default:
 		return -ENOTTY;
 	}
