@@ -141,8 +141,6 @@ struct avt_val64
 #define LINE_MASK(x) \
 	(LINE_DIR_OUTPUT(x) | LINE_INVERT(x))
 
-
-
 enum avt_binning_type {
 	NONE = -1,
 	DIGITAL,
@@ -3306,7 +3304,7 @@ static int __set_power_save_mode(struct avt_dev *camera, u8 val)
 
 static int __set_special_ctrl(struct avt_dev *camera, struct v4l2_ctrl *ctrl)
 {
-	switch (ctrl->id) {
+	switch (ctrl->id) {	
 	case AVT_CID_TRIGGER_MODE:
 		return __set_trigger_mode(camera, ctrl->val);
 	case AVT_CID_EXPOSURE_ACTIVE_LINE_MODE:
@@ -3322,6 +3320,8 @@ static int __set_special_ctrl(struct avt_dev *camera, struct v4l2_ctrl *ctrl)
 		return __set_frame_trigger_wait_line_mode(camera, ctrl->val);
 	case AVT_CID_POWER_SAVE_MODE:
 		return __set_power_save_mode(camera, ctrl->val);
+	case AVT_CID_EXPOSURE_ACTIVE_INVERT:
+		return 0;
 	default:
 		return -ENOTTY;
 	}
@@ -4179,6 +4179,12 @@ static int avt_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 			 camera->mbus_framefmt.code,
 			 camera->mbus_framefmt.code,
 			 camera->mbus_framefmt.ycbcr_enc);
+
+	if (camera->flash_sd) {
+		ret = v4l2_subdev_call(camera->flash_sd, video, s_stream, enable);
+		if (ret && ret != -ENOIOCTLCMD)
+			return ret;
+	}
 
 	if (camera->mode == AVT_GENCP_MODE)
 		return 0;
@@ -5541,6 +5547,64 @@ static int avt_mode_attr_init(struct avt_dev *camera)
 	return ret;
 }
 
+static int avt_flash_notify_bound(struct v4l2_async_notifier *notifier,
+				  struct v4l2_subdev *sd,
+				  struct v4l2_async_subdev *asd)
+{
+	struct avt_dev *camera =
+		container_of(notifier, struct avt_dev, flash_notifier);
+
+	camera->flash_sd = sd;
+
+	return 0;
+}
+
+static const struct v4l2_async_notifier_operations avt_flash_notify_ops = {
+	.bound = avt_flash_notify_bound
+};
+
+static int avt_flash_init(struct avt_dev *camera)
+{
+	struct device *dev = &camera->i2c_client->dev;
+	struct v4l2_async_notifier *notifier = &camera->flash_notifier;
+	struct device_node *node;
+	struct v4l2_async_subdev *asd;
+	int ret = 0;
+
+	if (!dev->of_node)
+		return -EINVAL;
+
+	node = of_parse_phandle(dev->of_node, "flash", 0);
+	if (!node) {
+		dev_info(dev, "Failed to get flash node\n");
+		return 0;
+	}
+
+	v4l2_async_notifier_init(notifier);
+
+	asd = v4l2_async_notifier_add_fwnode_subdev(
+		notifier, of_fwnode_handle(node),
+		struct v4l2_async_subdev);
+	of_node_put(node);
+
+	if (IS_ERR(asd)) {
+		dev_err(dev, "failed to add notifier with %ld\n",
+			PTR_ERR(asd));
+
+		return PTR_ERR(asd);
+	}
+
+	notifier->ops = &avt_flash_notify_ops;
+
+	ret = v4l2_async_subdev_notifier_register(get_sd(camera), notifier);
+	if (ret) {
+		dev_err(dev, "subdev notifier register failed with %d", ret);
+		return ret;
+	}
+
+	return 0;
+}
+
 
 static int avt_probe(struct i2c_client *client)
 {
@@ -5793,6 +5857,9 @@ static int avt_probe(struct i2c_client *client)
 		goto free_ctrls;
 	}
 #endif
+	ret = avt_flash_init(camera);
+	if (ret)
+		goto sd_cleanup;
 
 	ret = v4l2_async_register_subdev(sd);
 
