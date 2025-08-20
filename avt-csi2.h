@@ -926,6 +926,9 @@ struct avt_dev
 	enum line_usage line_usage[2];
 
 	bool power_save_mode;
+
+	struct v4l2_subdev *flash_sd;
+	struct v4l2_async_notifier flash_notifier;
 };
 
 enum avt_ctrl {

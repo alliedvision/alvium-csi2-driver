@@ -139,6 +139,11 @@ enum avt_intensity_controller_region {
 
 #define AVT_CID_SENSORBOARD_TEMPERATURE_WARINING_LEVEL	(AVT_CID_CAMERA_BASE + 40)
 
+enum avt_frame_interval_index {
+	AVT_FRAME_INTERVAL_CURRENT_INDEX	= 0,
+	AVT_FRAME_INTERVAL_MAXIMUM_INDEX	= 1,
+};
+
 struct avt_i2c_xfer {
     __u16 addr;
     __u16 len;
