@@ -734,14 +734,15 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 			 	| V4L2_CTRL_FLAG_READ_ONLY,
 	},
 	{
-		.id		= AVT_CID_TEMPERATURE_WARINING_LEVEL,
-		.name		= "Temperature Warning Level",
-		.inq_mask	= BCRM_FEATURE_INQ_TEMPERATURE_WARNING_REGISTER,
+		.id		= AVT_CID_MAINBOARD_TEMPERATURE_WARINING_LEVEL,
+		.name		= "Mainboard Temperature Warning",
+		.inq_mask	=
+			BCRM_FEATURE_INQ_MAINBOARD_TEMPERATURE_WARNING,
 		.type		= V4L2_CTRL_TYPE_INTEGER,
 		.min_value	= 650,
 		.max_value	= 1000,
 		.step_value	= 1,
-		.reg_offset	= BCRM_TEMPERATURE_WARNING_LEVEL_32RW,
+		.reg_offset	= BCRM_MAINBOARD_TEMPERATURE_WARNING_LEVEL_32RW,
 		.reg_length	= AV_CAM_DATA_SIZE_32,
 	},
 	{
@@ -790,6 +791,20 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.reg_offset	= BCRM_INTENSITY_CONTROLLER_REGION_8RW,
 		.reg_length	= AV_CAM_DATA_SIZE_8,
 		.avt_flags	= AVT_CTRL_FLAG_STREAM_DISABLED,
+	},
+	{
+		.id		=
+			AVT_CID_SENSORBOARD_TEMPERATURE_WARINING_LEVEL,
+		.name		= "Sensorboard Temperature Warning",
+		.inq_mask	=
+			BCRM_FEATURE_INQ_MAINBOARD_TEMPERATURE_WARNING,
+		.type		= V4L2_CTRL_TYPE_INTEGER,
+		.min_value	= 650,
+		.max_value	= 1000,
+		.step_value	= 1,
+		.reg_offset	=
+			BCRM_SENSORBOARD_TEMPERATURE_WARNING_LEVEL_32RW,
+		.reg_length	= AV_CAM_DATA_SIZE_32,
 	}
 };
 
