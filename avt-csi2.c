@@ -1719,12 +1719,6 @@ static int lookup_media_bus_format_index(struct avt_dev *camera, u32 mbus_code)
 
 	for (i = 0; i < camera->available_fmts_cnt; i++)
 	{
-		adev_info(&camera->i2c_client->dev, "mbus_code 0x%04x against test MEDIA_BUS_FMT 0x%04x / V4L2_PIX_FMT_ %c%c%c%c / MIPI_CSI2_DT 0x%02x",
-				  mbus_code,
-				  camera->available_fmts[i].mbus_code,
-				  camera->available_fmts[i].fourcc & 0x0ff, (camera->available_fmts[i].fourcc >> 8) & 0x0ff,
-				  (camera->available_fmts[i].fourcc >> 16) & 0x0ff, (camera->available_fmts[i].fourcc >> 24) & 0x0ff,
-				  camera->available_fmts[i].mipi_fmt);
 		if (mbus_code == camera->available_fmts[i].mbus_code)
 			return i;
 	}
@@ -2036,9 +2030,11 @@ static int avt_reinit(struct avt_dev *camera)
 	
 	for (j = 0; j < ARRAY_SIZE(camera->avt_ctrls); ++j)
 	{
-		if (!camera->avt_ctrls[j]) continue;
+		if (!camera->avt_ctrls[j])
+			continue;
 
-		if ((camera->avt_ctrls[j]->flags & V4L2_CTRL_FLAG_READ_ONLY)) continue;
+		if ((camera->avt_ctrls[j]->flags & V4L2_CTRL_FLAG_READ_ONLY))
+			continue;
 
 		switch(camera->avt_ctrls[j]->type)
 		{
@@ -3910,63 +3906,54 @@ static int avt_pad_ops_enum_frame_size(struct v4l2_subdev *sd,
 
 static int avt_pad_ops_enum_frame_interval(
 	struct v4l2_subdev *sd,
-#if (LINUX_VERSION_CODE > KERNEL_VERSION(5, 14, 0))
 	struct v4l2_subdev_state *sd_state,
-#else
-	struct v4l2_subdev_pad_config *cfg,
-#endif
 	struct v4l2_subdev_frame_interval_enum *fie)
 {
 	struct avt_dev *camera = to_avt_dev(sd);
+	bool is_auto = camera->framerate_auto;
 	u32 width = fie->width;
 	u32 height = fie->height;
 	const struct avt_binning_info *new_binning;
-	int i,ret;
-	u64 max_framerate;
+	u64 framerate;
+	int ret;
 
 	if (fie->pad != 0)
 		return -EINVAL;
 
-	if (fie->index >= 1)
+	if (fie->index > AVT_FRAME_INTERVAL_MAXIMUM_INDEX)
 		return -EINVAL;
-	/*
-	To enumerate frame intervals applications initialize the index, pad, which, code, width and height fields of
-	struct v4l2_subdev_frame_interval_enum and call the ioctl VIDIOC_SUBDEV_ENUM_FRAME_INTERVAL ioctl with a
-	pointer to this structure. Drivers fill the rest of the structure or return an EINVAL error code if one of
-	the input fields is invalid. All frame intervals are enumerable by beginning at index zero and incrementing
-	by one until EINVAL is returned. */
 
-	i = 0;
-	do
-	{
-		if (camera->available_fmts[i].mbus_code == fie->code)
-			break;
-		i++;
-	} while (i < camera->available_fmts_cnt);
-	if (i == camera->available_fmts_cnt)
-	{
-		avt_err(get_sd(camera), "camera->available_fmts[%d].mbus_code unknown MEDIA_BUS_FMT_ fie->code 0x%04X", i, fie->code);
-		return -EINVAL;
-	}
+	ret = lookup_media_bus_format_index(camera, fie->code);
+	if (ret < 0)
+		return ret;
+	
 
 	// Get matching binning config for requested resolution
-	avt_calc_compose(camera,&camera->curr_rect,&width,&height,
-			  &new_binning);
+	avt_calc_compose(camera, &camera->curr_rect, &width, &height,
+			 &new_binning);
 
 	if (fie->width != width || fie->height != height)
 	{
-		avt_err(get_sd(camera), "Frameintervals for unsupported width (%u) or height (%u) requested", fie->width,fie->height);
+		avt_err(get_sd(camera),
+			"width (%u) or height (%u) not supported",
+			fie->width, fie->height);
 		return -EINVAL;
 	}
 
-	ret = bcrm_read64(camera,BCRM_ACQUISITION_FRAME_RATE_MAX_64R,&max_framerate);
+	if (fie->index == AVT_FRAME_INTERVAL_CURRENT_INDEX && !is_auto) {
+		fie->interval = camera->frame_interval;
+	} else {
+		ret = bcrm_read64(camera,
+			BCRM_ACQUISITION_FRAME_RATE_MAX_64R,
+			&framerate);
 
-	if (ret < 0)
-		return ret;
+		if (ret < 0)
+			return ret;
 
-	fie->interval.numerator = 1;
-	set_frameinterval(&fie->interval,max_framerate);
-
+		fie->interval.numerator = 1000;
+		set_frameinterval(&fie->interval, framerate);	
+	}
+	
 	return 0;
 }
 
@@ -4065,12 +4052,8 @@ out:
 }
 
 static int avt_pad_ops_enum_mbus_code(struct v4l2_subdev *sd,
-#if (LINUX_VERSION_CODE > KERNEL_VERSION(5, 14, 0))
-									   struct v4l2_subdev_state *sd_state,
-#else
-									   struct v4l2_subdev_pad_config *cfg,
-#endif
-									   struct v4l2_subdev_mbus_code_enum *code)
+				      struct v4l2_subdev_state *sd_state,
+				      struct v4l2_subdev_mbus_code_enum *code)
 {
 	struct avt_dev *camera = to_avt_dev(sd);
 	struct i2c_client *client = camera->i2c_client;
