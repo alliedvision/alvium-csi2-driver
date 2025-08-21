@@ -839,10 +839,8 @@ struct avt_dev
 	enum avt_mode mode;
 
 	struct v4l2_ctrl_handler v4l2_ctrl_hdl;
-	struct v4l2_ctrl_config	avt_ctrl_cfg[AVT_MAX_CTRLS];
 	struct v4l2_ctrl *avt_ctrls[AVT_MAX_CTRLS];
 
-	struct v4l2_fwnode_endpoint v4l2_fwnode_ep; /* the parsed DT endpoint info */
 	struct fwnode_handle *endpoint;
 
 	struct v4l2_mbus_framefmt mbus_framefmt;
@@ -914,6 +912,9 @@ struct avt_dev
 
 	struct v4l2_subdev *flash_sd;
 	struct v4l2_async_notifier flash_notifier;
+
+	u64	link_freq;
+	u8 num_lanes;
 };
 
 enum avt_ctrl {
