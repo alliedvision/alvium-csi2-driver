@@ -4802,7 +4802,7 @@ static int avt_get_sensor_capabilities(struct v4l2_subdev *sd)
 	struct avt_dev *camera = to_avt_dev(sd);
 	struct i2c_client *client = camera->i2c_client;
 	int ret = 0;
-	
+
 	u64 value64;
 	u8 avt_supported_lane_mask = 0;
 	u32 avt_current_clk = 0;
@@ -4913,6 +4913,8 @@ static int avt_get_sensor_capabilities(struct v4l2_subdev *sd)
 			avt_current_clk,
 			camera->avt_min_clk,
 			camera->avt_max_clk);
+
+	camera->link_freq = avt_current_clk;
 
 	avt_info(sd, "csi clock read from camera: %u Hz\n", avt_current_clk);
 
