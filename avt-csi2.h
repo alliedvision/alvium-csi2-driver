@@ -33,8 +33,6 @@
 #define GCPRM_MAJOR_VERSION	0x0001
 #define GCPRM_MINOR_VERSION	0x0000
 
-#define AVT_V4L2_EVENT_PIXELFORMAT_CHANGE 	V4L2_EVENT_PRIVATE_START + 1
-
 struct avt_frame_param {
 	/* crop settings */
 	struct v4l2_rect r;
