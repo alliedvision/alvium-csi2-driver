@@ -1675,7 +1675,7 @@ static int avt_get_fmt_available(struct i2c_client *client)
 	u8 bayer_val = 0;
 	int ret;
 	u64 avail_mipi = 0;
-	
+
 	mutex_lock(&camera->lock);
 
 	ret = bcrm_read64(camera, BCRM_IMG_AVAILABLE_MIPI_DATA_FORMATS_64R, &avail_mipi);
@@ -1745,6 +1745,7 @@ static int avt_init_avail_formats(struct v4l2_subdev *sd)
 	struct avt_dev *camera = to_avt_dev(sd);
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
 	struct avt_csi_mipi_mode_mapping *pfmt;
+	union bcrm_bayer_inquiry_reg old_bayer;
 
 	if (sd == NULL)
 	{
@@ -1756,144 +1757,145 @@ static int avt_init_avail_formats(struct v4l2_subdev *sd)
 	camera->available_fmts_cnt = 0;
 
 	avt_dbg(sd, "%s %s %s %s\n",
-			camera->cci_reg.reg.manufacturer_name,
-			camera->cci_reg.reg.family_name,
-			camera->cci_reg.reg.model_name,
-			camera->cci_reg.reg.device_guid);
+		camera->cci_reg.reg.manufacturer_name,
+		camera->cci_reg.reg.family_name,
+		camera->cci_reg.reg.model_name,
+		camera->cci_reg.reg.device_guid);
 
-	avt_dbg(sd, "monochrome_avail %d\n"
-				"bayer_GR_avail   %d\n"
-				"bayer_RG_avail   %d\n"
-				"bayer_GB_avail   %d\n"
-				"bayer_BG_avail   %d\n",
-			camera->bayer_inquiry_reg.bayer_pattern.monochrome_avail,
-			camera->bayer_inquiry_reg.bayer_pattern.bayer_GR_avail,
-			camera->bayer_inquiry_reg.bayer_pattern.bayer_RG_avail,
-			camera->bayer_inquiry_reg.bayer_pattern.bayer_GB_avail,
-			camera->bayer_inquiry_reg.bayer_pattern.bayer_BG_avail);
+	avt_dbg(sd, "Camera bayer pattern:");
+	avt_dbg(sd, "monochrome_avail %d", camera->bayer_inquiry_reg.bayer_pattern.monochrome_avail);
+	avt_dbg(sd, "bayer_GR_avail   %d", camera->bayer_inquiry_reg.bayer_pattern.bayer_GR_avail);
+	avt_dbg(sd, "bayer_RG_avail   %d", camera->bayer_inquiry_reg.bayer_pattern.bayer_RG_avail);
+	avt_dbg(sd, "bayer_GB_avail   %d", camera->bayer_inquiry_reg.bayer_pattern.bayer_GB_avail);
+	avt_dbg(sd, "bayer_BG_avail   %d", camera->bayer_inquiry_reg.bayer_pattern.bayer_BG_avail);
 
-	avt_dbg(sd, "\n"
-				"yuv420_8_leg_avail   %d\n"
-				"yuv420_8_avail       %d\n"
-				"yuv420_10_avail      %d\n"
-				"yuv420_8_csps_avail  %d\n"
-				"yuv420_10_csps_avail %d\n"
-				"yuv422_8_avail       %d\n"
-				"yuv422_10_avail      %d\n"
-				"rgb888_avail         %d\n"
-				"rgb666_avail         %d\n"
-				"rgb565_avail         %d\n"
-				"rgb555_avail         %d\n"
-				"rgb444_avail         %d\n"
-				"raw6_avail           %d\n"
-				"raw7_avail           %d\n"
-				"raw8_avail           %d\n"
-				"raw10_avail          %d\n"
-				"raw12_avail          %d\n"
-				"raw14_avail          %d\n"
-				"jpeg_avail           %d\n",
-			camera->avail_mipi_reg.avail_mipi.yuv420_8_leg_avail,
-			camera->avail_mipi_reg.avail_mipi.yuv420_8_avail,
-			camera->avail_mipi_reg.avail_mipi.yuv420_10_avail,
-			camera->avail_mipi_reg.avail_mipi.yuv420_8_csps_avail,
-			camera->avail_mipi_reg.avail_mipi.yuv420_10_csps_avail,
-			camera->avail_mipi_reg.avail_mipi.yuv422_8_avail,
-			camera->avail_mipi_reg.avail_mipi.yuv422_10_avail,
-			camera->avail_mipi_reg.avail_mipi.rgb888_avail,
-			camera->avail_mipi_reg.avail_mipi.rgb666_avail,
-			camera->avail_mipi_reg.avail_mipi.rgb565_avail,
-			camera->avail_mipi_reg.avail_mipi.rgb555_avail,
-			camera->avail_mipi_reg.avail_mipi.rgb444_avail,
-			camera->avail_mipi_reg.avail_mipi.raw6_avail,
-			camera->avail_mipi_reg.avail_mipi.raw7_avail,
-			camera->avail_mipi_reg.avail_mipi.raw8_avail,
-			camera->avail_mipi_reg.avail_mipi.raw10_avail,
-			camera->avail_mipi_reg.avail_mipi.raw12_avail,
-			camera->avail_mipi_reg.avail_mipi.raw14_avail,
-			camera->avail_mipi_reg.avail_mipi.jpeg_avail);
+	avt_dbg(sd, "reverse_x %d", camera->reverse_x_reg);
+	avt_dbg(sd, "reverse_y %d", camera->reverse_y_reg);
+
+	/* The state of reverse x and reverse y affects the bayer pattern.
+	   Since the camera is not modifying it, we need to do this here.
+	*/
+        old_bayer = camera->bayer_inquiry_reg;
+
+	// Due to this change the user will be able to select all bayer patterns, indepenently of their availability
+	camera->bayer_inquiry_reg.bayer_pattern.bayer_BG_avail = 1;
+	camera->bayer_inquiry_reg.bayer_pattern.bayer_GB_avail = 1;
+	camera->bayer_inquiry_reg.bayer_pattern.bayer_GR_avail = 1;
+	camera->bayer_inquiry_reg.bayer_pattern.bayer_RG_avail = 1;
+
+	avt_dbg(sd, "Modified bayer pattern:");
+	avt_dbg(sd, "monochrome_avail %d", camera->bayer_inquiry_reg.bayer_pattern.monochrome_avail);
+	avt_dbg(sd, "bayer_GR_avail   %d", camera->bayer_inquiry_reg.bayer_pattern.bayer_GR_avail);
+	avt_dbg(sd, "bayer_RG_avail   %d", camera->bayer_inquiry_reg.bayer_pattern.bayer_RG_avail);
+	avt_dbg(sd, "bayer_GB_avail   %d", camera->bayer_inquiry_reg.bayer_pattern.bayer_GB_avail);
+	avt_dbg(sd, "bayer_BG_avail   %d", camera->bayer_inquiry_reg.bayer_pattern.bayer_BG_avail);
+
+	avt_dbg(sd, "Camera MIPI formats:");
+	avt_dbg(sd, "yuv420_8_leg_avail   %d", camera->avail_mipi_reg.avail_mipi.yuv420_8_leg_avail);
+	avt_dbg(sd, "yuv420_8_avail       %d", camera->avail_mipi_reg.avail_mipi.yuv420_8_avail);
+	avt_dbg(sd, "yuv420_10_avail      %d", camera->avail_mipi_reg.avail_mipi.yuv420_10_avail);
+	avt_dbg(sd, "yuv420_8_csps_avail  %d", camera->avail_mipi_reg.avail_mipi.yuv420_8_csps_avail);
+	avt_dbg(sd, "yuv420_10_csps_avail %d", camera->avail_mipi_reg.avail_mipi.yuv420_10_csps_avail);
+	avt_dbg(sd, "yuv422_8_avail       %d", camera->avail_mipi_reg.avail_mipi.yuv422_8_avail);
+	avt_dbg(sd, "yuv422_10_avail      %d", camera->avail_mipi_reg.avail_mipi.yuv422_10_avail);
+	avt_dbg(sd, "rgb888_avail         %d", camera->avail_mipi_reg.avail_mipi.rgb888_avail);
+	avt_dbg(sd, "rgb666_avail         %d", camera->avail_mipi_reg.avail_mipi.rgb666_avail);
+	avt_dbg(sd, "rgb565_avail         %d", camera->avail_mipi_reg.avail_mipi.rgb565_avail);
+	avt_dbg(sd, "rgb555_avail         %d", camera->avail_mipi_reg.avail_mipi.rgb555_avail);
+	avt_dbg(sd, "rgb444_avail         %d", camera->avail_mipi_reg.avail_mipi.rgb444_avail);
+	avt_dbg(sd, "raw6_avail           %d", camera->avail_mipi_reg.avail_mipi.raw6_avail);
+	avt_dbg(sd, "raw7_avail           %d", camera->avail_mipi_reg.avail_mipi.raw7_avail);
+	avt_dbg(sd, "raw8_avail           %d", camera->avail_mipi_reg.avail_mipi.raw8_avail);
+	avt_dbg(sd, "raw10_avail          %d", camera->avail_mipi_reg.avail_mipi.raw10_avail);
+	avt_dbg(sd, "raw12_avail          %d", camera->avail_mipi_reg.avail_mipi.raw12_avail);
+	avt_dbg(sd, "raw14_avail          %d", camera->avail_mipi_reg.avail_mipi.raw14_avail);
+	avt_dbg(sd, "jpeg_avail           %d", camera->avail_mipi_reg.avail_mipi.jpeg_avail);
 
 	camera->available_fmts = kmalloc(sizeof(camera->available_fmts[0]) * AVT_MAX_FORMAT_ENTRIES, GFP_KERNEL);
 
 	if (!camera->available_fmts)
 	{
 		dev_err(&client->dev,
-				"%s[%d]: not enough memory to store list of available formats",
-				__func__, __LINE__);
+			"%s[%d]: not enough memory to store list of available formats",
+			__func__, __LINE__);
 		return -ENOMEM;
 	}
 
 	pfmt = camera->available_fmts;
 
   #define add_format_unconditional(mbus_code, mipi_fmt, colorspace, fourcc, bayer_pattern) \
-    set_mode_mapping(pfmt, mbus_code, mipi_fmt, colorspace, fourcc, bayer_pattern, #mbus_code); \
-    camera->available_fmts_cnt++; \
-    pfmt++;
+	set_mode_mapping(pfmt, mbus_code, mipi_fmt, colorspace, fourcc, bayer_pattern, #mbus_code); \
+	camera->available_fmts_cnt++; \
+	pfmt++;
 
   #define add_format_gen(avail_field_name, mbus_code, mipi_fmt, colorspace, fourcc, bayer_pattern) \
-    if(camera->avail_mipi_reg.avail_mipi.avail_field_name) { \
-      adev_info(&client->dev, "add MEDIA_BUS_FMT_" #mbus_code "/V4L2_PIX_FMT_" #fourcc "/MIPI_CSI2_DT_" #mipi_fmt " to list of available formats %d - %d", bayer_pattern, \
-		camera->avail_mipi_reg.avail_mipi.avail_field_name); \
-      add_format_unconditional(MEDIA_BUS_FMT_ ## mbus_code, MIPI_CSI2_DT_ ## mipi_fmt, colorspace, V4L2_PIX_FMT_ ## fourcc, bayer_pattern); \
-    }
+	if(camera->avail_mipi_reg.avail_mipi.avail_field_name) { \
+		adev_info(&client->dev, "add MEDIA_BUS_FMT_" #mbus_code "/V4L2_PIX_FMT_" #fourcc "/MIPI_CSI2_DT_" #mipi_fmt " to list of available formats %d - %d", bayer_pattern, \
+			camera->avail_mipi_reg.avail_mipi.avail_field_name); \
+		add_format_unconditional(MEDIA_BUS_FMT_ ## mbus_code, MIPI_CSI2_DT_ ## mipi_fmt, colorspace, V4L2_PIX_FMT_ ## fourcc, bayer_pattern); \
+	}
 
   #define add_format_srgb(avail_field_name, mbus_code, mipi_fmt, fourcc) \
-    add_format_gen(avail_field_name, mbus_code, mipi_fmt, V4L2_COLORSPACE_SRGB, fourcc, bayer_ignore)
+    	add_format_gen(avail_field_name, mbus_code, mipi_fmt, V4L2_COLORSPACE_SRGB, fourcc, bayer_ignore)
 
   #define add_format_raw(pattern_avail_field, avail_field_name, mbus_code, mipi_fmt, fourcc, bayer_format) \
-		if(camera->bayer_inquiry_reg.bayer_pattern.pattern_avail_field) {\
-      add_format_gen(avail_field_name, mbus_code, mipi_fmt, V4L2_COLORSPACE_RAW, fourcc, bayer_format); \
-    }
+	if(camera->bayer_inquiry_reg.bayer_pattern.pattern_avail_field) {\
+      		add_format_gen(avail_field_name, mbus_code, mipi_fmt, V4L2_COLORSPACE_RAW, fourcc, bayer_format); \
+    	}
 
-  // YUV formats
-  add_format_srgb(yuv422_8_avail,  UYVY8_2X8,   YUV422_8B, UYVY);
-  add_format_srgb(yuv422_8_avail,  UYVY8_1X16,  YUV422_8B, UYVY);
-  add_format_srgb(yuv422_8_avail,  YUYV8_1X16,  YUV422_8B, YUV422P);
-  add_format_srgb(yuv422_8_avail,  YUYV8_2X8,   YUV422_8B, YUYV);
-  add_format_srgb(yuv422_8_avail,  VYUY8_2X8,   YUV422_8B, VYUY);
+	// YUV formats
+	add_format_srgb(yuv422_8_avail,  UYVY8_2X8,   YUV422_8B, UYVY);
+	add_format_srgb(yuv422_8_avail,  UYVY8_1X16,  YUV422_8B, UYVY);
+	add_format_srgb(yuv422_8_avail,  YUYV8_1X16,  YUV422_8B, YUV422P);
+	add_format_srgb(yuv422_8_avail,  YUYV8_2X8,   YUV422_8B, YUYV);
+	add_format_srgb(yuv422_8_avail,  VYUY8_2X8,   YUV422_8B, VYUY);
 
-  add_format_srgb(yuv422_10_avail, YUYV10_1X20, YUV422_8B, YUV410);
+	add_format_srgb(yuv422_10_avail, YUYV10_1X20, YUV422_8B, YUV410);
 
-  // RGB formats
-  add_format_srgb(rgb888_avail,    RGB888_1X24, RGB888,    RGB24);
-  add_format_srgb(rgb888_avail,    RBG888_1X24, RGB888,    RGB24);
-  add_format_srgb(rgb888_avail,    BGR888_1X24, RGB888,    RGB24);
-  add_format_srgb(rgb888_avail,    RGB888_3X8,  RGB888,    RGB24);
+	// RGB formats
+	add_format_srgb(rgb888_avail,    RGB888_1X24, RGB888,    RGB24);
+	add_format_srgb(rgb888_avail,    RBG888_1X24, RGB888,    RGB24);
+	add_format_srgb(rgb888_avail,    BGR888_1X24, RGB888,    RGB24);
+	add_format_srgb(rgb888_avail,    RGB888_3X8,  RGB888,    RGB24);
 
-  // 8 bit raw formats (mono / bayer)
-  add_format_raw(monochrome_avail, raw8_avail,  Y8_1X8,       RAW8,  GREY,    monochrome);
-  add_format_raw(bayer_GR_avail,   raw8_avail,  SGRBG8_1X8,   RAW8,  SGRBG8,  bayer_gr);
-  add_format_raw(bayer_RG_avail,   raw8_avail,  SRGGB8_1X8,   RAW8,  SRGGB8,  bayer_rg);
-  add_format_raw(bayer_BG_avail,   raw8_avail,  SBGGR8_1X8,   RAW8,  SBGGR8,  bayer_bg);
-  add_format_raw(bayer_GB_avail,   raw8_avail,  SGBRG8_1X8,   RAW8,  SGBRG8,  bayer_gb);
+	// 8 bit raw formats (mono / bayer)
+	add_format_raw(monochrome_avail, raw8_avail,  Y8_1X8,       RAW8,  GREY,    monochrome);
+	add_format_raw(bayer_GR_avail,   raw8_avail,  SGRBG8_1X8,   RAW8,  SGRBG8,  bayer_gr);
+	add_format_raw(bayer_RG_avail,   raw8_avail,  SRGGB8_1X8,   RAW8,  SRGGB8,  bayer_rg);
+	add_format_raw(bayer_BG_avail,   raw8_avail,  SBGGR8_1X8,   RAW8,  SBGGR8,  bayer_bg);
+	add_format_raw(bayer_GB_avail,   raw8_avail,  SGBRG8_1X8,   RAW8,  SGBRG8,  bayer_gb);
 
-  // 10 bit raw formats (mono / bayer)
-  add_format_raw(monochrome_avail, raw10_avail, Y10_1X10,     RAW10, Y10,     monochrome);
-  add_format_raw(bayer_GR_avail,   raw10_avail, SGRBG10_1X10, RAW10, SGRBG10, bayer_gr);
-  add_format_raw(bayer_RG_avail,   raw10_avail, SRGGB10_1X10, RAW10, SRGGB10, bayer_rg);
-  add_format_raw(bayer_BG_avail,   raw10_avail, SBGGR10_1X10, RAW10, SGRBG10, bayer_bg);
-  add_format_raw(bayer_GB_avail,   raw10_avail, SGBRG10_1X10, RAW10, SGBRG10, bayer_gb);
+	// 10 bit raw formats (mono / bayer)
+	add_format_raw(monochrome_avail, raw10_avail, Y10_1X10,     RAW10, Y10,     monochrome);
+	add_format_raw(bayer_GR_avail,   raw10_avail, SGRBG10_1X10, RAW10, SGRBG10, bayer_gr);
+	add_format_raw(bayer_RG_avail,   raw10_avail, SRGGB10_1X10, RAW10, SRGGB10, bayer_rg);
+	add_format_raw(bayer_BG_avail,   raw10_avail, SBGGR10_1X10, RAW10, SGRBG10, bayer_bg);
+	add_format_raw(bayer_GB_avail,   raw10_avail, SGBRG10_1X10, RAW10, SGBRG10, bayer_gb);
 
-  // 12 bit raw formats (mono / bayer)
-  add_format_raw(monochrome_avail, raw12_avail, Y12_1X12,     RAW12, Y12,     monochrome);
-  add_format_raw(bayer_GR_avail,   raw12_avail, SGRBG12_1X12, RAW12, SGRBG12, bayer_gr);
-  add_format_raw(bayer_RG_avail,   raw12_avail, SRGGB12_1X12, RAW12, SRGGB12, bayer_rg);
-  add_format_raw(bayer_BG_avail,   raw12_avail, SBGGR12_1X12, RAW12, SGRBG12, bayer_bg);
-  add_format_raw(bayer_GB_avail,   raw12_avail, SGBRG12_1X12, RAW12, SGBRG12, bayer_gb);
+	// 12 bit raw formats (mono / bayer)
+	add_format_raw(monochrome_avail, raw12_avail, Y12_1X12,     RAW12, Y12,     monochrome);
+	add_format_raw(bayer_GR_avail,   raw12_avail, SGRBG12_1X12, RAW12, SGRBG12, bayer_gr);
+	add_format_raw(bayer_RG_avail,   raw12_avail, SRGGB12_1X12, RAW12, SRGGB12, bayer_rg);
+	add_format_raw(bayer_BG_avail,   raw12_avail, SBGGR12_1X12, RAW12, SGRBG12, bayer_bg);
+	add_format_raw(bayer_GB_avail,   raw12_avail, SGBRG12_1X12, RAW12, SGBRG12, bayer_gb);
 
-  // 14 bit raw formats (mono / bayer)
-  add_format_raw(monochrome_avail, raw14_avail, Y14_1X14,     RAW14, Y14,     monochrome);
-  add_format_raw(bayer_GR_avail,   raw14_avail, SGRBG14_1X14, RAW14, SGRBG14, bayer_gr);
-  add_format_raw(bayer_RG_avail,   raw14_avail, SRGGB14_1X14, RAW14, SRGGB14, bayer_rg);
-  add_format_raw(bayer_BG_avail,   raw14_avail, SBGGR14_1X14, RAW14, SGRBG14, bayer_bg);
-  add_format_raw(bayer_GB_avail,   raw14_avail, SGBRG14_1X14, RAW14, SGBRG14, bayer_gb);
+	// 14 bit raw formats (mono / bayer)
+	add_format_raw(monochrome_avail, raw14_avail, Y14_1X14,     RAW14, Y14,     monochrome);
+	add_format_raw(bayer_GR_avail,   raw14_avail, SGRBG14_1X14, RAW14, SGRBG14, bayer_gr);
+	add_format_raw(bayer_RG_avail,   raw14_avail, SRGGB14_1X14, RAW14, SRGGB14, bayer_rg);
+	add_format_raw(bayer_BG_avail,   raw14_avail, SBGGR14_1X14, RAW14, SGRBG14, bayer_bg);
+	add_format_raw(bayer_GB_avail,   raw14_avail, SGBRG14_1X14, RAW14, SGBRG14, bayer_gb);
 
-  // GenICam
+  	// GenICam
 	add_format_unconditional(MEDIA_BUS_FMT_CUSTOM, 0x31, V4L2_COLORSPACE_DEFAULT, V4L2_PIX_FMT_CUSTOM, bayer_ignore);
 
   #undef add_format_raw
   #undef add_format
   #undef add_format_gen
   #undef add_format_unconditional
+
+	// Restore camera bayer pattern
+  	camera->bayer_inquiry_reg = old_bayer;
 
 	pfmt->mbus_code = -EINVAL;
 
@@ -2300,6 +2302,114 @@ static int avt_update_format(struct avt_dev *camera,
 	return ret;
 }
 
+static void transform_mbus_code(struct v4l2_subdev *sd,
+	struct v4l2_mbus_framefmt *fmt)
+{
+	struct avt_dev *camera = to_avt_dev(sd);
+	bool transformed = true;
+	u32 old_code = fmt->code;
+
+	// No transformation needed if we are not using a bayer format
+	if (fmt->code != MEDIA_BUS_FMT_SRGGB8_1X8 &&
+		fmt->code != MEDIA_BUS_FMT_SGRBG8_1X8 &&
+		fmt->code != MEDIA_BUS_FMT_SBGGR8_1X8 &&
+		fmt->code != MEDIA_BUS_FMT_SGBRG8_1X8 &&
+		fmt->code != MEDIA_BUS_FMT_SRGGB10_1X10 &&
+		fmt->code != MEDIA_BUS_FMT_SGRBG10_1X10 &&
+		fmt->code != MEDIA_BUS_FMT_SBGGR10_1X10 &&
+		fmt->code != MEDIA_BUS_FMT_SGBRG10_1X10 &&
+		fmt->code != MEDIA_BUS_FMT_SRGGB12_1X12 &&
+		fmt->code != MEDIA_BUS_FMT_SGRBG12_1X12 &&
+		fmt->code != MEDIA_BUS_FMT_SBGGR12_1X12 &&
+		fmt->code != MEDIA_BUS_FMT_SGBRG12_1X12) {
+			transformed = false;
+			camera->mbus_fmt_code = fmt->code;
+	}
+	else {
+		if (camera->mbus_fmt_transformed == false) {
+			// Store real mbus value
+			camera->mbus_fmt_code = fmt->code;
+		}
+		else {
+			fmt->code = camera->mbus_fmt_code;
+		}
+
+		if (camera->reverse_x_reg == 0 && camera->reverse_y_reg == 1) {
+			/* Swap G and B for 8-bit, 10-bit, and 12-bit formats
+				RG -> REV_Y -> GB
+				GR -> REV_Y -> BG
+				BG -> REV_Y -> GR
+				GB -> REV_Y -> RG
+			*/
+			if (fmt->code == MEDIA_BUS_FMT_SRGGB8_1X8) { fmt->code = MEDIA_BUS_FMT_SGBRG8_1X8; }
+			else if (fmt->code == MEDIA_BUS_FMT_SGRBG8_1X8) { fmt->code = MEDIA_BUS_FMT_SBGGR8_1X8; }
+			else if (fmt->code == MEDIA_BUS_FMT_SBGGR8_1X8) { fmt->code = MEDIA_BUS_FMT_SGRBG8_1X8; }
+			else if (fmt->code == MEDIA_BUS_FMT_SGBRG8_1X8) { fmt->code = MEDIA_BUS_FMT_SRGGB8_1X8; }
+			else if (fmt->code == MEDIA_BUS_FMT_SRGGB10_1X10) { fmt->code = MEDIA_BUS_FMT_SGBRG10_1X10; }
+			else if (fmt->code == MEDIA_BUS_FMT_SGRBG10_1X10) { fmt->code = MEDIA_BUS_FMT_SBGGR10_1X10; }
+			else if (fmt->code == MEDIA_BUS_FMT_SBGGR10_1X10) { fmt->code = MEDIA_BUS_FMT_SGRBG10_1X10; }
+			else if (fmt->code == MEDIA_BUS_FMT_SGBRG10_1X10) { fmt->code = MEDIA_BUS_FMT_SRGGB10_1X10; }
+			else if (fmt->code == MEDIA_BUS_FMT_SRGGB12_1X12) { fmt->code = MEDIA_BUS_FMT_SGBRG12_1X12; }
+			else if (fmt->code == MEDIA_BUS_FMT_SGRBG12_1X12) { fmt->code = MEDIA_BUS_FMT_SBGGR12_1X12; }
+			else if (fmt->code == MEDIA_BUS_FMT_SBGGR12_1X12) { fmt->code = MEDIA_BUS_FMT_SGRBG12_1X12; }
+			else if (fmt->code == MEDIA_BUS_FMT_SGBRG12_1X12) { fmt->code = MEDIA_BUS_FMT_SRGGB12_1X12; }
+			else transformed = false;
+		} else if (camera->reverse_x_reg == 1 && camera->reverse_y_reg == 0) {
+			/* Swap R and B for 8-bit, 10-bit, and 12-bit formats
+				RG -> REV_X -> GR
+				GR -> REV_X -> RG
+				BG -> REV_X -> GB
+				GB -> REV_X -> BG
+			*/
+			if (fmt->code == MEDIA_BUS_FMT_SRGGB8_1X8) { fmt->code = MEDIA_BUS_FMT_SGRBG8_1X8; }
+			else if (fmt->code == MEDIA_BUS_FMT_SGRBG8_1X8) { fmt->code = MEDIA_BUS_FMT_SRGGB8_1X8; }
+			else if (fmt->code == MEDIA_BUS_FMT_SBGGR8_1X8) { fmt->code = MEDIA_BUS_FMT_SGBRG8_1X8; }
+			else if (fmt->code == MEDIA_BUS_FMT_SGBRG8_1X8) { fmt->code = MEDIA_BUS_FMT_SBGGR8_1X8; }
+			else if (fmt->code == MEDIA_BUS_FMT_SRGGB10_1X10) { fmt->code = MEDIA_BUS_FMT_SGRBG10_1X10; }
+			else if (fmt->code == MEDIA_BUS_FMT_SGRBG10_1X10) { fmt->code = MEDIA_BUS_FMT_SRGGB10_1X10; }
+			else if (fmt->code == MEDIA_BUS_FMT_SBGGR10_1X10) { fmt->code = MEDIA_BUS_FMT_SGBRG10_1X10; }
+			else if (fmt->code == MEDIA_BUS_FMT_SGBRG10_1X10) { fmt->code = MEDIA_BUS_FMT_SBGGR10_1X10; }
+			else if (fmt->code == MEDIA_BUS_FMT_SRGGB12_1X12) { fmt->code = MEDIA_BUS_FMT_SGRBG12_1X12; }
+			else if (fmt->code == MEDIA_BUS_FMT_SGRBG12_1X12) { fmt->code = MEDIA_BUS_FMT_SRGGB12_1X12; }
+			else if (fmt->code == MEDIA_BUS_FMT_SBGGR12_1X12) { fmt->code = MEDIA_BUS_FMT_SGBRG12_1X12; }
+			else if (fmt->code == MEDIA_BUS_FMT_SGBRG12_1X12) { fmt->code = MEDIA_BUS_FMT_SBGGR12_1X12; }
+			else transformed = false;
+		} else if (camera->reverse_x_reg == 1 && camera->reverse_y_reg == 1) {
+			/* Swap R and B, and G and B for 8-bit, 10-bit, and 12-bit formats
+				RG -> REV_XY -> BG
+				GR -> REV_XY -> GB
+				BG -> REV_XY -> RG
+				GB -> REV_XY -> GR
+			*/
+			if (fmt->code == MEDIA_BUS_FMT_SRGGB8_1X8) { fmt->code = MEDIA_BUS_FMT_SBGGR8_1X8; }
+			else if (fmt->code == MEDIA_BUS_FMT_SGRBG8_1X8) { fmt->code = MEDIA_BUS_FMT_SGBRG8_1X8; }
+			else if (fmt->code == MEDIA_BUS_FMT_SBGGR8_1X8) { fmt->code = MEDIA_BUS_FMT_SRGGB8_1X8; }
+			else if (fmt->code == MEDIA_BUS_FMT_SGBRG8_1X8) { fmt->code = MEDIA_BUS_FMT_SGRBG8_1X8; }
+			else if (fmt->code == MEDIA_BUS_FMT_SRGGB10_1X10) { fmt->code = MEDIA_BUS_FMT_SBGGR10_1X10; }
+			else if (fmt->code == MEDIA_BUS_FMT_SGRBG10_1X10) { fmt->code = MEDIA_BUS_FMT_SGBRG10_1X10; }
+			else if (fmt->code == MEDIA_BUS_FMT_SBGGR10_1X10) { fmt->code = MEDIA_BUS_FMT_SRGGB10_1X10; }
+			else if (fmt->code == MEDIA_BUS_FMT_SGBRG10_1X10) { fmt->code = MEDIA_BUS_FMT_SGRBG10_1X10; }
+			else if (fmt->code == MEDIA_BUS_FMT_SRGGB12_1X12) { fmt->code = MEDIA_BUS_FMT_SBGGR12_1X12; }
+			else if (fmt->code == MEDIA_BUS_FMT_SGRBG12_1X12) { fmt->code = MEDIA_BUS_FMT_SGBRG12_1X12; }
+			else if (fmt->code == MEDIA_BUS_FMT_SBGGR12_1X12) { fmt->code = MEDIA_BUS_FMT_SRGGB12_1X12; }
+			else if (fmt->code == MEDIA_BUS_FMT_SGBRG12_1X12) { fmt->code = MEDIA_BUS_FMT_SGRBG12_1X12; }
+			else transformed = false;
+		}
+		else {
+			transformed = false;
+		}
+	}
+
+	avt_dbg(get_sd(camera), "fmt->code 0x%04X -> 0x%04X. rev_x %d rev_y %d, transformed %d", 
+		old_code, fmt->code, 
+		camera->reverse_x_reg, camera->reverse_y_reg,
+		transformed); 
+
+	camera->mbus_fmt_transformed = transformed;
+}
+
+
+
 static int avt_try_fmt_internal(struct v4l2_subdev *sd,
 				 struct v4l2_mbus_framefmt *fmt,
 				 const struct avt_binning_info **new_binning)
@@ -2308,28 +2418,42 @@ static int avt_try_fmt_internal(struct v4l2_subdev *sd,
 	int i;
 
 	avt_calc_compose(camera,&camera->curr_rect,&fmt->width,&fmt->height,
-			  new_binning);
+		new_binning);
 
 	dev_info(&camera->i2c_client->dev, "%s[%d]",
-			 __func__, __LINE__);
-	avt_dbg(get_sd(camera), "fmt->width %d, fmt->height %d, fmt->code 0x%04X, "
-		"camera->available_fmts_cnt %d, camera->mbus_framefmt.code 0x%04X",
-			  fmt->width, fmt->height, fmt->code,
-			  camera->available_fmts_cnt,
-			  camera->mbus_framefmt.code);
+		__func__, __LINE__);
 
+	avt_dbg(get_sd(camera), 
+		"fmt->width %d, fmt->height %d",
+		fmt->width, fmt->height);
+	avt_dbg(get_sd(camera), 
+		"camera->available_fmts_cnt %d",
+		camera->available_fmts_cnt);
+	avt_dbg(get_sd(camera), 
+		"camera->mbus_framefmt.code 0x%04X",
+		camera->mbus_framefmt.code);
+
+	avt_dbg(get_sd(camera), "Incoming fmt->code    0x%04x", fmt->code);
+
+	transform_mbus_code(sd, fmt);
+
+	avt_dbg(get_sd(camera), "Transformed fmt->code 0x%04x", fmt->code);
 
 	for (i = 0; i < camera->available_fmts_cnt; i++)
 	{
-		avt_dbg(get_sd(camera), "loop %d: fmt->width %d, fmt->height %d, "
-		 	"camera->mbus_framefmt.code 0x%04X, "
-			"camera->available_fmts[%d].mbus_code 0x%04X, "
-			"fmt->code 0x%04X",
-				  i, fmt->width, fmt->height,
-				  camera->mbus_framefmt.code,
-				  i,
-				  camera->available_fmts[i].mbus_code,
-				  fmt->code);
+		avt_dbg(get_sd(camera), 
+			"loop %d: fmt->width %d, fmt->height %d, ",
+			i, fmt->width, fmt->height);
+		avt_dbg(get_sd(camera), 
+		 	"camera->mbus_framefmt.code 0x%04X, ",
+			camera->mbus_framefmt.code);
+		avt_dbg(get_sd(camera), 
+			"camera->available_fmts[%d].mbus_code 0x%04X, ",
+			i,
+			camera->available_fmts[i].mbus_code);
+		avt_dbg(get_sd(camera), 
+			"fmt->code 0x%04X", fmt->code);
+
 		if (camera->available_fmts[i].mbus_code == fmt->code)
 		{
 			break;
@@ -2412,12 +2536,14 @@ static int avt_write_media_bus_format(struct avt_dev *camera, int code)
 	const struct avt_csi_mipi_mode_mapping *fmt_mapping;
 	int idx = lookup_media_bus_format_index(camera, code);
 	int ret = 0;
+	u8 bayer_pattern = 0;
 
 	if (idx < 0) {
 		return -EINVAL;
 	}
 
 	fmt_mapping = &camera->available_fmts[idx];
+	bayer_pattern = fmt_mapping->bayer_pattern;
 
 	ret = bcrm_write32(camera, BCRM_IMG_MIPI_DATA_FORMAT_32RW, 
 		fmt_mapping->mipi_fmt);
@@ -2429,10 +2555,33 @@ static int avt_write_media_bus_format(struct avt_dev *camera, int code)
 		goto exit;
 	}
 
-	if (fmt_mapping->bayer_pattern != bayer_ignore) {
-		ret = bcrm_write8(camera, BCRM_IMG_BAYER_PATTERN_8RW, 
-			fmt_mapping->bayer_pattern);
+	dev_info(dev, "fmt_mapping->bayer_pattern %d, rev_x %d rev_y %d, transformed %d", 
+		fmt_mapping->bayer_pattern, 
+		camera->reverse_x_reg, camera->reverse_y_reg,
+		camera->mbus_fmt_transformed); 
 
+
+	if (fmt_mapping->bayer_pattern != bayer_ignore) {
+		if (fmt_mapping->bayer_pattern != monochrome) {
+			if (camera->bayer_inquiry_reg.bayer_pattern.bayer_BG_avail) {
+				bayer_pattern = bayer_bg;
+			}
+			else
+			if (camera->bayer_inquiry_reg.bayer_pattern.bayer_GB_avail) {
+				bayer_pattern = bayer_gb;
+			}
+			else
+			if (camera->bayer_inquiry_reg.bayer_pattern.bayer_GR_avail) {
+				bayer_pattern = bayer_gr;
+			}
+			else
+			if (camera->bayer_inquiry_reg.bayer_pattern.bayer_RG_avail) {
+				bayer_pattern = bayer_rg;
+			}
+		}
+
+		ret = bcrm_write8(camera, BCRM_IMG_BAYER_PATTERN_8RW, 
+			bayer_pattern);
 		if (unlikely(ret)) {
 			dev_err(dev,
 				"Failed to set bayer pattern to %x with %d\n",
@@ -2468,7 +2617,7 @@ static int avt_set_fmt_internal_bcrm(struct avt_dev *camera,
 	}
 
 
-	
+
 	if (format->which == V4L2_SUBDEV_FORMAT_TRY) {
 		avt_dbg(sd,  "format->which == V4L2_SUBDEV_FORMAT_TRY");
 		fmt = v4l2_subdev_get_try_format(sd, sd_state, format->pad);
@@ -2827,6 +2976,10 @@ static void __auto_region_update_limits(struct avt_dev *camera, int id,
 	__v4l2_ctrl_modify_range(ctrl, min, max, ctrl->step, max);
 }					
 
+static struct v4l2_event avt_pixelformat_change_event = {
+	.type = AVT_V4L2_EVENT_PIXELFORMAT_CHANGE,
+};
+
 static void avt_ctrl_changed(struct avt_dev *camera,
 			      const struct v4l2_ctrl * const ctrl)
 {
@@ -2992,6 +3145,50 @@ static void avt_ctrl_changed(struct avt_dev *camera,
 	case AVT_CID_POWER_SAVE_MODE: 
 		camera->power_save_mode = ctrl->val ? true : false;
 		break;
+
+	case V4L2_CID_HFLIP:
+	case V4L2_CID_VFLIP:
+	{
+		if (ctrl->id == V4L2_CID_HFLIP) {
+			camera->reverse_x_reg = (u8)ctrl->val;
+			avt_info(get_sd(camera), 
+				"V4L2_CID_HFLIP %d\n", camera->reverse_x_reg);
+		}
+		else if (ctrl->id == V4L2_CID_VFLIP) {
+			camera->reverse_y_reg = (u8)ctrl->val;
+			avt_info(get_sd(camera), 
+				"V4L2_CID_VFLIP %d\n", camera->reverse_y_reg);
+		}
+
+		/* Notify user if we are currently using a bayer format */
+		switch (camera->mbus_framefmt.code) {
+		case MEDIA_BUS_FMT_SRGGB8_1X8:
+		case MEDIA_BUS_FMT_SGRBG8_1X8:
+		case MEDIA_BUS_FMT_SBGGR8_1X8:
+		case MEDIA_BUS_FMT_SGBRG8_1X8:
+		case MEDIA_BUS_FMT_SRGGB10_1X10:
+		case MEDIA_BUS_FMT_SGRBG10_1X10:
+		case MEDIA_BUS_FMT_SBGGR10_1X10:
+		case MEDIA_BUS_FMT_SGBRG10_1X10:
+		case MEDIA_BUS_FMT_SRGGB12_1X12:
+		case MEDIA_BUS_FMT_SGRBG12_1X12:
+		case MEDIA_BUS_FMT_SBGGR12_1X12:
+		case MEDIA_BUS_FMT_SGBRG12_1X12:
+			avt_dbg(get_sd(camera), 
+				"Changed reverse x/y using "
+				"camera->mbus_framefmt.code 0x%04x. "
+				"Notify event AVT_V4L2_EVENT_PIXELFORMAT_CHANGE\n", 
+				camera->mbus_framefmt.code);
+
+			v4l2_subdev_notify_event(get_sd(camera),
+				&avt_pixelformat_change_event);
+
+			break;
+		}
+		break;
+
+	}
+
 	default:
 		break;
 	}
@@ -4294,6 +4491,8 @@ static int avt_core_ops_subscribe_event(struct v4l2_subdev *sd, struct v4l2_fh *
 		return v4l2_src_change_event_subdev_subscribe(sd, fh, sub);
 	case V4L2_EVENT_CTRL:
 		return v4l2_ctrl_subdev_subscribe_event(sd, fh, sub);
+	case AVT_V4L2_EVENT_PIXELFORMAT_CHANGE:
+    		return v4l2_event_subscribe(fh, sub, 0, NULL);
 	default:
 		return -EINVAL;
 	}
@@ -5607,6 +5806,10 @@ static int avt_probe(struct i2c_client *client)
 	camera->i2c_client = client;
 	camera->streamon_delay = 0;
 	camera->framerate_auto = true;
+	camera->reverse_x_reg = 0;
+        camera->reverse_y_reg = 0;
+	camera->mbus_fmt_code = 0;
+	camera->mbus_fmt_transformed = false;
 
 	camera->regmap = devm_regmap_init_i2c(client, &alvium_regmap_config);
 	if (IS_ERR(camera->regmap))

@@ -11,6 +11,8 @@
 
 #include <linux/videodev2.h>
 
+#define AVT_V4L2_EVENT_PIXELFORMAT_CHANGE	 (V4L2_EVENT_PRIVATE_START + 1)
+
 // TODO: Maybe define a more suitable base address like e.g. 0xf000
 #define AVT_CID_CAMERA_BASE V4L2_CID_CAMERA_CLASS_BASE + 40
 

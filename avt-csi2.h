@@ -33,7 +33,6 @@
 #define GCPRM_MAJOR_VERSION	0x0001
 #define GCPRM_MINOR_VERSION	0x0000
 
-
 struct avt_frame_param {
 	/* crop settings */
 	struct v4l2_rect r;
@@ -883,6 +882,8 @@ struct avt_dev
 	union bcrm_avail_mipi_reg avail_mipi_reg;
 	union bcrm_bayer_inquiry_reg bayer_inquiry_reg;
 	union bcrm_supported_lanecount_reg lane_capabilities;
+        u8 reverse_x_reg;
+        u8 reverse_y_reg;
 
 	struct avt_csi_mipi_mode_mapping *available_fmts;
 	uint32_t available_fmts_cnt;
@@ -894,6 +895,7 @@ struct avt_dev
 	struct workqueue_struct *bcrm_wrhs_queue;
 
 	u32 mbus_fmt_code;
+	bool mbus_fmt_transformed;
 	bool cross_update;
 	struct avt_frame_param frmp;
 	uint32_t streamon_delay;
