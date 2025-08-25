@@ -867,8 +867,8 @@ struct avt_dev
 	union bcrm_avail_mipi_reg avail_mipi_reg;
 	union bcrm_bayer_inquiry_reg bayer_inquiry_reg;
 	union bcrm_supported_lanecount_reg lane_capabilities;
-        uint8_t reverse_x_reg;
-        uint8_t reverse_y_reg;
+        u8 reverse_x_reg;
+        u8 reverse_y_reg;
 
 	struct avt_csi_mipi_mode_mapping *available_fmts;
 	uint32_t available_fmts_cnt;

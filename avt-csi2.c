@@ -2313,82 +2313,101 @@ static void transform_mbus_code(struct v4l2_subdev *sd,
 	bool transformed = true;
 	u32 old_code = fmt->code;
 
-	if (camera->mbus_fmt_transformed == false) {
-		// Store real mbus value
-		camera->mbus_fmt_code = fmt->code;
+	// No transformation needed if we are not using a bayer format
+	if (fmt->code != MEDIA_BUS_FMT_SRGGB8_1X8 &&
+		fmt->code != MEDIA_BUS_FMT_SGRBG8_1X8 &&
+		fmt->code != MEDIA_BUS_FMT_SBGGR8_1X8 &&
+		fmt->code != MEDIA_BUS_FMT_SGBRG8_1X8 &&
+		fmt->code != MEDIA_BUS_FMT_SRGGB10_1X10 &&
+		fmt->code != MEDIA_BUS_FMT_SGRBG10_1X10 &&
+		fmt->code != MEDIA_BUS_FMT_SBGGR10_1X10 &&
+		fmt->code != MEDIA_BUS_FMT_SGBRG10_1X10 &&
+		fmt->code != MEDIA_BUS_FMT_SRGGB12_1X12 &&
+		fmt->code != MEDIA_BUS_FMT_SGRBG12_1X12 &&
+		fmt->code != MEDIA_BUS_FMT_SBGGR12_1X12 &&
+		fmt->code != MEDIA_BUS_FMT_SGBRG12_1X12) {
+			transformed = false;
+			camera->mbus_fmt_code = fmt->code;
 	}
 	else {
-		fmt->code = camera->mbus_fmt_code;
+		if (camera->mbus_fmt_transformed == false) {
+			// Store real mbus value
+			camera->mbus_fmt_code = fmt->code;
+		}
+		else {
+			fmt->code = camera->mbus_fmt_code;
+		}
+
+		if (camera->reverse_x_reg == 0 && camera->reverse_y_reg == 1) {
+			/* Swap G and B for 8-bit, 10-bit, and 12-bit formats
+				RG -> REV_Y -> GB
+				GR -> REV_Y -> BG
+				BG -> REV_Y -> GR
+				GB -> REV_Y -> RG
+			*/
+			if (fmt->code == MEDIA_BUS_FMT_SRGGB8_1X8) { fmt->code = MEDIA_BUS_FMT_SGBRG8_1X8; }
+			else if (fmt->code == MEDIA_BUS_FMT_SGRBG8_1X8) { fmt->code = MEDIA_BUS_FMT_SBGGR8_1X8; }
+			else if (fmt->code == MEDIA_BUS_FMT_SBGGR8_1X8) { fmt->code = MEDIA_BUS_FMT_SGRBG8_1X8; }
+			else if (fmt->code == MEDIA_BUS_FMT_SGBRG8_1X8) { fmt->code = MEDIA_BUS_FMT_SRGGB8_1X8; }
+			else if (fmt->code == MEDIA_BUS_FMT_SRGGB10_1X10) { fmt->code = MEDIA_BUS_FMT_SGBRG10_1X10; }
+			else if (fmt->code == MEDIA_BUS_FMT_SGRBG10_1X10) { fmt->code = MEDIA_BUS_FMT_SBGGR10_1X10; }
+			else if (fmt->code == MEDIA_BUS_FMT_SBGGR10_1X10) { fmt->code = MEDIA_BUS_FMT_SGRBG10_1X10; }
+			else if (fmt->code == MEDIA_BUS_FMT_SGBRG10_1X10) { fmt->code = MEDIA_BUS_FMT_SRGGB10_1X10; }
+			else if (fmt->code == MEDIA_BUS_FMT_SRGGB12_1X12) { fmt->code = MEDIA_BUS_FMT_SGBRG12_1X12; }
+			else if (fmt->code == MEDIA_BUS_FMT_SGRBG12_1X12) { fmt->code = MEDIA_BUS_FMT_SBGGR12_1X12; }
+			else if (fmt->code == MEDIA_BUS_FMT_SBGGR12_1X12) { fmt->code = MEDIA_BUS_FMT_SGRBG12_1X12; }
+			else if (fmt->code == MEDIA_BUS_FMT_SGBRG12_1X12) { fmt->code = MEDIA_BUS_FMT_SRGGB12_1X12; }
+			else transformed = false;
+		} else if (camera->reverse_x_reg == 1 && camera->reverse_y_reg == 0) {
+			/* Swap R and B for 8-bit, 10-bit, and 12-bit formats
+				RG -> REV_X -> GR
+				GR -> REV_X -> RG
+				BG -> REV_X -> GB
+				GB -> REV_X -> BG
+			*/
+			if (fmt->code == MEDIA_BUS_FMT_SRGGB8_1X8) { fmt->code = MEDIA_BUS_FMT_SGRBG8_1X8; }
+			else if (fmt->code == MEDIA_BUS_FMT_SGRBG8_1X8) { fmt->code = MEDIA_BUS_FMT_SRGGB8_1X8; }
+			else if (fmt->code == MEDIA_BUS_FMT_SBGGR8_1X8) { fmt->code = MEDIA_BUS_FMT_SGBRG8_1X8; }
+			else if (fmt->code == MEDIA_BUS_FMT_SGBRG8_1X8) { fmt->code = MEDIA_BUS_FMT_SBGGR8_1X8; }
+			else if (fmt->code == MEDIA_BUS_FMT_SRGGB10_1X10) { fmt->code = MEDIA_BUS_FMT_SGRBG10_1X10; }
+			else if (fmt->code == MEDIA_BUS_FMT_SGRBG10_1X10) { fmt->code = MEDIA_BUS_FMT_SRGGB10_1X10; }
+			else if (fmt->code == MEDIA_BUS_FMT_SBGGR10_1X10) { fmt->code = MEDIA_BUS_FMT_SGBRG10_1X10; }
+			else if (fmt->code == MEDIA_BUS_FMT_SGBRG10_1X10) { fmt->code = MEDIA_BUS_FMT_SBGGR10_1X10; }
+			else if (fmt->code == MEDIA_BUS_FMT_SRGGB12_1X12) { fmt->code = MEDIA_BUS_FMT_SGRBG12_1X12; }
+			else if (fmt->code == MEDIA_BUS_FMT_SGRBG12_1X12) { fmt->code = MEDIA_BUS_FMT_SRGGB12_1X12; }
+			else if (fmt->code == MEDIA_BUS_FMT_SBGGR12_1X12) { fmt->code = MEDIA_BUS_FMT_SGBRG12_1X12; }
+			else if (fmt->code == MEDIA_BUS_FMT_SGBRG12_1X12) { fmt->code = MEDIA_BUS_FMT_SBGGR12_1X12; }
+			else transformed = false;
+		} else if (camera->reverse_x_reg == 1 && camera->reverse_y_reg == 1) {
+			/* Swap R and B, and G and B for 8-bit, 10-bit, and 12-bit formats
+				RG -> REV_XY -> BG
+				GR -> REV_XY -> GB
+				BG -> REV_XY -> RG
+				GB -> REV_XY -> GR
+			*/
+			if (fmt->code == MEDIA_BUS_FMT_SRGGB8_1X8) { fmt->code = MEDIA_BUS_FMT_SBGGR8_1X8; }
+			else if (fmt->code == MEDIA_BUS_FMT_SGRBG8_1X8) { fmt->code = MEDIA_BUS_FMT_SGBRG8_1X8; }
+			else if (fmt->code == MEDIA_BUS_FMT_SBGGR8_1X8) { fmt->code = MEDIA_BUS_FMT_SRGGB8_1X8; }
+			else if (fmt->code == MEDIA_BUS_FMT_SGBRG8_1X8) { fmt->code = MEDIA_BUS_FMT_SGRBG8_1X8; }
+			else if (fmt->code == MEDIA_BUS_FMT_SRGGB10_1X10) { fmt->code = MEDIA_BUS_FMT_SBGGR10_1X10; }
+			else if (fmt->code == MEDIA_BUS_FMT_SGRBG10_1X10) { fmt->code = MEDIA_BUS_FMT_SGBRG10_1X10; }
+			else if (fmt->code == MEDIA_BUS_FMT_SBGGR10_1X10) { fmt->code = MEDIA_BUS_FMT_SRGGB10_1X10; }
+			else if (fmt->code == MEDIA_BUS_FMT_SGBRG10_1X10) { fmt->code = MEDIA_BUS_FMT_SGRBG10_1X10; }
+			else if (fmt->code == MEDIA_BUS_FMT_SRGGB12_1X12) { fmt->code = MEDIA_BUS_FMT_SBGGR12_1X12; }
+			else if (fmt->code == MEDIA_BUS_FMT_SGRBG12_1X12) { fmt->code = MEDIA_BUS_FMT_SGBRG12_1X12; }
+			else if (fmt->code == MEDIA_BUS_FMT_SBGGR12_1X12) { fmt->code = MEDIA_BUS_FMT_SRGGB12_1X12; }
+			else if (fmt->code == MEDIA_BUS_FMT_SGBRG12_1X12) { fmt->code = MEDIA_BUS_FMT_SGRBG12_1X12; }
+			else transformed = false;
+		}
+		else {
+			transformed = false;
+		}
 	}
 
-	if (camera->reverse_x_reg == 0 && camera->reverse_y_reg == 1) {
-		/* Swap G and B for 8-bit, 10-bit, and 12-bit formats
-			RG -> REV_Y -> GB
-			GR -> REV_Y -> BG
-			BG -> REV_Y -> GR
-			GB -> REV_Y -> RG
-		*/
-		if (fmt->code == MEDIA_BUS_FMT_SRGGB8_1X8) { fmt->code = MEDIA_BUS_FMT_SGBRG8_1X8; }
-		else if (fmt->code == MEDIA_BUS_FMT_SGRBG8_1X8) { fmt->code = MEDIA_BUS_FMT_SBGGR8_1X8; }
-		else if (fmt->code == MEDIA_BUS_FMT_SBGGR8_1X8) { fmt->code = MEDIA_BUS_FMT_SGRBG8_1X8; }
-		else if (fmt->code == MEDIA_BUS_FMT_SGBRG8_1X8) { fmt->code = MEDIA_BUS_FMT_SRGGB8_1X8; }
-		else if (fmt->code == MEDIA_BUS_FMT_SRGGB10_1X10) { fmt->code = MEDIA_BUS_FMT_SGBRG10_1X10; }
-		else if (fmt->code == MEDIA_BUS_FMT_SGRBG10_1X10) { fmt->code = MEDIA_BUS_FMT_SBGGR10_1X10; }
-		else if (fmt->code == MEDIA_BUS_FMT_SBGGR10_1X10) { fmt->code = MEDIA_BUS_FMT_SGRBG10_1X10; }
-		else if (fmt->code == MEDIA_BUS_FMT_SGBRG10_1X10) { fmt->code = MEDIA_BUS_FMT_SRGGB10_1X10; }
-		else if (fmt->code == MEDIA_BUS_FMT_SRGGB12_1X12) { fmt->code = MEDIA_BUS_FMT_SGBRG12_1X12; }
-		else if (fmt->code == MEDIA_BUS_FMT_SGRBG12_1X12) { fmt->code = MEDIA_BUS_FMT_SBGGR12_1X12; }
-		else if (fmt->code == MEDIA_BUS_FMT_SBGGR12_1X12) { fmt->code = MEDIA_BUS_FMT_SGRBG12_1X12; }
-		else if (fmt->code == MEDIA_BUS_FMT_SGBRG12_1X12) { fmt->code = MEDIA_BUS_FMT_SRGGB12_1X12; }
-		else transformed = false;
-	} else if (camera->reverse_x_reg == 1 && camera->reverse_y_reg == 0) {
-		/* Swap R and B for 8-bit, 10-bit, and 12-bit formats
-			RG -> REV_X -> GR
-			GR -> REV_X -> RG
-			BG -> REV_X -> GB
-			GB -> REV_X -> BG
-		*/
-		if (fmt->code == MEDIA_BUS_FMT_SRGGB8_1X8) { fmt->code = MEDIA_BUS_FMT_SGRBG8_1X8; }
-		else if (fmt->code == MEDIA_BUS_FMT_SGRBG8_1X8) { fmt->code = MEDIA_BUS_FMT_SRGGB8_1X8; }
-		else if (fmt->code == MEDIA_BUS_FMT_SBGGR8_1X8) { fmt->code = MEDIA_BUS_FMT_SGBRG8_1X8; }
-		else if (fmt->code == MEDIA_BUS_FMT_SGBRG8_1X8) { fmt->code = MEDIA_BUS_FMT_SBGGR8_1X8; }
-		else if (fmt->code == MEDIA_BUS_FMT_SRGGB10_1X10) { fmt->code = MEDIA_BUS_FMT_SGRBG10_1X10; }
-		else if (fmt->code == MEDIA_BUS_FMT_SGRBG10_1X10) { fmt->code = MEDIA_BUS_FMT_SRGGB10_1X10; }
-		else if (fmt->code == MEDIA_BUS_FMT_SBGGR10_1X10) { fmt->code = MEDIA_BUS_FMT_SGBRG10_1X10; }
-		else if (fmt->code == MEDIA_BUS_FMT_SGBRG10_1X10) { fmt->code = MEDIA_BUS_FMT_SBGGR10_1X10; }
-		else if (fmt->code == MEDIA_BUS_FMT_SRGGB12_1X12) { fmt->code = MEDIA_BUS_FMT_SGRBG12_1X12; }
-		else if (fmt->code == MEDIA_BUS_FMT_SGRBG12_1X12) { fmt->code = MEDIA_BUS_FMT_SRGGB12_1X12; }
-		else if (fmt->code == MEDIA_BUS_FMT_SBGGR12_1X12) { fmt->code = MEDIA_BUS_FMT_SGBRG12_1X12; }
-		else if (fmt->code == MEDIA_BUS_FMT_SGBRG12_1X12) { fmt->code = MEDIA_BUS_FMT_SBGGR12_1X12; }
-		else transformed = false;
-	} else if (camera->reverse_x_reg == 1 && camera->reverse_y_reg == 1) {
-		/* Swap R and B, and G and B for 8-bit, 10-bit, and 12-bit formats
-			RG -> REV_XY -> BG
-			GR -> REV_XY -> GB
-			BG -> REV_XY -> RG
-			GB -> REV_XY -> GR
-		*/
-		if (fmt->code == MEDIA_BUS_FMT_SRGGB8_1X8) { fmt->code = MEDIA_BUS_FMT_SBGGR8_1X8; }
-		else if (fmt->code == MEDIA_BUS_FMT_SGRBG8_1X8) { fmt->code = MEDIA_BUS_FMT_SGBRG8_1X8; }
-		else if (fmt->code == MEDIA_BUS_FMT_SBGGR8_1X8) { fmt->code = MEDIA_BUS_FMT_SRGGB8_1X8; }
-		else if (fmt->code == MEDIA_BUS_FMT_SGBRG8_1X8) { fmt->code = MEDIA_BUS_FMT_SGRBG8_1X8; }
-		else if (fmt->code == MEDIA_BUS_FMT_SRGGB10_1X10) { fmt->code = MEDIA_BUS_FMT_SBGGR10_1X10; }
-		else if (fmt->code == MEDIA_BUS_FMT_SGRBG10_1X10) { fmt->code = MEDIA_BUS_FMT_SGBRG10_1X10; }
-		else if (fmt->code == MEDIA_BUS_FMT_SBGGR10_1X10) { fmt->code = MEDIA_BUS_FMT_SRGGB10_1X10; }
-		else if (fmt->code == MEDIA_BUS_FMT_SGBRG10_1X10) { fmt->code = MEDIA_BUS_FMT_SGRBG10_1X10; }
-		else if (fmt->code == MEDIA_BUS_FMT_SRGGB12_1X12) { fmt->code = MEDIA_BUS_FMT_SBGGR12_1X12; }
-		else if (fmt->code == MEDIA_BUS_FMT_SGRBG12_1X12) { fmt->code = MEDIA_BUS_FMT_SGBRG12_1X12; }
-		else if (fmt->code == MEDIA_BUS_FMT_SBGGR12_1X12) { fmt->code = MEDIA_BUS_FMT_SRGGB12_1X12; }
-		else if (fmt->code == MEDIA_BUS_FMT_SGBRG12_1X12) { fmt->code = MEDIA_BUS_FMT_SGRBG12_1X12; }
-		else transformed = false;
-	}
-	else {
-		transformed = false;
-	}
-
-	avt_dbg(get_sd(camera), "fmt->code 0x%04X -> 0x%04X. rev_x %d rev_y %d", 
+	avt_dbg(get_sd(camera), "fmt->code 0x%04X -> 0x%04X. rev_x %d rev_y %d, transformed %d", 
 		old_code, fmt->code, 
-		camera->reverse_x_reg, camera->reverse_y_reg); 
+		camera->reverse_x_reg, camera->reverse_y_reg,
+		transformed); 
 
 	camera->mbus_fmt_transformed = transformed;
 }
@@ -2528,6 +2547,7 @@ static int avt_write_media_bus_format(struct avt_dev *camera, int code)
 	}
 
 	fmt_mapping = &camera->available_fmts[idx];
+	bayer_pattern = fmt_mapping->bayer_pattern;
 
 	ret = bcrm_write32(camera, BCRM_IMG_MIPI_DATA_FORMAT_32RW, 
 		fmt_mapping->mipi_fmt);
@@ -2539,25 +2559,31 @@ static int avt_write_media_bus_format(struct avt_dev *camera, int code)
 		goto exit;
 	}
 
-	if (fmt_mapping->bayer_pattern != bayer_ignore &&
-	    fmt_mapping->bayer_pattern != monochrome) {
+	dev_info(dev, "fmt_mapping->bayer_pattern %d, rev_x %d rev_y %d, transformed %d", 
+		fmt_mapping->bayer_pattern, 
+		camera->reverse_x_reg, camera->reverse_y_reg,
+		camera->mbus_fmt_transformed); 
 
-		if (camera->bayer_inquiry_reg.bayer_pattern.bayer_BG_avail) {
-			bayer_pattern = bayer_bg;
+
+	if (fmt_mapping->bayer_pattern != bayer_ignore) {
+		if (fmt_mapping->bayer_pattern != monochrome) {
+			if (camera->bayer_inquiry_reg.bayer_pattern.bayer_BG_avail) {
+				bayer_pattern = bayer_bg;
+			}
+			else
+			if (camera->bayer_inquiry_reg.bayer_pattern.bayer_GB_avail) {
+				bayer_pattern = bayer_gb;
+			}
+			else
+			if (camera->bayer_inquiry_reg.bayer_pattern.bayer_GR_avail) {
+				bayer_pattern = bayer_gr;
+			}
+			else
+			if (camera->bayer_inquiry_reg.bayer_pattern.bayer_RG_avail) {
+				bayer_pattern = bayer_rg;
+			}
 		}
-		else
-		if (camera->bayer_inquiry_reg.bayer_pattern.bayer_GB_avail) {
-			bayer_pattern = bayer_gb;
-		}
-		else
-		if (camera->bayer_inquiry_reg.bayer_pattern.bayer_GR_avail) {
-			bayer_pattern = bayer_gr;
-		}
-		else
-		if (camera->bayer_inquiry_reg.bayer_pattern.bayer_RG_avail) {
-			bayer_pattern = bayer_rg;
-		}
-		
+
 		ret = bcrm_write8(camera, BCRM_IMG_BAYER_PATTERN_8RW, 
 			bayer_pattern);
 		if (unlikely(ret)) {
@@ -2608,7 +2634,7 @@ static int avt_set_fmt_internal_bcrm(struct avt_dev *camera,
 			if (ret < 0)
 				goto out;
 		}
-		
+
 		if (mbus_fmt->code != camera->mbus_framefmt.code) {
 			ret = avt_write_media_bus_format(camera, mbus_fmt->code);
 
@@ -2819,7 +2845,7 @@ static int avt_g_volatile_ctrl(struct v4l2_ctrl *ctrl)
 	const struct avt_ctrl_mapping * const ctrl_mapping = ctrl->priv;
 	struct avt_dev *camera = container_of(ctrl->handler, struct avt_dev, v4l2_ctrl_hdl);
 
-  	avt_dbg(get_sd(camera), "ctrl->id %d", ctrl->id);
+	avt_dbg(get_sd(camera), "ctrl->id %d", ctrl->id);
 
 	if (camera->mode != AVT_BCRM_MODE) {
 		return -EBUSY;
@@ -3124,12 +3150,22 @@ static void avt_ctrl_changed(struct avt_dev *camera,
 		camera->power_save_mode = ctrl->val ? true : false;
 		break;
 
-        case V4L2_CID_HFLIP:
-        case V4L2_CID_VFLIP:
-        {
+	case V4L2_CID_HFLIP:
+	case V4L2_CID_VFLIP:
+	{
+		if (ctrl->id == V4L2_CID_HFLIP) {
+			camera->reverse_x_reg = (u8)ctrl->val;
+			avt_info(get_sd(camera), 
+				"V4L2_CID_HFLIP %d\n", camera->reverse_x_reg);
+		}
+		else if (ctrl->id == V4L2_CID_VFLIP) {
+			camera->reverse_y_reg = (u8)ctrl->val;
+			avt_info(get_sd(camera), 
+				"V4L2_CID_VFLIP %d\n", camera->reverse_y_reg);
+		}
+
 		/* Notify user if we are currently using a bayer format */
-		switch (camera->mbus_framefmt.code)
-		{
+		switch (camera->mbus_framefmt.code) {
 		case MEDIA_BUS_FMT_SRGGB8_1X8:
 		case MEDIA_BUS_FMT_SGRBG8_1X8:
 		case MEDIA_BUS_FMT_SBGGR8_1X8:
@@ -3153,9 +3189,9 @@ static void avt_ctrl_changed(struct avt_dev *camera,
 
 			break;
 		}
-                break;
+		break;
 
-        }
+	}
 
 	default:
 		break;
@@ -3186,17 +3222,6 @@ static int write_ctrl_value(struct avt_dev *camera,struct v4l2_ctrl *ctrl,
 
 	if (ret < 0)
 		return ret;
-
-        if (ctrl->id == V4L2_CID_HFLIP) {
-                camera->reverse_x_reg = (uint8_t)temp;
-		avt_info(get_sd(camera), 
-			"V4L2_CID_HFLIP %d\n", camera->reverse_x_reg);
-        }
-        else if (ctrl->id == V4L2_CID_VFLIP) {
-                camera->reverse_y_reg = (uint8_t)temp;
-		avt_info(get_sd(camera), 
-			"V4L2_CID_VFLIP %d\n", camera->reverse_y_reg);
-        }
 
 	if (ctrl_mapping->avt_flags & AVT_CTRL_FLAG_READ_BACK) {
 		ret =  avt_update_ctrl_value(camera, ctrl, ctrl_mapping);
