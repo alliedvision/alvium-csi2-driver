@@ -1672,7 +1672,7 @@ static struct attribute_group avt_attr_grp = {
 static int avt_get_fmt_available(struct i2c_client *client)
 {
 	struct avt_dev *camera = client_to_avt_dev(client);
-        u8 bayer_val = 0;
+	u8 bayer_val = 0;
 	int ret;
 	u64 avail_mipi = 0;
 
@@ -1751,7 +1751,7 @@ static int avt_init_avail_formats(struct v4l2_subdev *sd)
 	struct avt_dev *camera = to_avt_dev(sd);
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
 	struct avt_csi_mipi_mode_mapping *pfmt;
-        union bcrm_bayer_inquiry_reg old_bayer;
+	union bcrm_bayer_inquiry_reg old_bayer;
 
 	if (sd == NULL)
 	{
