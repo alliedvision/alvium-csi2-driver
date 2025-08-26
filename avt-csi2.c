@@ -1287,7 +1287,7 @@ static ssize_t model_name_show(struct device *dev,
 }
 
 static ssize_t family_name_show(struct device *dev,
-								struct device_attribute *attr, char *buf)
+				struct device_attribute *attr, char *buf)
 {
 	struct avt_dev *camera = client_to_avt_dev(to_i2c_client(dev));
 	ssize_t ret;
@@ -1298,18 +1298,18 @@ static ssize_t family_name_show(struct device *dev,
 }
 
 static ssize_t lane_count_show(struct device *dev,
-							   struct device_attribute *attr, char *buf)
+			       struct device_attribute *attr, char *buf)
 {
 	struct avt_dev *camera = client_to_avt_dev(to_i2c_client(dev));
 	ssize_t ret;
 
-	ret = sprintf(buf, "%d\n", camera->v4l2_fwnode_ep.bus.mipi_csi2.num_data_lanes);
+	ret = sprintf(buf, "%d\n", camera->num_lanes);
 
 	return ret;
 }
 
 static ssize_t lane_capabilities_show(struct device *dev,
-									  struct device_attribute *attr, char *buf)
+				      struct device_attribute *attr, char *buf)
 {
 	struct avt_dev *camera = client_to_avt_dev(to_i2c_client(dev));
 
@@ -1404,7 +1404,7 @@ static ssize_t mipiclk_show(struct device *dev,
 
 	struct avt_dev *camera = client_to_avt_dev(to_i2c_client(dev));
 
-	ret = sysfs_emit(buf, "%llu\n", camera->v4l2_fwnode_ep.link_frequencies[0]);
+	ret = sysfs_emit(buf, "%llu\n", camera->link_freq);
 
 	return ret;
 }
@@ -1452,7 +1452,7 @@ static ssize_t mipiclk_store(struct device *dev,
 				 __func__, __LINE__, avt_next_clk, avt_current_clk);
 
 		if (0 < avt_current_clk)
-			camera->v4l2_fwnode_ep.link_frequencies[0] = avt_current_clk;
+			camera->link_freq = avt_current_clk;
 	}
 
 out:
@@ -3936,21 +3936,23 @@ static void avt_ctrl_added(struct avt_dev *camera,struct v4l2_ctrl *ctrl)
 
 static int avt_init_controls(struct avt_dev *camera)
 {
+	struct v4l2_subdev *sd = get_sd(camera);
+	struct v4l2_ctrl_handler *hdl = &camera->v4l2_ctrl_hdl;
 	struct v4l2_ctrl_config config;
 	struct v4l2_ctrl *ctrl;
 	int ret;
 	int i, j;
 
-	avt_dbg(get_sd(camera), "code uses now v4l2_ctrl_new_std and v4l2_query_ext_ctrl (VIDIOC_QUERY_EXT_CTRL / s64) ");
+	avt_dbg(sd, "code uses now v4l2_ctrl_new_std and v4l2_query_ext_ctrl (VIDIOC_QUERY_EXT_CTRL / s64) ");
 
-	ret = v4l2_ctrl_handler_init(&camera->v4l2_ctrl_hdl, ARRAY_SIZE(avt_ctrl_mappings));
+	ret = v4l2_ctrl_handler_init(hdl, ARRAY_SIZE(avt_ctrl_mappings));
 	if (ret < 0)
 	{
-		avt_err(get_sd(camera), "v4l2_ctrl_handler_init Failed");
+		avt_err(sd, "v4l2_ctrl_handler_init Failed");
 		goto free_ctrls;
 	}
 	/* we can use our own mutex for the ctrl lock */
-	camera->v4l2_ctrl_hdl.lock = &camera->lock;
+	hdl->lock = &camera->lock;
 
 	for (i = 0, j = 0; j < ARRAY_SIZE(avt_ctrl_mappings); ++j)
 	{
@@ -3960,56 +3962,55 @@ static int avt_init_controls(struct avt_dev *camera)
 		const u64 inq_reg = camera->feature_inquiry_reg.value;
 
 		if (mask && ((inq_reg & mask) == 0)) {
-			avt_info(get_sd(camera),
-				 "Control %s (0x%x) not supported by camera\n",
+			avt_info(sd, "Control %s (0x%x) not supported by camera\n",
 				 ctrl_mapping->name,ctrl_mapping->id);
 			continue;
 		}
 
 		CLEAR(config);
 
-		avt_dbg(get_sd(camera), "Init ctrl %s (0x%x)\n",
+		avt_dbg(sd, "Init ctrl %s (0x%x)\n",
 			 ctrl_mapping->name,ctrl_mapping->id);
 
 
 		avt_fill_ctrl_config(camera,&config,ctrl_mapping);
 
-
-		camera->avt_ctrl_cfg[i] = config;
-
-		ctrl = v4l2_ctrl_new_custom(&camera->v4l2_ctrl_hdl,
-					    &config,(void*)ctrl_mapping);
+		ctrl = v4l2_ctrl_new_custom(hdl, &config,(void*)ctrl_mapping);
 
 		if (ctrl == NULL)
 		{
-			avt_err(get_sd(camera),
-				"Failed to init %s ctrl %d 0x%08x\n",
-				camera->avt_ctrl_cfg[i].name,
-				camera->v4l2_ctrl_hdl.error,
-				camera->v4l2_ctrl_hdl.error);
+			avt_err(sd, "Failed to init %s ctrl %d 0x%08x\n",
+				config.name, hdl->error, hdl->error);
 
-			if (camera->v4l2_ctrl_hdl.error == -ERANGE) {
-				avt_err(get_sd(camera),
+			if (hdl->error == -ERANGE) {
+				avt_err(sd,
 					"Invalid ctrl range min: %lld max: %lld "
 					"step: %lld def: %lld",
 					config.min,config.max,config.step,config.def);
 			}
 
 	    		//Clear error
-			camera->v4l2_ctrl_hdl.error = 0;
+			hdl->error = 0;
 			continue;
 		}
 
 
-		avt_ctrl_added(camera,ctrl);
+		avt_ctrl_added(camera, ctrl);
 
 		camera->avt_ctrls[i] = ctrl;
 		i++;
 	}
 
+	ctrl = v4l2_ctrl_new_int_menu(hdl, &avt_ctrl_ops, V4L2_CID_LINK_FREQ, 
+				      0, 0, &camera->link_freq);
+
+	if (ctrl) 
+		ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
+	
+
 	return ret;
 free_ctrls:
-	v4l2_ctrl_handler_free(&camera->v4l2_ctrl_hdl);
+	v4l2_ctrl_handler_free(hdl);
 	return ret;
 }
 
@@ -4982,12 +4983,11 @@ static int avt_get_sensor_capabilities(struct v4l2_subdev *sd)
 {
 	struct avt_dev *camera = to_avt_dev(sd);
 	struct i2c_client *client = camera->i2c_client;
-
 	int ret = 0;
+
 	u64 value64;
 	u8 avt_supported_lane_mask = 0;
 	u32 avt_current_clk = 0;
-	u32 clk;
 	u8 current_mode;
 	u32 temp;
 
@@ -5030,18 +5030,16 @@ static int avt_get_sensor_capabilities(struct v4l2_subdev *sd)
 
 	avt_dbg(sd, "supported lane config: %x", (uint32_t)avt_supported_lane_mask);
 
-	if (!(test_bit(camera->v4l2_fwnode_ep.bus.mipi_csi2.num_data_lanes - 1, (const long *)(&avt_supported_lane_mask))))
+	if (!(test_bit(camera->num_lanes - 1, (const long *)(&avt_supported_lane_mask))))
 	{
-		avt_err(sd, "requested number of lanes (%u) not supported by this camera!\n",
-				camera->v4l2_fwnode_ep.bus.mipi_csi2.num_data_lanes);
+		avt_err(sd, 
+			"requested number of lanes (%u) not supported by this camera!\n",
+			camera->num_lanes);
 		return -EINVAL;
 	}
 
-	avt_dbg(sd, "request %u lanes.\n", camera->v4l2_fwnode_ep.bus.mipi_csi2.num_data_lanes);
-
 	/* Set number of lanes */
-	ret = bcrm_write8(camera, BCRM_CSI2_LANE_COUNT_8RW,
-		camera->v4l2_fwnode_ep.bus.mipi_csi2.num_data_lanes);
+	ret = bcrm_write8(camera, BCRM_CSI2_LANE_COUNT_8RW, camera->num_lanes);
 	
 	if (ret < 0)
 	{
@@ -5065,27 +5063,20 @@ static int avt_get_sensor_capabilities(struct v4l2_subdev *sd)
 	}
 
 	avt_info(sd, "csi clocks\n"
-				 "   camera range:           %9d:%9d Hz\n"
-				 "   dts nr_of_link_frequencies %d\n"
-				 "   dts link_frequencies[0] %9lld Hz\n",
-			 camera->avt_min_clk, camera->avt_max_clk,
-			 camera->v4l2_fwnode_ep.nr_of_link_frequencies,
-			 camera->v4l2_fwnode_ep.link_frequencies[0]);
+		 "   camera range:           %9d:%9d Hz\n"
+		 "   requested mipi clock    %lld",
+		 camera->avt_min_clk, camera->avt_max_clk, camera->link_freq);
 
-	if (camera->v4l2_fwnode_ep.link_frequencies[0] < camera->avt_min_clk ||
-		camera->v4l2_fwnode_ep.link_frequencies[0] > camera->avt_max_clk)
+	if (camera->link_freq < camera->avt_min_clk ||
+		camera->link_freq > camera->avt_max_clk)
 	{
 
 		avt_err(sd, "unsupported csi clock frequency (%lld Hz, range: %d:%d Hz)!\n",
-				camera->v4l2_fwnode_ep.link_frequencies[0],
-				camera->avt_min_clk,
-				camera->avt_max_clk);
+			camera->link_freq, camera->avt_min_clk, camera->avt_max_clk);
 		return -EINVAL;
 	}
 
-	clk = camera->v4l2_fwnode_ep.link_frequencies[0];
-
-	ret = bcrm_write32(camera, BCRM_CSI2_CLOCK_32RW, clk);	
+	ret = bcrm_write32(camera, BCRM_CSI2_CLOCK_32RW, camera->link_freq);	
 	if (ret < 0)
 	{
 		avt_err(sd, "regmap_write BCRM_CSI2_CLOCK_32RW failed (%d)\n", ret);
@@ -5100,10 +5091,12 @@ static int avt_get_sensor_capabilities(struct v4l2_subdev *sd)
 	}
 
 	avt_dbg(sd, "csi clock frequency (req: %lld Hz, cur: %d Hz, range: %d:%d Hz)!\n",
-			camera->v4l2_fwnode_ep.link_frequencies[0],
+			camera->link_freq,
 			avt_current_clk,
 			camera->avt_min_clk,
 			camera->avt_max_clk);
+
+	camera->link_freq = avt_current_clk;
 
 	avt_info(sd, "csi clock read from camera: %u Hz\n", avt_current_clk);
 
@@ -5209,55 +5202,51 @@ static int avt_get_sensor_capabilities(struct v4l2_subdev *sd)
 static int avt_csi2_check_mipicfg(struct avt_dev *camera)
 {
 	struct i2c_client *client = camera->i2c_client;
+	struct device *dev = &client->dev;
+	struct v4l2_fwnode_endpoint vep;
 	int ret = -EINVAL;
 	int i;
 
-	camera->v4l2_fwnode_ep.bus_type = V4L2_MBUS_CSI2_DPHY;
 
-	camera->endpoint = fwnode_graph_get_next_endpoint(dev_fwnode(&client->dev), NULL);
+	camera->endpoint = fwnode_graph_get_next_endpoint(dev_fwnode(dev), NULL);
 	if (!camera->endpoint)
 	{
-		dev_err(&client->dev, "endpoint node not found\n");
+		dev_err(dev, "endpoint node not found\n");
 		return -EINVAL;
 	}
 
-	if (v4l2_fwnode_endpoint_alloc_parse(camera->endpoint, &camera->v4l2_fwnode_ep))
+	vep.bus_type = V4L2_MBUS_CSI2_DPHY;
+	if (v4l2_fwnode_endpoint_alloc_parse(camera->endpoint, &vep))
 	{
-		dev_err(&client->dev, "could not parse endpoint\n");
+		dev_err(dev, "failed to parse endpoint\n");
 		goto error_out;
 	}
 
-	/* Check the number of MIPI CSI2 data lanes */
-	if (camera->v4l2_fwnode_ep.bus.mipi_csi2.num_data_lanes > 4)
-	{
-		dev_err(&client->dev, "%s[%d]: more than 4 data lanes are currently not supported\n",
-				__func__, __LINE__);
+	if (vep.bus.mipi_csi2.num_data_lanes > 4) {
+		dev_err(dev, "only up to 4 lanes supported\n");
 		goto error_out;
 	}
 
-	dev_info(&client->dev, "%s[%d]: ep_cfg.bus.mipi_csi2.num_data_lanes % d\n",
-			 __func__, __LINE__, camera->v4l2_fwnode_ep.bus.mipi_csi2.num_data_lanes);
-	dev_info(&client->dev, "%s[%d]: v4l2_fwnode_ep.nr_of_link_frequencies %d",
-			 __func__, __LINE__,
-			 camera->v4l2_fwnode_ep.nr_of_link_frequencies);
+	for (i = 0; i < vep.bus.mipi_csi2.num_data_lanes; i++) {
+		if (vep.bus.mipi_csi2.data_lanes[i] != i + 1) {
+			dev_err(dev, "data lane mapping not supported\n");
+			goto error_out;
+		}
+	}
 
-	for (i = 0; i < camera->v4l2_fwnode_ep.nr_of_link_frequencies; i++)
-		dev_info(&client->dev, "%s[%d]: v4l2_fwnode_ep.link-frequencies %u value %llu\n", __func__, __LINE__, i,
-				 camera->v4l2_fwnode_ep.link_frequencies[i]);
-
-	/* Check the link frequency set in device tree */
-	if (1 > camera->v4l2_fwnode_ep.nr_of_link_frequencies)
-	{
-		dev_err(&client->dev, "%s[%d]: link-frequency property not found in DT\n", __func__, __LINE__);
+	if (vep.nr_of_link_frequencies != 1) {
+		dev_err(dev, "invalid number of link frequencies specifed\n");
 		goto error_out;
 	}
+
+	camera->num_lanes = vep.bus.mipi_csi2.num_data_lanes;
+	camera->link_freq = vep.link_frequencies[0];
 
 	ret = 0;
 	return ret;
 
 error_out:
-	dev_err(&client->dev, "%s[%d]: camera->v4l2_fwnode_ep invalid from now on!!", __func__, __LINE__);
-	v4l2_fwnode_endpoint_free(&camera->v4l2_fwnode_ep);
+	v4l2_fwnode_endpoint_free(&vep);
 	fwnode_handle_put(camera->endpoint);
 
 	return ret;
@@ -5729,6 +5718,8 @@ static int avt_mode_attr_init(struct avt_dev *camera)
 	return ret;
 }
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0))
+
 static int avt_flash_notify_bound(struct v4l2_async_notifier *notifier,
 				  struct v4l2_subdev *sd,
 				  struct v4l2_async_subdev *asd)
@@ -5745,23 +5736,11 @@ static const struct v4l2_async_notifier_operations avt_flash_notify_ops = {
 	.bound = avt_flash_notify_bound
 };
 
-static int avt_flash_init(struct avt_dev *camera)
+static int avt_flash_notifier_setup(struct v4l2_subdev *sd, 
+				    struct device_node *node)
 {
-	struct device *dev = &camera->i2c_client->dev;
 	struct v4l2_async_notifier *notifier = &camera->flash_notifier;
-	struct device_node *node;
 	struct v4l2_async_subdev *asd;
-	int ret = 0;
-
-	if (!dev->of_node)
-		return -EINVAL;
-
-	node = of_parse_phandle(dev->of_node, "flash", 0);
-	if (!node) {
-		dev_info(dev, "Failed to get flash node\n");
-		return 0;
-	}
-
 	v4l2_async_notifier_init(notifier);
 
 	asd = v4l2_async_notifier_add_fwnode_subdev(
@@ -5778,7 +5757,7 @@ static int avt_flash_init(struct avt_dev *camera)
 
 	notifier->ops = &avt_flash_notify_ops;
 
-	ret = v4l2_async_subdev_notifier_register(get_sd(camera), notifier);
+	ret = v4l2_async_subdev_notifier_register(sd, notifier);
 	if (ret) {
 		dev_err(dev, "subdev notifier register failed with %d", ret);
 		return ret;
@@ -5787,6 +5766,31 @@ static int avt_flash_init(struct avt_dev *camera)
 	return 0;
 }
 
+#else
+static int avt_flash_notifier_setup(struct v4l2_subdev *sd, 
+				    struct device_node *node) 
+{
+	return -ENOTSUPP;
+}
+#endif
+
+
+static int avt_flash_init(struct avt_dev *camera)
+{
+	struct device *dev = &camera->i2c_client->dev;
+	struct device_node *node;
+
+	if (!dev->of_node)
+		return -EINVAL;
+
+	node = of_parse_phandle(dev->of_node, "flash", 0);
+	if (!node) {
+		dev_info(dev, "Failed to get flash node\n");
+		return 0;
+	}
+
+	return avt_flash_notifier_setup(get_sd(camera), node);
+}
 
 static int avt_probe(struct i2c_client *client)
 {
@@ -5865,13 +5869,6 @@ static int avt_probe(struct i2c_client *client)
 		dev_err(dev, "%s[%d]: failed to parse endpoint\n", __func__, __LINE__);
 		ret = -EINVAL;
 		goto err_exit;
-	}
-
-	if (camera->v4l2_fwnode_ep.bus_type != V4L2_MBUS_CSI2_DPHY) {
-		dev_err(dev, "%s[%d]: invalid bus type %d specified\n",
-			__func__, __LINE__, camera->v4l2_fwnode_ep.bus_type);
-		ret = -EINVAL;
-		goto fwnode_cleanup;
 	}
 
 #ifdef NVIDIA
@@ -6101,7 +6098,6 @@ entity_cleanup:
 fwnode_cleanup:
 	if (camera->bcrm_wrhs_queue)
 		destroy_workqueue(camera->bcrm_wrhs_queue);
-	v4l2_fwnode_endpoint_free(&camera->v4l2_fwnode_ep);
 	fwnode_handle_put(camera->endpoint);
 
 err_exit:
@@ -6123,9 +6119,6 @@ static void avt_remove(struct i2c_client *client)
 	struct avt_dev *camera = to_avt_dev(sd);
 	struct device *dev = &client->dev;
 
-	avt_dbg(sd, "+");
-
-	v4l2_fwnode_endpoint_free(&camera->v4l2_fwnode_ep);
 	fwnode_handle_put(camera->endpoint);
 
 	device_remove_bin_file(dev, camera->i2c_xfer_attr);
