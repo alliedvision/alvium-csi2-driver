@@ -5736,11 +5736,16 @@ static const struct v4l2_async_notifier_operations avt_flash_notify_ops = {
 	.bound = avt_flash_notify_bound
 };
 
-static int avt_flash_notifier_setup(struct v4l2_subdev *sd, 
+static int avt_flash_notifier_setup(struct avt_dev *camera,
 				    struct device_node *node)
 {
+	struct v4l2_subdev *sd = get_sd(camera);
 	struct v4l2_async_notifier *notifier = &camera->flash_notifier;
+	struct device *dev = &camera->i2c_client->dev;
 	struct v4l2_async_subdev *asd;
+	int ret = 0;
+
+
 	v4l2_async_notifier_init(notifier);
 
 	asd = v4l2_async_notifier_add_fwnode_subdev(
@@ -5767,7 +5772,7 @@ static int avt_flash_notifier_setup(struct v4l2_subdev *sd,
 }
 
 #else
-static int avt_flash_notifier_setup(struct v4l2_subdev *sd, 
+static int avt_flash_notifier_setup(struct avt_dev *camera,
 				    struct device_node *node) 
 {
 	return -ENOTSUPP;
@@ -5789,7 +5794,7 @@ static int avt_flash_init(struct avt_dev *camera)
 		return 0;
 	}
 
-	return avt_flash_notifier_setup(get_sd(camera), node);
+	return avt_flash_notifier_setup(camera, node);
 }
 
 static int avt_probe(struct i2c_client *client)
