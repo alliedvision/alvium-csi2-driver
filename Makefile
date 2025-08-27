@@ -1,6 +1,6 @@
 SRC := $(shell pwd)
 
-#CFLAGS += -DISP8000NANO_V1802
+
 all:
 	$(MAKE) -C $(KERNEL_SRC) M=$(SRC)
 
