@@ -4680,7 +4680,6 @@ int avt_pad_ops_get_selection(struct v4l2_subdev *sd,
 			       struct v4l2_subdev_selection *sel)
 {
 	struct avt_dev *camera = to_avt_dev(sd);
-	struct i2c_client *client = camera->i2c_client;
 
 	if (sel->pad > 0)
 		return -EINVAL;
@@ -4960,7 +4959,7 @@ static int avt_get_camera_capabilities(struct v4l2_subdev *sd)
 	if (!(test_bit(camera->num_lanes - 1, (const long *)(&avt_supported_lane_mask))))
 	{
 		avt_err(sd, "requested number of lanes (%u) not supported by camera!\n",
-				camera->v4l2_fwnode_ep.bus.mipi_csi2.num_data_lanes);
+				camera->num_lanes);
 		return -EINVAL;
 	}
 
@@ -4988,13 +4987,10 @@ static int avt_get_camera_capabilities(struct v4l2_subdev *sd)
 		return ret;
 	}
 
-	avt_info(sd, "csi clocks\n \
-				    camera range:           %9d:%9d Hz \
-				    dts nr_of_link_frequencies %d\n \
-				    dts link_frequencies[0] %9lld Hz\n",
-			 camera->avt_min_clk, camera->avt_max_clk,
-			 camera->v4l2_fwnode_ep.nr_of_link_frequencies,
-			 camera->v4l2_fwnode_ep.link_frequencies[0]);
+	avt_info(sd, "Csi clocks\n"
+		     "Camera range:           %9d:%9d Hz\n"
+		     "Requested mipi clock    %lld",
+		      camera->avt_min_clk, camera->avt_max_clk, camera->link_freq);
 
 	if (camera->link_freq < camera->avt_min_clk ||
 		camera->link_freq > camera->avt_max_clk)
@@ -5654,11 +5650,16 @@ static const struct v4l2_async_notifier_operations avt_flash_notify_ops = {
 	.bound = avt_flash_notify_bound
 };
 
-static int avt_flash_notifier_setup(struct v4l2_subdev *sd, 
+static int avt_flash_notifier_setup(struct avt_dev *camera,
 				    struct device_node *node)
 {
+	struct v4l2_subdev *sd = get_sd(camera);
 	struct v4l2_async_notifier *notifier = &camera->flash_notifier;
+	struct device *dev = &camera->i2c_client->dev;
 	struct v4l2_async_subdev *asd;
+	int ret = 0;
+
+
 	v4l2_async_notifier_init(notifier);
 
 	asd = v4l2_async_notifier_add_fwnode_subdev(
@@ -5707,7 +5708,7 @@ static int avt_flash_init(struct avt_dev *camera)
 		return 0;
 	}
 
-	return avt_flash_notifier_setup(get_sd(camera), node);
+	return avt_flash_notifier_setup(camera, node);
 }
 
 static int avt_probe(struct i2c_client *client)
