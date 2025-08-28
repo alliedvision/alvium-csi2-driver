@@ -802,13 +802,8 @@ static int read_cci_registers(struct i2c_client *client)
 	/* CRC calculation */
 	crc = crc32(U32_MAX, &camera->cci_reg, crc_byte_count);
 
-	dev_info(&client->dev, "cci layout version b: 0x%08X\n",
-			 camera->cci_reg.reg.layout_version);
 	/* Swap bytes if neccessary */
 	cpu_to_be32s(&camera->cci_reg.reg.layout_version);
-
-	dev_info(&client->dev, "cci layout version a: 0x%08X\n",
-			 camera->cci_reg.reg.layout_version);
 
 	cpu_to_be64s(&camera->cci_reg.reg.device_capabilities.value);
 	cpu_to_be16s(&camera->cci_reg.reg.gcprm_address);
@@ -4677,8 +4672,6 @@ static void avt_get_crop(struct avt_dev * camera,
 	else
 		rect = &camera->curr_rect;
 
-	adev_info(&camera->i2c_client->dev,"%ux%u",rect->width,rect->height);
-
 	sel->r = *rect;
 }
 
@@ -4688,9 +4681,6 @@ int avt_pad_ops_get_selection(struct v4l2_subdev *sd,
 {
 	struct avt_dev *camera = to_avt_dev(sd);
 	struct i2c_client *client = camera->i2c_client;
-
-	dev_info(&client->dev, "%s[%d]: %s",
-			 __func__, __LINE__, __FILE__);
 
 	if (sel->pad > 0)
 		return -EINVAL;
