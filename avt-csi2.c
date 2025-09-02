@@ -3723,8 +3723,9 @@ static void avt_ctrl_added(struct avt_dev *camera,struct v4l2_ctrl *ctrl)
 		break;
 	}
 	case AVT_CID_SERIAL_NUMBER:  {
-		__v4l2_ctrl_s_ctrl_string(ctrl,
-					  camera->cci_reg.reg.serial_number);
+		strscpy(ctrl->p_cur.p_char,
+			camera->cci_reg.reg.serial_number,
+			ctrl->maximum + 1);
 
 		break;
 	}
@@ -3884,7 +3885,7 @@ static void avt_ctrl_added(struct avt_dev *camera,struct v4l2_ctrl *ctrl)
 		if (ret < 0)
 			break;
 
-		__v4l2_ctrl_s_ctrl_string(ctrl, revid);
+		strscpy(ctrl->p_cur.p_char, revid, ctrl->maximum + 1);
 
 		break;
 	}	
