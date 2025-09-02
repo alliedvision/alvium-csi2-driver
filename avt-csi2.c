@@ -3460,7 +3460,7 @@ static int __set_power_save_mode(struct avt_dev *camera, u8 val)
 			ret = bcrm_read32(camera, BCRM_DEVICE_STATUS_32R, &device_status);
 			if (ret < 0)
 				return ret;
-		}	
+		}
 
 		diff = ktime_get_ns() - start;
 		avt_info(get_sd(camera), "Return from power save mode took %llu us\n", diff / 1000);
@@ -4497,11 +4497,20 @@ static int avt_log_status(struct v4l2_subdev *sd)
 	return 0;
 }
 
+// Provide dummy implementation for the s_power core operations 
+// as some platform driver require the call to succeed.
+// This applies for the imx8-isi driver.
+static int avt_s_power(struct v4l2_subdev *sd,int on) 
+{
+	return 0;
+}
+
 static const struct v4l2_subdev_core_ops avt_core_ops = {
 	.log_status = avt_log_status,
 	.reset = avt_core_ops_reset,
 	.subscribe_event = avt_core_ops_subscribe_event,
 	.unsubscribe_event = v4l2_event_subdev_unsubscribe,
+	.s_power = avt_s_power,
 
 #ifdef CONFIG_VIDEO_ADV_DEBUG
 	.g_register = avt_core_ops_g_register,
