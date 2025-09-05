@@ -26,10 +26,16 @@
 #define ENABLE_STEPWISE_IMAGE_SIZE
 #define AVT_MAX_FORMAT_ENTRIES 40
 
-#include <asm/unaligned.h>
 #include <linux/kernel.h>
-#include <linux/module.h>
 #include <linux/version.h>
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 0)
+#include <asm/unaligned.h>
+#else 
+#include <linux/unaligned.h>
+#endif
+
+#include <linux/module.h>
 #include <linux/clk.h>
 #include <linux/clk-provider.h>
 #include <linux/clkdev.h>
@@ -1576,7 +1582,8 @@ static ssize_t streamon_delay_store(struct device *dev,
 		return ret;
 	}
 
-	ret = bcrm_write64(camera, BCRM_STREAM_ON_DELAY_32RW, camera->streamon_delay);
+	ret = bcrm_write32(camera, BCRM_STREAM_ON_DELAY_32RW,
+			   camera->streamon_delay);
 
 	
 	mutex_unlock(&camera->lock);
@@ -1716,10 +1723,10 @@ static int lookup_media_bus_format_index(struct avt_dev *camera, u32 mbus_code)
 	return -EINVAL;
 }
 
-void set_mode_mapping(struct avt_csi_mipi_mode_mapping *pfmt,
-					  u32 mbus_code, u16 mipi_fmt, u32 colorspace,
-					  u32 fourcc,
-					  enum bayer_format bayer_pattern, const char *name)
+static void set_mode_mapping(struct avt_csi_mipi_mode_mapping *pfmt,
+			     u32 mbus_code, u16 mipi_fmt, u32 colorspace,
+			     u32 fourcc, enum bayer_format bayer_pattern,
+			     const char *name)
 {
 	pfmt->mbus_code = mbus_code;
 	pfmt->mipi_fmt = mipi_fmt;
@@ -2099,6 +2106,39 @@ out:
 	camera->pending_dphyreset_request = 0;
 }
 
+static struct v4l2_mbus_framefmt *
+avt_get_pad_fmt(struct avt_dev *camera, 
+		struct v4l2_subdev_state *state,
+		u32 pad, u32 which)
+{
+	if (which == V4L2_SUBDEV_FORMAT_TRY) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
+		return v4l2_subdev_get_try_format(get_sd(camera), sd_state, pad);
+#else	
+		return v4l2_subdev_state_get_format(state, pad);
+#endif
+	}
+
+	return &camera->mbus_framefmt;
+}
+
+static struct v4l2_rect *
+avt_get_pad_crop(struct avt_dev *camera, 
+		 struct v4l2_subdev_state *state,
+		 u32 pad, u32 which)
+{
+	if (which == V4L2_SUBDEV_FORMAT_TRY) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
+		return v4l2_subdev_get_try_crop(get_sd(camera), sd_state, pad);
+#else	
+		return v4l2_subdev_state_get_crop(state, pad);
+#endif
+	}
+
+	return &camera->curr_rect;
+}
+
+
 /* --------------- Subdev Operations --------------- */
 static int avt_get_fmt_bcm(struct avt_dev *camera,
 			   struct v4l2_subdev_state *sd_state,
@@ -2106,16 +2146,8 @@ static int avt_get_fmt_bcm(struct avt_dev *camera,
 {
 	struct v4l2_mbus_framefmt *fmt;
 	
-	if (format->which == V4L2_SUBDEV_FORMAT_TRY) 	{
-		dev_dbg(&camera->i2c_client->dev, "%s[%d]", __func__, __LINE__);
-		fmt = v4l2_subdev_get_try_format(get_sd(camera), sd_state, format->pad);
-	} else {
-		dev_dbg(&camera->i2c_client->dev, "%s[%d]: %u x %u 0x%04X", __func__, __LINE__,
-				 camera->mbus_framefmt.width, camera->mbus_framefmt.height,
-				 camera->mbus_framefmt.code);
-		fmt = &camera->mbus_framefmt;
-	}
-
+	fmt = avt_get_pad_fmt(camera, sd_state, format->pad, format->which);
+	
 	format->format = *fmt;
 
 	return 0;
@@ -2595,15 +2627,9 @@ static int avt_set_fmt_internal_bcrm(struct avt_dev *camera,
 			goto out;
 	}
 
+	fmt = avt_get_pad_fmt(camera, sd_state, format->pad, format->which);
 
-
-	if (format->which == V4L2_SUBDEV_FORMAT_TRY) {
-		avt_dbg(sd,  "format->which == V4L2_SUBDEV_FORMAT_TRY");
-		fmt = v4l2_subdev_get_try_format(sd, sd_state, format->pad);
-	} else {
-		avt_dbg(sd,  "format->which != V4L2_SUBDEV_FORMAT_TRY");
-		fmt = &camera->mbus_framefmt;
-
+	if (format->which == V4L2_SUBDEV_FORMAT_ACTIVE) {
 		if (new_binning != camera->curr_binning_info) {
 			ret = avt_update_format(camera, &camera->curr_rect, new_binning);
 			if (ret < 0)
@@ -4130,24 +4156,20 @@ static int avt_pad_ops_enum_frame_interval(
 	return 0;
 }
 
-
-static int avt_video_ops_g_frame_interval(struct v4l2_subdev *sd,
-					   struct v4l2_subdev_frame_interval *fi)
+static int avt_g_frame_interval(struct v4l2_subdev *sd,
+				struct v4l2_subdev_frame_interval *fi)
 {
 	struct avt_dev *camera = to_avt_dev(sd);
 	int ret = 0;
 
 	mutex_lock(&camera->lock);
-	
+
 	if (avt_trigger_mode_enabled(camera)) {
 		ret = -EINVAL;
 		goto exit;
 	}
 
 	fi->interval = camera->frame_interval;
-	avt_dbg(sd, "camera->frame_interval.denom %u, camera->frame_interval.num %u, fi->num %d fi->denom %u",
-			camera->frame_interval.denominator, camera->frame_interval.numerator,
-			fi->interval.numerator, fi->interval.denominator);
 
 exit:
 	mutex_unlock(&camera->lock);
@@ -4156,29 +4178,70 @@ exit:
 }
 
 
+#if LINUX_VERSION_CODE > KERNEL_VERSION(6, 8, 0)
+static int avt_get_frame_interval(struct v4l2_subdev *sd, 
+				  struct v4l2_subdev_state *state,
+				  struct v4l2_subdev_frame_interval *fi)
+{
+	if (fi->which == V4L2_SUBDEV_FORMAT_TRY) {
+		struct v4l2_fract *interval;
 
-static int avt_video_ops_s_frame_interval(struct v4l2_subdev *sd,
-					   struct v4l2_subdev_frame_interval *fi)
+		interval = v4l2_subdev_state_get_interval(state, fi->pad);
+
+		fi->interval = *interval;
+
+		return 0;
+	}
+
+	return avt_g_frame_interval(sd, fi);
+}
+#endif
+
+static struct v4l2_fract *
+avt_get_pad_interval(struct avt_dev *camera,
+		     struct v4l2_subdev_state *state,
+		     u32 pad, u32 which)
+{
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8, 0)
+	if (which == V4L2_SUBDEV_FORMAT_TRY) {
+		return v4l2_subdev_state_get_interval(state, pad);
+	}
+#endif
+
+	return &camera->frame_interval;
+}
+
+
+static int __avt_set_frame_interval(struct v4l2_subdev *sd,
+				    struct v4l2_subdev_state *state,
+				    struct v4l2_subdev_frame_interval *fi,
+				    u32 pad, u32 which)					   
 {
 	struct avt_dev *camera = to_avt_dev(sd);
 	int ret = 0;
-	u64 framerate_req,framerate_min,framerate_max;
+	u64 framerate_req, framerate_min, framerate_max;
+	struct v4l2_fract *interval;
 
+	interval = avt_get_pad_interval(camera, state, pad, which);
 
 	avt_dbg(sd, "fie->num %d fie->denom %d",
 			fi->interval.numerator, fi->interval.denominator);
+	
 
 	mutex_lock(&camera->lock);
-	if (camera->is_streaming)
-	{
-		ret = -EBUSY;
-		goto out;
-	}
+	if (which == V4L2_SUBDEV_FORMAT_ACTIVE) {
+		if (camera->is_streaming)
+		{
+			ret = -EBUSY;
+			goto out;
+		}
 
-	if (avt_trigger_mode_enabled(camera)) {
-		ret = -EINVAL;
-		goto out;
+		if (avt_trigger_mode_enabled(camera)) {
+			ret = -EINVAL;
+			goto out;
+		}
 	}
+	
 
 	ret = bcrm_read64(camera,BCRM_ACQUISITION_FRAME_RATE_MIN_64R,
 			  &framerate_min);
@@ -4199,30 +4262,49 @@ static int avt_video_ops_s_frame_interval(struct v4l2_subdev *sd,
 	}
 
 	if (fi->interval.numerator == 0 || fi->interval.denominator == 0) {
-		camera->framerate_auto = true;
+		if (which == V4L2_SUBDEV_FORMAT_ACTIVE) {
+			camera->framerate_auto = true;
+		}
 	}
 	else {
 		framerate_req = frame_interval_to_rate_uhz(&fi->interval);
-		framerate_req = clamp(framerate_req,framerate_min,framerate_max);
+		framerate_req = clamp(framerate_req, 
+				      framerate_min,
+				      framerate_max);
 
 		set_frameinterval(&fi->interval, framerate_req);
 
-		camera->framerate_auto = false;
+		if (which == V4L2_SUBDEV_FORMAT_ACTIVE) {
+			camera->framerate_auto = false;
+		}
 	}
 
-
-	camera->frame_interval = fi->interval;
+	*interval = fi->interval;
 
 	avt_dbg(sd, "set fie->num %d fie->denom %d",
 			fi->interval.numerator, fi->interval.denominator);
 
 out:
 	mutex_unlock(&camera->lock);
-
-	avt_dbg(get_sd(camera), "- fie->num %d fie->denom %d --> idx",
-			fi->interval.numerator, fi->interval.denominator);
+	
 	return ret;
 }
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
+static int avt_s_frame_interval(struct v4l2_subdev *sd, 
+				struct v4l2_subdev_frame_interval *fi)
+{
+	return __avt_set_frame_interval(sd, NULL, fi, fi->pad,
+					V4L2_SUBDEV_FORMAT_ACTIVE);
+}
+#else
+static int avt_set_frame_interval(struct v4l2_subdev *sd, 
+				  struct v4l2_subdev_state *state,
+				  struct v4l2_subdev_frame_interval *fi)
+{
+	return __avt_set_frame_interval(sd, state, fi, fi->pad, fi->which);
+}
+#endif
 
 static int avt_pad_ops_enum_mbus_code(struct v4l2_subdev *sd,
 				      struct v4l2_subdev_state *sd_state,
@@ -4397,12 +4479,14 @@ out:
 
 	return ret;
 }
-int avt_core_ops_reset(struct v4l2_subdev *sd, u32 val)
+
+static int avt_core_ops_reset(struct v4l2_subdev *sd, u32 val)
 {
 	return 0;
 }
 
-int avt_core_ops_g_register(struct v4l2_subdev *sd, struct v4l2_dbg_register *reg)
+#ifdef CONFIG_VIDEO_ADV_DEBUG
+static int avt_core_ops_g_register(struct v4l2_subdev *sd, struct v4l2_dbg_register *reg)
 {
 	struct avt_dev *camera = to_avt_dev(sd);
 	int ret = 0;
@@ -4422,7 +4506,7 @@ int avt_core_ops_g_register(struct v4l2_subdev *sd, struct v4l2_dbg_register *re
 	return ret;
 }
 
-int avt_core_ops_s_register(struct v4l2_subdev *sd, const struct v4l2_dbg_register *reg)
+static int avt_core_ops_s_register(struct v4l2_subdev *sd, const struct v4l2_dbg_register *reg)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
 
@@ -4430,6 +4514,7 @@ int avt_core_ops_s_register(struct v4l2_subdev *sd, const struct v4l2_dbg_regist
 
 	return 0;
 }
+#endif // CONFIG_VIDEO_ADV_DEBUG
 
 static int avt_core_ops_subscribe_event(struct v4l2_subdev *sd, struct v4l2_fh *fh,
 					struct v4l2_event_subscription *sub)
@@ -4573,84 +4658,12 @@ static const struct v4l2_subdev_internal_ops avt_subdev_internal_ops = {
 	.close = avt_subdev_internal_ops_close,
 };
 
-int avt_video_ops_querystd(struct v4l2_subdev *sd, v4l2_std_id *std)
-{
-	v4l2_dbg(2, debug, sd, "%s[%d]: %s",
-			 __func__, __LINE__, __FILE__);
-	return 0;
-}
-
-int v4l2_subdev_video_ops_s_mbus_config(struct v4l2_subdev *sd,
-										const struct v4l2_mbus_config *cfg)
-{
-	v4l2_dbg(2, debug, sd, "%s[%d]: %s", __func__, __LINE__, __FILE__);
-	return 0;
-}
-
-int avt_video_ops_g_parm(struct v4l2_subdev *sd, struct v4l2_streamparm *parm)
-{
-	struct avt_dev *camera = to_avt_dev(sd);
-
-	if (!parm)
-		return -EINVAL;
-
-	v4l2_dbg(2, debug, sd, "%s[%d]: parm->type %d", __func__, __LINE__, parm->type);
-
-	if (!V4L2_TYPE_IS_CAPTURE(parm->type))
-	{
-		return -EINVAL;
-	}
-
-	memcpy(&parm->parm.capture, &camera->streamcap, sizeof(struct v4l2_captureparm));
-
-	parm->parm.capture.capability = V4L2_CAP_TIMEPERFRAME | V4L2_MODE_HIGHQUALITY;
-	parm->parm.capture.timeperframe = camera->frame_interval;
-	/* return latest format as has been set by avt_video_ops_g_parm */
-
-	return 0;
-}
-
-int avt_video_ops_s_parm(struct v4l2_subdev *sd, struct v4l2_streamparm *parm)
-{
-	struct avt_dev *camera = to_avt_dev(sd);
-	struct v4l2_fract *timeperframe = &parm->parm.capture.timeperframe;
-
-	v4l2_dbg(2, debug, sd, "%s[%d]: %s", __func__, __LINE__, __FILE__);
-
-	// TODO: parameter checking!!!
-	if (!V4L2_TYPE_IS_CAPTURE(parm->type))
-	{
-		adev_info(&camera->i2c_client->dev, "wrong parm->type %d", parm->type);
-		return -EINVAL;
-	}
-
-	// TODO: parameter checking!!!!!!
-	if ((timeperframe->numerator == 0) ||
-		(timeperframe->denominator == 0))
-	{
-		timeperframe->denominator = 30; // DEFAULT_FPS;
-		timeperframe->numerator = 1;
-	}
-
-	/* Copy new settings to internal structure */
-	memcpy(&camera->streamcap, &parm->parm.capture, sizeof(struct v4l2_captureparm));
-
-	return 0;
-}
-
 static const struct v4l2_subdev_video_ops avt_video_ops = {
-	.g_frame_interval = avt_video_ops_g_frame_interval,
-	.s_frame_interval = avt_video_ops_s_frame_interval,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 8 , 0)
+	.g_frame_interval = avt_g_frame_interval,
+	.s_frame_interval = avt_s_frame_interval,
+#endif
 	.s_stream = avt_video_ops_s_stream,
-	.querystd = avt_video_ops_querystd,
-#if !defined(CONFIG_ARCH_ZYNQMP) && !defined(DISABLE_PARM)
-	.g_parm = avt_video_ops_g_parm,
-	.s_parm = avt_video_ops_s_parm,
-#endif
-#if ((LINUX_VERSION_CODE) < (KERNEL_VERSION(5, 6, 0)))
-	.g_mbus_config = v4l2_subdev_video_ops_g_mbus_config,
-	.s_mbus_config = v4l2_subdev_video_ops_s_mbus_config,
-#endif
 };
 
 static void avt_get_compose(struct avt_dev *camera,
@@ -4659,11 +4672,7 @@ static void avt_get_compose(struct avt_dev *camera,
 {
 	const struct v4l2_mbus_framefmt *frmfmt;
 
-	if (sel->which == V4L2_SUBDEV_FORMAT_TRY)
-		frmfmt = v4l2_subdev_get_try_format(get_sd(camera),sd_state,
-						    sel->pad);
-	else
-		frmfmt = &camera->mbus_framefmt;
+	frmfmt = avt_get_pad_fmt(camera, sd_state, sel->pad, sel->which);
 
 	sel->r.left = 0;
 	sel->r.top = 0;
@@ -4677,15 +4686,12 @@ static void avt_get_crop(struct avt_dev * camera,
 {
 	const struct v4l2_rect *rect;
 
-	if (sel->which == V4L2_SUBDEV_FORMAT_TRY)
-		rect = v4l2_subdev_get_try_crop(get_sd(camera),sd_state,sel->pad);
-	else
-		rect = &camera->curr_rect;
+	rect = avt_get_pad_crop(camera, sd_state, sel->pad, sel->which);
 
 	sel->r = *rect;
 }
 
-int avt_pad_ops_get_selection(struct v4l2_subdev *sd,
+static int avt_pad_ops_get_selection(struct v4l2_subdev *sd,
 			       struct v4l2_subdev_state *sd_state,
 			       struct v4l2_subdev_selection *sel)
 {
@@ -4743,13 +4749,8 @@ static int avt_set_compose(struct avt_dev *camera,
 	const struct avt_binning_info *info;
 	const struct v4l2_rect *crop;
 
-	if (sel->which  == V4L2_SUBDEV_FORMAT_TRY) {
-		frmfmt = v4l2_subdev_get_try_format(get_sd(camera), sd_state, sel->pad);
-		crop = v4l2_subdev_get_try_crop(get_sd(camera), sd_state, sel->pad);
-	} else {
-		frmfmt = &camera->mbus_framefmt;
-		crop = &camera->curr_rect;
-	}
+	crop = avt_get_pad_crop(camera, sd_state, sel->pad, sel->which);
+	frmfmt = avt_get_pad_fmt(camera, sd_state, sel->pad, sel->which);
 
 	sel->r.left = 0;
 	sel->r.top = 0;
@@ -4781,13 +4782,8 @@ static int avt_set_crop(struct avt_dev *camera,
 	const struct avt_binning_info *info;
 	u32 width = max->width,height = max->height;
 
-	if (sel->which  == V4L2_SUBDEV_FORMAT_TRY) {
-		crop = v4l2_subdev_get_try_crop(get_sd(camera), sd_state, sel->pad);
-		frmfmt = v4l2_subdev_get_try_format(get_sd(camera), sd_state, sel->pad);
-	} else {
-		crop = &camera->curr_rect;
-		frmfmt = &camera->mbus_framefmt;
-	}
+	crop = avt_get_pad_crop(camera, sd_state, sel->pad, sel->which);
+	frmfmt = avt_get_pad_fmt(camera, sd_state, sel->pad, sel->which);
 
 	v4l_bound_align_image(&sel->r.width,min->width, max->width,3,
 			      &sel->r.height,min->height,max->height,3,0);
@@ -4811,7 +4807,7 @@ exit:
 	return ret;
 }
 
-int avt_pad_ops_set_selection(struct v4l2_subdev *sd,
+static int avt_pad_ops_set_selection(struct v4l2_subdev *sd,
 	struct v4l2_subdev_state *sd_state,
 	struct v4l2_subdev_selection *sel)
 {
@@ -4841,19 +4837,19 @@ int avt_pad_ops_set_selection(struct v4l2_subdev *sd,
 	return ret;
 }
 
-int avt_pad_ops_get_frame_desc(struct v4l2_subdev *sd, unsigned int pad,
+static int avt_pad_ops_get_frame_desc(struct v4l2_subdev *sd, unsigned int pad,
 								struct v4l2_mbus_frame_desc *fd)
 {
 	return 0;
 }
 
-int avt_pad_ops_set_frame_desc(struct v4l2_subdev *sd, unsigned int pad,
+static int avt_pad_ops_set_frame_desc(struct v4l2_subdev *sd, unsigned int pad,
 								struct v4l2_mbus_frame_desc *fd)
 {
 	return 0;
 }
 #ifdef CONFIG_MEDIA_CONTROLLER
-int avt_pad_ops_link_validate(struct v4l2_subdev *sd, struct media_link *link,
+static int avt_pad_ops_link_validate(struct v4l2_subdev *sd, struct media_link *link,
 							   struct v4l2_subdev_format *source_fmt,
 							   struct v4l2_subdev_format *sink_fmt)
 {
@@ -4881,6 +4877,11 @@ static const struct v4l2_subdev_pad_ops avt_pad_ops = {
 #ifdef CONFIG_MEDIA_CONTROLLER
 	.link_validate = avt_pad_ops_link_validate,
 #endif /* CONFIG_MEDIA_CONTROLLER */
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8 , 0)
+	.get_frame_interval = avt_get_frame_interval,
+	.set_frame_interval = avt_set_frame_interval,
+#endif
 };
 static const struct v4l2_subdev_ops avt_subdev_ops = {
 	.core = &avt_core_ops,
@@ -4892,22 +4893,6 @@ static int avt_meo_link_setup(struct media_entity *entity,
 							   const struct media_pad *local,
 							   const struct media_pad *remote, u32 flags)
 {
-	pr_info("%s[%d]", __func__, __LINE__);
-
-	return 0;
-}
-
-int avt_meo_get_fwnode_pad(struct fwnode_endpoint *endpoint)
-{
-	pr_info("%s[%d]", __func__, __LINE__);
-
-	return 0;
-}
-
-int avt_meo_link_validate(struct media_link *link)
-{
-	pr_info("%s[%d]", __func__, __LINE__);
-
 	return 0;
 }
 
