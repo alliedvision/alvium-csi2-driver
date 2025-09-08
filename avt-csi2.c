@@ -2113,7 +2113,7 @@ avt_get_pad_fmt(struct avt_dev *camera,
 {
 	if (which == V4L2_SUBDEV_FORMAT_TRY) {
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
-		return v4l2_subdev_get_try_format(get_sd(camera), sd_state, pad);
+		return v4l2_subdev_get_try_format(get_sd(camera), state, pad);
 #else	
 		return v4l2_subdev_state_get_format(state, pad);
 #endif
@@ -2129,7 +2129,7 @@ avt_get_pad_crop(struct avt_dev *camera,
 {
 	if (which == V4L2_SUBDEV_FORMAT_TRY) {
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
-		return v4l2_subdev_get_try_crop(get_sd(camera), sd_state, pad);
+		return v4l2_subdev_get_try_crop(get_sd(camera), state, pad);
 #else	
 		return v4l2_subdev_state_get_crop(state, pad);
 #endif
