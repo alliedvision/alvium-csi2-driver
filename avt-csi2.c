@@ -147,6 +147,10 @@ struct avt_val64
 #define LINE_MASK(x) \
 	(LINE_DIR_OUTPUT(x) | LINE_INVERT(x))
 
+
+#define avt_get_mode_fmt(camera) (&camera->fmt[camera->mode])
+	
+
 enum avt_binning_type {
 	NONE = -1,
 	DIGITAL,
@@ -503,7 +507,7 @@ static int avt_change_mode(struct avt_dev *camera, u8 req_mode)
 	camera->mode = req_mode;
 
 	if (req_mode == AVT_BCRM_MODE) {
-		const int mbus_code = camera->mbus_framefmt.code;
+		const int mbus_code = avt_get_mode_fmt(camera)->code;
 		ret = avt_write_media_bus_format(camera, mbus_code);
 
 		if (ret < 0) {
@@ -2017,7 +2021,8 @@ static int avt_reinit(struct avt_dev *camera)
 		return ret;
 	}
 
-	ret = avt_write_media_bus_format(camera, camera->mbus_framefmt.code);
+	ret = avt_write_media_bus_format(camera,
+					 avt_get_mode_fmt(camera)->code);
 	if (ret < 0)
 	{
 		dev_err(&camera->i2c_client->dev, "%s[%d]: Error while writing media bus format",
@@ -2119,7 +2124,7 @@ avt_get_pad_fmt(struct avt_dev *camera,
 #endif
 	}
 
-	return &camera->mbus_framefmt;
+	return avt_get_mode_fmt(camera);
 }
 
 static struct v4l2_rect *
@@ -2140,68 +2145,28 @@ avt_get_pad_crop(struct avt_dev *camera,
 
 
 /* --------------- Subdev Operations --------------- */
-static int avt_get_fmt_bcm(struct avt_dev *camera,
-			   struct v4l2_subdev_state *sd_state,
-			   struct v4l2_subdev_format *format)
-{
-	struct v4l2_mbus_framefmt *fmt;
-	
-	fmt = avt_get_pad_fmt(camera, sd_state, format->pad, format->which);
-	
-	format->format = *fmt;
-
-	return 0;
-}
-
-static int avt_get_fmt_gencp(struct avt_dev *camera,
-			   struct v4l2_subdev_state *sd_state,
-			   struct v4l2_subdev_format *format)
-{
-	struct v4l2_mbus_framefmt *fmt = &format->format;
-
-	fmt->width = camera->curr_rect.width;
-	fmt->height = camera->curr_rect.height;
-	fmt->code = MEDIA_BUS_FMT_CUSTOM;
-	fmt->field = V4L2_FIELD_NONE;
-	fmt->colorspace = V4L2_COLORSPACE_RAW;
-	fmt->quantization = V4L2_QUANTIZATION_DEFAULT;
-	fmt->xfer_func = V4L2_XFER_FUNC_NONE;
-
-	
-	return 0;
-}			
-
 static int avt_pad_ops_get_fmt(struct v4l2_subdev *sd,
 			       struct v4l2_subdev_state *sd_state,
 			       struct v4l2_subdev_format *format)
 {
 	struct avt_dev *camera = to_avt_dev(sd);
-	int ret;
+	struct v4l2_mbus_framefmt *fmt;
 
 	if (format->pad != 0) {
 		avt_err(sd, "format->pad != 0");
 		return -EINVAL;
 	}
 
-
 	mutex_lock(&camera->lock);
 
-	switch (camera->mode) {
-		case AVT_BCRM_MODE:
-			ret = avt_get_fmt_bcm(camera, sd_state, format);
-			break;
-		case AVT_GENCP_MODE:
-			ret = avt_get_fmt_gencp(camera, sd_state, format);
-			break;
-		default:
-			ret = -EINVAL;
-			break;
-	}
-
+	fmt = avt_get_pad_fmt(camera, sd_state, format->pad, format->which);
+	
+	format->format = *fmt;
+	
 	mutex_unlock(&camera->lock);
 
 
-	return ret;
+	return 0;
 }
 
 static void avt_calc_compose(const struct avt_dev * const camera,
@@ -2214,8 +2179,9 @@ static void avt_calc_compose(const struct avt_dev * const camera,
 	const size_t cnt = camera->binning_info_cnt[type];
 	const struct v4l2_rect * const min = &camera->min_rect;
 	const struct v4l2_rect * const max = &camera->sensor_rect;
-	const bool x_changed = *width != camera->mbus_framefmt.width;
-	const bool y_changed = *height != camera->mbus_framefmt.height;
+	const struct v4l2_mbus_framefmt *fmt = avt_get_mode_fmt(camera);
+	const bool x_changed = *width != fmt->width;
+	const bool y_changed = *height != fmt->height;
 	const bool type_changed = type != camera->curr_binning_info->type;
 	const struct avt_binning_info *best;
 	struct v4l2_rect scaled_crop = *crop;
@@ -2440,9 +2406,6 @@ static int avt_try_fmt_internal(struct v4l2_subdev *sd,
 	avt_dbg(get_sd(camera), 
 		"camera->available_fmts_cnt %d",
 		camera->available_fmts_cnt);
-	avt_dbg(get_sd(camera), 
-		"camera->mbus_framefmt.code 0x%04X",
-		camera->mbus_framefmt.code);
 
 	avt_dbg(get_sd(camera), "Incoming fmt->code    0x%04x", fmt->code);
 
@@ -2452,19 +2415,7 @@ static int avt_try_fmt_internal(struct v4l2_subdev *sd,
 
 	for (i = 0; i < camera->available_fmts_cnt; i++)
 	{
-		avt_dbg(get_sd(camera), 
-			"loop %d: fmt->width %d, fmt->height %d, ",
-			i, fmt->width, fmt->height);
-		avt_dbg(get_sd(camera), 
-		 	"camera->mbus_framefmt.code 0x%04X, ",
-			camera->mbus_framefmt.code);
-		avt_dbg(get_sd(camera), 
-			"camera->available_fmts[%d].mbus_code 0x%04X, ",
-			i,
-			camera->available_fmts[i].mbus_code);
-		avt_dbg(get_sd(camera), 
-			"fmt->code 0x%04X", fmt->code);
-
+		
 		if (camera->available_fmts[i].mbus_code == fmt->code)
 		{
 			break;
@@ -2474,7 +2425,7 @@ static int avt_try_fmt_internal(struct v4l2_subdev *sd,
 	if (i == camera->available_fmts_cnt)
 	{
 		avt_dbg(sd, "format fmt->code 0x%04X not found in available formats [ToDo: error handling incomplete]", fmt->code);
-		fmt->code = camera->mbus_framefmt.code;
+		fmt->code = avt_get_mode_fmt(camera)->code;
 		//return -EINVAL;
 	}
 
@@ -2607,27 +2558,23 @@ exit:
 }
 
 static int avt_set_fmt_internal_bcrm(struct avt_dev *camera,
-	struct v4l2_subdev_state *sd_state,
-	struct v4l2_subdev_format *format)
+				     struct v4l2_subdev_format *format)
 {
 	struct v4l2_subdev *sd = get_sd(camera);
 	struct v4l2_mbus_framefmt *mbus_fmt = &format->format;
 	const struct avt_binning_info *new_binning = NULL;
-	struct v4l2_mbus_framefmt *fmt;
 	int ret = 0;
 
 	if (mbus_fmt->code == MEDIA_BUS_FMT_CUSTOM) {
 		if (format->which != V4L2_SUBDEV_FORMAT_TRY) {
-			*mbus_fmt = camera->mbus_framefmt;
-			goto out;
+			*mbus_fmt = *avt_get_mode_fmt(camera);
 		}
+		goto out;
 	} else {
 		ret = avt_try_fmt_internal(sd, mbus_fmt, &new_binning);
 		if (ret)
 			goto out;
 	}
-
-	fmt = avt_get_pad_fmt(camera, sd_state, format->pad, format->which);
 
 	if (format->which == V4L2_SUBDEV_FORMAT_ACTIVE) {
 		if (new_binning != camera->curr_binning_info) {
@@ -2636,49 +2583,41 @@ static int avt_set_fmt_internal_bcrm(struct avt_dev *camera,
 				goto out;
 		}
 
-		if (mbus_fmt->code != camera->mbus_framefmt.code) {
-			ret = avt_write_media_bus_format(camera, mbus_fmt->code);
+		if (mbus_fmt->code != avt_get_mode_fmt(camera)->code) {
+			ret = avt_write_media_bus_format(camera,
+							 mbus_fmt->code);
 
 			if(ret < 0) {
-				avt_err(sd, "Failed setting pixel format in camera: %d", ret);
+				avt_err(sd, "failed to set mipi datatype: %d",
+					ret);
 				goto out;
 			}
 
 			ret = avt_update_exposure_limits(sd);
-		}
+		}		
 	}
-
-	*fmt = *mbus_fmt;
-
 out:
 	return ret;
 }
 
 static int avt_set_fmt_internal_gencp(struct avt_dev *camera,
-	struct v4l2_subdev_state *sd_state,
-	struct v4l2_subdev_format *format)
+				      struct v4l2_subdev_format *format)
 {
 	struct v4l2_mbus_framefmt *mbus_fmt = &format->format;
 
 	if (mbus_fmt->code != MEDIA_BUS_FMT_CUSTOM) 
 		mbus_fmt->code = MEDIA_BUS_FMT_CUSTOM;
 
-	//Reset cropping if genicam for csi2 mode is selected
-	camera->curr_rect.left = 0;
-	camera->curr_rect.top = 0;
-	camera->curr_rect.width = mbus_fmt->width;
-	camera->curr_rect.height = mbus_fmt->height;
-
 	return 0;
 }
 
 
 static int avt_pad_ops_set_fmt(struct v4l2_subdev *sd,
-				struct v4l2_subdev_state *sd_state,
-				struct v4l2_subdev_format *format)
+			       struct v4l2_subdev_state *state,
+			       struct v4l2_subdev_format *format)
 {
 	struct avt_dev *camera = to_avt_dev(sd);
-
+	struct v4l2_mbus_framefmt *fmt;
 
 	int ret;
 
@@ -2696,14 +2635,18 @@ static int avt_pad_ops_set_fmt(struct v4l2_subdev *sd,
 		goto out;
 	}
 
+	fmt = avt_get_pad_fmt(camera, state, format->pad,format->which);
+
 	if (camera->mode == AVT_BCRM_MODE) {
-		ret = avt_set_fmt_internal_bcrm(camera, sd_state, format);
+		ret = avt_set_fmt_internal_bcrm(camera, format);
 	} else if (camera->mode == AVT_GENCP_MODE) {
-		ret = avt_set_fmt_internal_gencp(camera, sd_state, format);
+		ret = avt_set_fmt_internal_gencp(camera, format);
 	} else {
 		ret = -EINVAL;
 	}
 
+	if (!ret)
+		*fmt = format->format;
 out:
 	mutex_unlock(&camera->lock);
 
@@ -3076,8 +3019,9 @@ static void avt_ctrl_changed(struct avt_dev *camera,
 	case AVT_CID_BINNING_SELECTOR: {
 		const struct avt_binning_info *info;
 		struct v4l2_ctrl *binning_mode_ctrl;
-		u32 width = camera->mbus_framefmt.width;
-		u32 height = camera->mbus_framefmt.height;
+		struct v4l2_mbus_framefmt *fmt = avt_get_mode_fmt(camera);
+		u32 width = fmt->width;
+		u32 height = fmt->height;
 
 		camera->curr_binning_type = ctrl->val;
 
@@ -3086,11 +3030,11 @@ static void avt_ctrl_changed(struct avt_dev *camera,
 
 		camera->curr_binning_info = info;
 
-		if (camera->mbus_framefmt.width != width
-		    || camera->mbus_framefmt.height != height) {
+		if (fmt->width != width
+		    || fmt->height != height) {
 
-			camera->mbus_framefmt.width = width;
-			camera->mbus_framefmt.height = height;
+			fmt->width = width;
+			fmt->height = height;
 
 			v4l2_subdev_notify_event(get_sd(camera),
 						 &avt_source_change_event);
@@ -3149,6 +3093,8 @@ static void avt_ctrl_changed(struct avt_dev *camera,
 	case V4L2_CID_HFLIP:
 	case V4L2_CID_VFLIP:
 	{
+		struct v4l2_mbus_framefmt *fmt = avt_get_mode_fmt(camera);
+
 		if (ctrl->id == V4L2_CID_HFLIP) {
 			camera->reverse_x_reg = (u8)ctrl->val;
 			avt_info(get_sd(camera), 
@@ -3161,7 +3107,7 @@ static void avt_ctrl_changed(struct avt_dev *camera,
 		}
 
 		/* Notify user if we are currently using a bayer format */
-		switch (camera->mbus_framefmt.code) {
+		switch (fmt->code) {
 		case MEDIA_BUS_FMT_SRGGB8_1X8:
 		case MEDIA_BUS_FMT_SGRBG8_1X8:
 		case MEDIA_BUS_FMT_SBGGR8_1X8:
@@ -3178,7 +3124,7 @@ static void avt_ctrl_changed(struct avt_dev *camera,
 				"Changed reverse x/y using "
 				"camera->mbus_framefmt.code 0x%04x. "
 				"Notify event AVT_V4L2_EVENT_PIXELFORMAT_CHANGE\n", 
-				camera->mbus_framefmt.code);
+				fmt->code);
 
 			v4l2_subdev_notify_event(get_sd(camera),
 				&avt_pixelformat_change_event);
@@ -4634,10 +4580,10 @@ static int avt_subdev_internal_ops_open(struct v4l2_subdev *sd, struct v4l2_subd
 	if (camera->open_refcnt)
 	{
 		avt_dbg(sd, "device already opened %d", camera->open_refcnt);
-		return -EBUSY;
+		//return -EBUSY;
 	}
 
-	if (!camera->is_streaming)
+	if (!camera->is_streaming && !camera->open_refcnt)
 	{
 		avt_dbg(sd, "force bcrm mode");
 		// set BCRM mode only when camera is not streaming
@@ -4701,7 +4647,7 @@ static int avt_pad_ops_get_selection(struct v4l2_subdev *sd,
 		return -EINVAL;
 
 	//No cropping or binning in genicam for csi2 mode
-	if (camera->mbus_framefmt.code == MEDIA_BUS_FMT_CUSTOM)
+	if (camera->mode == AVT_GENCP_MODE)
 		return -ENODATA;
 
 	switch (sel->target)
@@ -4780,7 +4726,7 @@ static int avt_set_crop(struct avt_dev *camera,
 	struct v4l2_rect *crop;
 	struct v4l2_mbus_framefmt *frmfmt;
 	const struct avt_binning_info *info;
-	u32 width = max->width,height = max->height;
+	u32 width = max->width, height = max->height;
 
 	crop = avt_get_pad_crop(camera, sd_state, sel->pad, sel->which);
 	frmfmt = avt_get_pad_fmt(camera, sd_state, sel->pad, sel->which);
@@ -4814,6 +4760,9 @@ static int avt_pad_ops_set_selection(struct v4l2_subdev *sd,
 	struct avt_dev *camera = to_avt_dev(sd);
 	int ret = -EINVAL;
 
+	avt_dbg(sd, "set selection tgt: %d, which: %d, rect: (%u, %u)/%ux%u",
+		sel->target, sel->which, sel->r.left, sel->r.top,
+		sel->r.width, sel->r.height);
 
 	if (camera->is_streaming && sel->which == V4L2_SUBDEV_FORMAT_ACTIVE)
 		return -EBUSY;
@@ -4822,7 +4771,7 @@ static int avt_pad_ops_set_selection(struct v4l2_subdev *sd,
 		return -EINVAL;
 
 	//No cropping or binning in genicam for csi2 mode
-	if (camera->mbus_framefmt.code == MEDIA_BUS_FMT_CUSTOM)
+	if (camera->mode == AVT_GENCP_MODE)
 		return -EINVAL;
 
 	mutex_lock(&camera->lock);
@@ -5924,16 +5873,13 @@ static int avt_probe(struct i2c_client *client)
 
 	sd->ctrl_handler = &camera->v4l2_ctrl_hdl;
 
-	fmt = &camera->mbus_framefmt;
+	fmt = &camera->fmt[AVT_BCRM_MODE];
 
 	ret = avt_init_current_format(camera, fmt);
 	if (ret)
 	{
 		goto entity_cleanup;
 	}
-
-	camera->streamcap.capability = V4L2_CAP_TIMEPERFRAME;
-	camera->streamcap.capturemode = V4L2_MODE_HIGHQUALITY;
 
 	// Init controls before registering the device, because the control handler must be fully initialized before
 	// the subdevice is registered.
