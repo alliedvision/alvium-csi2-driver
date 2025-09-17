@@ -2594,7 +2594,7 @@ static int avt_set_fmt_internal_bcrm(struct avt_dev *camera,
 			}
 
 			ret = avt_update_exposure_limits(sd);
-		}		
+		}
 	}
 out:
 	return ret;
@@ -4580,10 +4580,10 @@ static int avt_subdev_internal_ops_open(struct v4l2_subdev *sd, struct v4l2_subd
 	if (camera->open_refcnt)
 	{
 		avt_dbg(sd, "device already opened %d", camera->open_refcnt);
-		//return -EBUSY;
+		return -EBUSY;
 	}
 
-	if (!camera->is_streaming && !camera->open_refcnt)
+	if (!camera->is_streaming)
 	{
 		avt_dbg(sd, "force bcrm mode");
 		// set BCRM mode only when camera is not streaming
@@ -4827,7 +4827,7 @@ static const struct v4l2_subdev_pad_ops avt_pad_ops = {
 	.link_validate = avt_pad_ops_link_validate,
 #endif /* CONFIG_MEDIA_CONTROLLER */
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8 , 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8, 0)
 	.get_frame_interval = avt_get_frame_interval,
 	.set_frame_interval = avt_set_frame_interval,
 #endif
