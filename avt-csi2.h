@@ -846,7 +846,8 @@ struct avt_dev
 	uint32_t bcrm_handshake_timeout_ms;
 	bool bcrm_write_handshake;
 
-	struct v4l2_mbus_framefmt fmt;
+	struct v4l2_mbus_framefmt fmt[2];
+
 	bool pending_mode_change;
 	int open_refcnt;
 	bool is_streaming;
@@ -856,9 +857,6 @@ struct avt_dev
 	struct v4l2_ctrl *avt_ctrls[AVT_MAX_CTRLS];
 
 	struct fwnode_handle *endpoint;
-
-	struct v4l2_mbus_framefmt mbus_framefmt;
-	struct v4l2_captureparm streamcap;
 
 	struct v4l2_rect max_rect;
 	struct v4l2_rect min_rect;
