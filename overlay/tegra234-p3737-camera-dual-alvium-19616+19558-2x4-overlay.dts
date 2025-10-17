@@ -129,14 +129,12 @@
 		};
 	};
 
-
-
-
 	fragment@2 {
 		target-path = "/bus@0/i2c@3180000";
 		__overlay__ {
 			#address-cells = <1>;
 			#size-cells = <0>;
+			clock-frequency = <400000>;
 			avt_csi2_a@3c {
 				status = "okay";
 				compatible = "alliedvision,avt_csi2";
@@ -166,7 +164,7 @@
 					num_lanes = "4";
 					tegra_sinterface = "serial_a";
 
-                    ALVIUM_DEFAULT_MODE
+					ALVIUM_DEFAULT_MODE
 				};
 			};
 
@@ -176,10 +174,11 @@
 	fragment@3 {
 		target-path = "/bus@0/i2c@31e0000";
 		__overlay__ {
+			clock-frequency = <400000>;
 			avt_csi2_b@3c {
 				status = "okay";
-                compatible =  "alliedvision,avt_csi2";  
-                reg = <0x3c>;
+				compatible =  "alliedvision,avt_csi2";  
+				reg = <0x3c>;
 
 				devnode = "video1";
 				avt3,userptr;
@@ -205,7 +204,7 @@
 					num_lanes = "4";
 					tegra_sinterface = "serial_c";
 					
-                    ALVIUM_DEFAULT_MODE
+					ALVIUM_DEFAULT_MODE
 				};
 			};
 		};
@@ -263,7 +262,6 @@
 			};
 		};
 	};
-
 
 	fragment@5 {
 		target-path = "/bus@0";
