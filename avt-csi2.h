@@ -414,7 +414,8 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.name		= "Binning Setting",
 		.inq_mask	= 0,
 		.type		= V4L2_CTRL_TYPE_AREA,
-		.flags		= V4L2_CTRL_FLAG_VOLATILE,
+		.flags		= V4L2_CTRL_FLAG_VOLATILE |
+				  V4L2_CTRL_FLAG_READ_ONLY,
 	},
 	{
 		.id 		= AVT_CID_FIRMWARE_VERSION,
@@ -816,6 +817,12 @@ enum avt_exposure_mode {
 	EMODE_AUTO = 2,
 };
 
+enum avt_power_state {
+	POWER_STATE_ACTIVE,
+	POWER_STATE_STANDBY,
+	POWER_STATE_RESTORING,
+};
+
 #define AVT_BINNING_TYPE_CNT 	2
 
 struct avt_binning_info {
@@ -923,12 +930,12 @@ struct avt_dev
 
 	enum line_usage line_usage[2];
 
-	bool power_save_mode;
+	enum avt_power_state power_state;
 
 	struct v4l2_subdev *flash_sd;
 	struct v4l2_async_notifier flash_notifier;
 
-	u64	link_freq;
+	u64 link_freq;
 	u8 num_lanes;
 };
 
