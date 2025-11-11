@@ -83,7 +83,10 @@ MODULE_PARM_DESC(debug, "Debug level (0-2)");
 static int add_wait_time_ms = 2000;
 module_param(add_wait_time_ms, int, 0600);
 
-
+static bool power_save_reset_controls = false;
+module_param(power_save_reset_controls, bool, S_IRUGO | S_IWUSR);
+MODULE_PARM_DESC(power_save_reset_controls,
+		 "Reset controls on return from power save mode");
 
 
 #define avt_dbg(sd, fmt, args...)                       \
@@ -2004,10 +2007,54 @@ static int avt_do_softreset(struct avt_dev *camera)
 	return 0;
 }
 
+static int __reset_ctrl(struct v4l2_ctrl *ctrl)
+{
+	int ret;
+
+	if (!ctrl)
+		return 0;
+
+	if (ctrl->flags & V4L2_CTRL_FLAG_READ_ONLY)
+		return 0;
+
+	switch(ctrl->type) {
+	case V4L2_CTRL_TYPE_INTEGER:
+	case V4L2_CTRL_TYPE_INTEGER_MENU:
+	case V4L2_CTRL_TYPE_BOOLEAN:
+	case V4L2_CTRL_TYPE_MENU:
+	case V4L2_CTRL_TYPE_BITMASK:
+		ret = __v4l2_ctrl_s_ctrl(ctrl, ctrl->default_value);
+		break;
+	case V4L2_CTRL_TYPE_INTEGER64:
+		ret = __v4l2_ctrl_s_ctrl_int64(ctrl, ctrl->default_value);
+		break;
+	default:
+		ret = 0;
+		break;
+	}
+
+	return ret;
+}
+
+static int avt_reset_ctrls(struct avt_dev *camera)
+{
+	int i, ret;
+
+	for (i = 0; i < ARRAY_SIZE(camera->avt_ctrls); i++) {
+		avt_dbg(get_sd(camera), "reset control %s\n",
+			camera->avt_ctrls[i]->name);
+
+		ret = __reset_ctrl(camera->avt_ctrls[i]);
+		if (ret)
+			break;
+	}
+
+	return ret;
+}
+
 static int avt_reinit(struct avt_dev *camera)
 {
 	int ret;
-	int j;
 
 	// Re-read and configure MIPI configuration
 	avt_get_camera_capabilities(get_sd(camera));
@@ -2030,64 +2077,7 @@ static int avt_reinit(struct avt_dev *camera)
 		return ret;
 	}
 	
-	for (j = 0; j < ARRAY_SIZE(camera->avt_ctrls); ++j)
-	{
-		if (!camera->avt_ctrls[j])
-			continue;
-
-		if ((camera->avt_ctrls[j]->flags & V4L2_CTRL_FLAG_READ_ONLY))
-			continue;
-
-		switch(camera->avt_ctrls[j]->type)
-		{
-			case V4L2_CTRL_TYPE_INTEGER:
-				dev_info(&camera->i2c_client->dev, "%s[%d]: %s=%lld (INT32)",
-					__func__, __LINE__, 
-					camera->avt_ctrls[j]->name, 
-					camera->avt_ctrls[j]->default_value);
-
-				ret = __v4l2_ctrl_s_ctrl(camera->avt_ctrls[j], (int)camera->avt_ctrls[j]->default_value);
-				break;
-
-			case V4L2_CTRL_TYPE_BOOLEAN:
-				dev_info(&camera->i2c_client->dev, "%s[%d]: %s=%lld (BOOL)",
-					__func__, __LINE__, 
-					camera->avt_ctrls[j]->name,
-					camera->avt_ctrls[j]->default_value);
-
-				ret = __v4l2_ctrl_s_ctrl(camera->avt_ctrls[j], (int)camera->avt_ctrls[j]->default_value);
-				break;
-
-			case V4L2_CTRL_TYPE_INTEGER64:
-				dev_info(&camera->i2c_client->dev, "%s[%d]: %s=%lld (INT64)",
-					__func__, __LINE__, 
-					camera->avt_ctrls[j]->name, 
-					camera->avt_ctrls[j]->default_value);
-
-				ret = __v4l2_ctrl_s_ctrl_int64(camera->avt_ctrls[j], camera->avt_ctrls[j]->default_value);
-				break;
-
-			case V4L2_CTRL_TYPE_MENU:
-				dev_info(&camera->i2c_client->dev, "%s[%d]: %s=%lld (MENU)",
-					__func__, __LINE__, 
-					camera->avt_ctrls[j]->name, 
-					camera->avt_ctrls[j]->default_value);
-				
-				ret = __v4l2_ctrl_s_ctrl(camera->avt_ctrls[j], (int)camera->avt_ctrls[j]->default_value);
-				break;
-
-			default:
-				break;
-		}
-
-		if (ret < 0)
-		{
-			dev_warn(&camera->i2c_client->dev, "%s[%d]: %s return %d",
-				__func__, __LINE__, 
-				camera->avt_ctrls[j]->name, 
-				ret);
-		}
-	}
+	ret = avt_reset_ctrls(camera);
 
 	return ret;
 }
@@ -2256,6 +2246,12 @@ static int avt_update_format(struct avt_dev *camera,
 		binning_rect.width,3,
 		&scaled_roi.height,camera->min_rect.height,
 		binning_rect.height,3,0);
+	
+	camera->curr_binning_info = info;
+
+	if (camera->power_state == POWER_STATE_STANDBY)
+		return 0;
+
 
 	ret = bcrm_write8(camera, BCRM_BINNING_SETTING_8RW, info->sel);
 	if (unlikely(ret)) 
@@ -2276,8 +2272,6 @@ static int avt_update_format(struct avt_dev *camera,
 	ret = bcrm_write32(camera, BCRM_IMG_OFFSET_Y_32RW, scaled_roi.top);
 	if (unlikely(ret)) 
 		return ret;
-
-	camera->curr_binning_info = info;
 
 	return ret;
 }
@@ -2583,7 +2577,8 @@ static int avt_set_fmt_internal_bcrm(struct avt_dev *camera,
 				goto out;
 		}
 
-		if (mbus_fmt->code != avt_get_mode_fmt(camera)->code) {
+		if (mbus_fmt->code != avt_get_mode_fmt(camera)->code 
+			&& camera->power_state != POWER_STATE_STANDBY) {
 			ret = avt_write_media_bus_format(camera,
 							 mbus_fmt->code);
 
@@ -2795,6 +2790,9 @@ static int avt_g_volatile_ctrl(struct v4l2_ctrl *ctrl)
 		return -EBUSY;
 	}
 
+	if (camera->power_state != POWER_STATE_ACTIVE)
+		return 0;
+
 	if (ctrl->id == AVT_CID_BINNING_SETTING) {
 		ctrl->p_new.p_area->width = camera->curr_binning_info->hfact;
 		ctrl->p_new.p_area->height = camera->curr_binning_info->vfact;
@@ -2897,26 +2895,22 @@ static const struct v4l2_event avt_source_change_event = {
 	.u.src_change.changes = V4L2_EVENT_SRC_CH_RESOLUTION,
 };
 
-static void __auto_region_update_limits(struct avt_dev *camera, int id, 
-					u16 min_reg, u16 max_reg)
+static void __auto_region_update_limits(struct avt_dev *camera,
+					const struct v4l2_ctrl *parent_ctrl, 
+					int id, bool minmax)
 {
 	struct v4l2_ctrl *ctrl;
-	u32 min, max;
-	int ret;
 	
 	ctrl = avt_ctrl_find(camera, id);
 	if (!ctrl)
 		return;
 
-	ret = bcrm_read32(camera, min_reg, &min);
-	if (ret < 0)
-		return;
-
-	ret = bcrm_read32(camera, max_reg, &max);
-	if (ret < 0)
-		return;
-
-	__v4l2_ctrl_modify_range(ctrl, min, max, ctrl->step, max);
+	if (minmax)
+		__v4l2_ctrl_modify_range(ctrl, ctrl->minimum, parent_ctrl->val,
+					 ctrl->step, parent_ctrl->val);
+	else 
+		__v4l2_ctrl_modify_range(ctrl, parent_ctrl->val, ctrl->maximum,
+					 ctrl->step, ctrl->maximum);
 }					
 
 static struct v4l2_event avt_pixelformat_change_event = {
@@ -3059,35 +3053,30 @@ static void avt_ctrl_changed(struct avt_dev *camera,
 	}
 		break;
 	case AVT_CID_AUTO_REGION_LEFT: {
-		__auto_region_update_limits(camera, AVT_CID_AUTO_REGION_WIDTH, 
-					    BCRM_AUTO_REGION_WIDTH_MIN_32RW, 
-					    BCRM_AUTO_REGION_WIDTH_MAX_32RW);
+		__auto_region_update_limits(camera, ctrl, 
+					    AVT_CID_AUTO_REGION_WIDTH, false);
 
 		break;
 	}
 	case AVT_CID_AUTO_REGION_TOP: {
-		__auto_region_update_limits(camera, AVT_CID_AUTO_REGION_HEIGHT, 
-					    BCRM_AUTO_REGION_HEIGHT_MIN_32RW, 
-					    BCRM_AUTO_REGION_HEIGHT_MAX_32RW);
+		__auto_region_update_limits(camera, ctrl,
+					    AVT_CID_AUTO_REGION_HEIGHT, false);
 
 		break;
 	}
 	case AVT_CID_AUTO_REGION_WIDTH: {
-		__auto_region_update_limits(camera, AVT_CID_AUTO_REGION_LEFT, 
-					    BCRM_AUTO_REGION_OFFSET_X_MIN_32RW, 
-					    BCRM_AUTO_REGION_OFFSET_X_MAX_32RW);
+		__auto_region_update_limits(camera, ctrl,
+					    AVT_CID_AUTO_REGION_LEFT, true);
 
 		break;
 	}
 	case AVT_CID_AUTO_REGION_HEIGHT: {
-		__auto_region_update_limits(camera, AVT_CID_AUTO_REGION_TOP, 
-					    BCRM_AUTO_REGION_OFFSET_Y_MIN_32RW, 
-					    BCRM_AUTO_REGION_OFFSET_Y_MAX_32RW);
-
+		__auto_region_update_limits(camera, ctrl,
+					    AVT_CID_AUTO_REGION_TOP, true);
 		break;
 	}
 	case AVT_CID_POWER_SAVE_MODE: 
-		camera->power_save_mode = ctrl->val ? true : false;
+		camera->power_state = ctrl->val ? POWER_STATE_STANDBY : POWER_STATE_ACTIVE;
 		break;
 
 	case V4L2_CID_HFLIP:
@@ -3414,28 +3403,114 @@ static int __set_user_data_ctrl(struct avt_dev *camera, u32 *cur, u32 *new)
 	return ret;
 }
 
-static int __set_power_save_mode(struct avt_dev *camera, u8 val)
+static int avt_get_device_status(struct avt_dev *camera)
+{
+	u32 val;
+	int ret;
+
+	ret = bcrm_read32(camera, BCRM_DEVICE_STATUS_32R, &val);
+	if (ret)
+		return ret;
+
+	return val;
+}
+
+static int return_from_power_save(struct avt_dev *camera,
+				  struct v4l2_ctrl *pwr_save_ctrl)
+{
+	int ret;
+
+	ret = read_poll_timeout(avt_get_device_status, ret,
+				ret & BCRM_DEVICE_STATUS_STREAM_READY,
+				5000, 10000000, false, camera);
+
+	if (ret) {
+		avt_err(get_sd(camera),
+			"return from power save mode timeout\n");
+
+		return ret;
+	}
+
+	ret = bcrm_write32(camera, BCRM_CSI2_CLOCK_32RW, camera->link_freq);
+	if (ret) {
+		avt_err(get_sd(camera), "restore mipi clock failed\n");
+		return ret;
+	}
+	
+	ret = bcrm_write8(camera, BCRM_CSI2_LANE_COUNT_8RW, camera->num_lanes);
+	if (ret) {
+		avt_err(get_sd(camera), "restore lane count failed\n");
+		return ret;
+	}
+
+	ret = avt_update_format(camera, &camera->curr_rect,
+				camera->curr_binning_info);
+	if (ret) {
+		avt_err(get_sd(camera), "update format failed\n");
+		return ret;			
+	}
+
+	ret = avt_write_media_bus_format(camera,
+					 avt_get_mode_fmt(camera)->code);
+	if (ret) {
+		avt_err(get_sd(camera), "set pixelformat failed\n");
+		return ret;			
+	}
+
+	if (power_save_reset_controls) {
+		ret = avt_reset_ctrls(camera);
+	} else {
+		// Set power save mode control to readonly while setting 
+		// all controls as we are currently already in the s_ctrl 
+		// handler and having it set again would casue the power save
+		// mode to be activated again
+		pwr_save_ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
+
+		ret = __v4l2_ctrl_handler_setup(&camera->v4l2_ctrl_hdl);
+
+		pwr_save_ctrl->flags &= ~V4L2_CTRL_FLAG_READ_ONLY;
+	}
+
+	if (ret) {
+		avt_err(get_sd(camera), "control setup failed %d\n", ret);
+		return ret;
+	}
+	
+	return 0;
+}
+
+
+
+static int __set_power_save_mode(struct avt_dev *camera,
+				 struct v4l2_ctrl *pwr_save_ctrl)
 {
 	u64 start;
 	int ret;
-	u32 device_status = 0;
+	u8 val = pwr_save_ctrl->val;
+
+	if (camera->power_state == POWER_STATE_RESTORING)
+		return 0;
 
 	start = ktime_get_ns();
 	ret = bcrm_write8(camera, BCRM_DEVICE_POWER_SAVE_MODE_32RW, val);
 	if (ret < 0)
 		return ret;
 
-	if (camera->power_save_mode && val == AVT_POWER_SAVE_DISABLED) {
+	if (camera->power_state == POWER_STATE_STANDBY && 
+		val == AVT_POWER_SAVE_DISABLED) {
+
 		u64 diff;
 
-		while (!(device_status & BCRM_DEVICE_STATUS_STREAM_READY)) {
-			ret = bcrm_read32(camera, BCRM_DEVICE_STATUS_32R, &device_status);
-			if (ret < 0)
-				return ret;
-		}
+		camera->power_state = POWER_STATE_RESTORING;
 
+		ret = return_from_power_save(camera, pwr_save_ctrl);
+		if (ret)
+			return ret;
+		
 		diff = ktime_get_ns() - start;
-		avt_info(get_sd(camera), "Return from power save mode took %llu us\n", diff / 1000);
+		avt_info(get_sd(camera),
+			 "Return from power save mode took %llu us\n",
+			 diff / 1000);
 	}
 
 	return 0;
@@ -3458,12 +3533,27 @@ static int __set_special_ctrl(struct avt_dev *camera, struct v4l2_ctrl *ctrl)
 	case AVT_CID_FRAME_TRIGGER_WAIT_LINE_MODE:
 		return __set_frame_trigger_wait_line_mode(camera, ctrl->val);
 	case AVT_CID_POWER_SAVE_MODE:
-		return __set_power_save_mode(camera, ctrl->val);
+		return __set_power_save_mode(camera, ctrl);
+	// TODO: Move binning handling here from avt_ctrl_changed
+	case AVT_CID_BINNING_SELECTOR: 
 	case AVT_CID_EXPOSURE_ACTIVE_INVERT:
+	case AVT_CID_FRAME_TRIGGER_WAIT_INVERT:
 		return 0;
 	default:
 		return -ENOTTY;
 	}
+}
+
+static bool __can_set_ctrl(struct avt_dev *camera, struct v4l2_ctrl *ctrl)
+{
+	// Power save mode control can always be changed
+	if (ctrl->id == AVT_CID_POWER_SAVE_MODE)
+		return true;
+
+	if (camera->power_state == POWER_STATE_STANDBY)
+		return false;
+
+	return true;
 }
 
 static int avt_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
@@ -3482,14 +3572,23 @@ static int avt_v4l2_ctrl_ops_s_ctrl(struct v4l2_ctrl *ctrl)
 
 
 		dev_dbg(&client->dev, "%s[%d]: Write custom ctrl %s (%x)\n",
-			 __func__, __LINE__, ctrl_mapping->name, ctrl->id);
+			__func__, __LINE__, ctrl_mapping->name, ctrl->id);
 
+		if (!__can_set_ctrl(camera, ctrl))
+			goto done;
 
 		ret = __set_special_ctrl(camera, ctrl);
-		if (ctrl_mapping->reg_length != 0 && ret == -ENOTTY)
-			ret = write_ctrl_value(camera, ctrl, ctrl_mapping);
-		
 
+		// Check if control was handled by __set_special_ctrl
+		if (ret != -ENOTTY)
+			goto done;
+
+		if (!ctrl_mapping->reg_length)
+			goto done;
+		
+		ret = write_ctrl_value(camera, ctrl, ctrl_mapping);
+		
+done:
 		avt_ctrl_changed(camera,ctrl);
 	}
 	else
@@ -4157,7 +4256,6 @@ avt_get_pad_interval(struct avt_dev *camera,
 	return &camera->frame_interval;
 }
 
-
 static int __avt_set_frame_interval(struct v4l2_subdev *sd,
 				    struct v4l2_subdev_state *state,
 				    struct v4l2_subdev_frame_interval *fi,
@@ -4187,7 +4285,13 @@ static int __avt_set_frame_interval(struct v4l2_subdev *sd,
 			goto out;
 		}
 	}
-	
+
+	// For now block frame rate changes in the power save mode,
+	// because their is no way to determine the limits
+	if (camera->power_state != POWER_STATE_ACTIVE) {
+		ret = -EPERM;
+		goto out;
+	}
 
 	ret = bcrm_read64(camera,BCRM_ACQUISITION_FRAME_RATE_MIN_64R,
 			  &framerate_min);
@@ -4376,7 +4480,7 @@ static int avt_video_ops_s_stream(struct v4l2_subdev *sd, int enable)
 		struct v4l2_rect binning_rect = {0};
 		const struct avt_binning_info *binning_info = camera->curr_binning_info;
 
-		if (camera->power_save_mode) {
+		if (camera->power_state != POWER_STATE_ACTIVE) {
 			ret = -EBUSY;
 			goto out;
 		}
