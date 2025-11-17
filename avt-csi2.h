@@ -937,6 +937,8 @@ struct avt_dev
 
 	u64 link_freq;
 	u8 num_lanes;
+
+	u32 bcrm_version;
 };
 
 enum avt_ctrl {

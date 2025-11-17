@@ -120,6 +120,9 @@ struct avt_val64
 	};
 } __attribute__((packed));
 
+#define BCRM_VERSION(a, b) \
+	((((a) << 16) & BCRM_VERSION_MAJOR) + (b & BCRM_VERSION_MINOR))
+
 #define BCRM_WAIT_HANDSHAKE_TIMEOUT_MS 	3000
 
 #define MODE_SWITCH_TIMEOUT_US		5 * USEC_PER_SEC
@@ -269,6 +272,9 @@ static struct v4l2_ctrl* avt_ctrl_find(struct avt_dev *camera,u32 id);
 static int avt_write_media_bus_format(struct avt_dev *camera, int code);
 static int avt_get_camera_capabilities(struct v4l2_subdev *sd);
 static int avt_update_format(struct avt_dev *camera, const struct v4l2_rect *roi, const struct avt_binning_info *info);
+static int __set_crop(struct avt_dev *camera, struct v4l2_rect *rect,
+	struct v4l2_mbus_framefmt *frmfmt, struct v4l2_rect *crop,
+	unsigned int which);
 
 #define DUMP_BCRM_REG8(CLIENT, BCRM_REG) dump_bcrm_reg(CLIENT, (BCRM_REG), (#BCRM_REG), AV_CAM_DATA_SIZE_8)
 #define DUMP_BCRM_REG16(CLIENT, BCRM_REG) dump_bcrm_reg(CLIENT, (BCRM_REG), (#BCRM_REG), AV_CAM_DATA_SIZE_16)
@@ -967,7 +973,7 @@ static int bcrm_version_check(struct i2c_client *client)
 
 	mutex_lock(&camera->lock);
 	/* reading the BCRM version */
-	ret = bcrm_read32(camera,BCRM_VERSION_32R,&value);
+	ret = bcrm_read32(camera, BCRM_VERSION_32R, &value);
 
 	if (ret < 0)
 	{
@@ -980,12 +986,13 @@ static int bcrm_version_check(struct i2c_client *client)
 			BCRM_MAJOR_VERSION,
 			BCRM_MINOR_VERSION);
 
-	avt_dbg(get_sd(camera), "bcrm version (camera): 0x%x (maj: 0x%x min: 0x%x)\n",
-			value,
-			(value & 0xffff0000) >> 16,
-			(value & 0x0000ffff));
+	avt_info(get_sd(camera), "camera bcrm version %lu.%lu\n", 
+		 FIELD_GET(BCRM_VERSION_MAJOR, value),
+		 FIELD_GET(BCRM_VERSION_MINOR, value));
+	
+	ret = FIELD_GET(BCRM_VERSION_MAJOR, value) == BCRM_MAJOR_VERSION;
 
-	ret = (value >> 16) == BCRM_MAJOR_VERSION ? 1 : 0;
+	camera->bcrm_version = value;
 
 err_out:
 	mutex_unlock(&camera->lock);
@@ -2911,11 +2918,106 @@ static void __auto_region_update_limits(struct avt_dev *camera,
 	else 
 		__v4l2_ctrl_modify_range(ctrl, parent_ctrl->val, ctrl->maximum,
 					 ctrl->step, ctrl->maximum);
-}					
+}
 
 static struct v4l2_event avt_pixelformat_change_event = {
 	.type = AVT_V4L2_EVENT_PIXELFORMAT_CHANGE,
 };
+
+static struct v4l2_event src_change_event = {
+	.type = V4L2_EVENT_SOURCE_CHANGE,
+	.u.src_change.changes = V4L2_EVENT_SRC_CH_RESOLUTION,
+};
+
+static void __reverse_xy_roi_change(struct avt_dev *camera, int id)
+{
+	struct v4l2_mbus_framefmt *fmt = avt_get_mode_fmt(camera);
+	struct v4l2_rect r;
+	u32 val;
+	int ret;
+
+	r = camera->curr_rect;
+
+	if (id == V4L2_CID_HFLIP) {
+		ret = bcrm_read32(camera, BCRM_IMG_WIDTH_MAX_32R, &val);
+		
+		if (camera->max_rect.width == val)
+			return;
+		
+		// Override width if set to maximum
+		if (r.width == camera->max_rect.width)
+			r.width = val;
+
+		camera->max_rect.width = val;
+	} else if (id == V4L2_CID_VFLIP) {
+		ret = bcrm_read32(camera, BCRM_IMG_HEIGHT_MAX_32R, &val);
+		
+		if (camera->max_rect.height == val)
+			return;
+		
+		// Override height if set to maximum
+		if (r.height == camera->max_rect.height)
+			r.height = val;
+		
+		camera->max_rect.height = val;
+	}
+
+	__set_crop(camera, &r, fmt, &camera->curr_rect,
+		V4L2_SUBDEV_FORMAT_ACTIVE);
+
+	v4l2_subdev_notify_event(get_sd(camera), 
+				&src_change_event);
+}
+
+static void __reverse_xy_changed(struct avt_dev *camera,
+				 const struct v4l2_ctrl *ctrl)
+{
+	struct v4l2_mbus_framefmt *fmt = avt_get_mode_fmt(camera);
+
+	if (camera->bcrm_version >= BCRM_VERSION(1, 28)) {
+		avt_info(get_sd(camera), "handle roi change\n");
+
+		__reverse_xy_roi_change(camera, ctrl->id);
+		return;
+	}
+
+	if (ctrl->id == V4L2_CID_HFLIP) {
+		camera->reverse_x_reg = (u8)ctrl->val;
+		avt_info(get_sd(camera), 
+			"V4L2_CID_HFLIP %d\n", camera->reverse_x_reg);
+	}
+	else if (ctrl->id == V4L2_CID_VFLIP) {
+		camera->reverse_y_reg = (u8)ctrl->val;
+		avt_info(get_sd(camera), 
+			"V4L2_CID_VFLIP %d\n", camera->reverse_y_reg);
+	}
+
+	/* Notify user if we are currently using a bayer format */
+	switch (fmt->code) {
+	case MEDIA_BUS_FMT_SRGGB8_1X8:
+	case MEDIA_BUS_FMT_SGRBG8_1X8:
+	case MEDIA_BUS_FMT_SBGGR8_1X8:
+	case MEDIA_BUS_FMT_SGBRG8_1X8:
+	case MEDIA_BUS_FMT_SRGGB10_1X10:
+	case MEDIA_BUS_FMT_SGRBG10_1X10:
+	case MEDIA_BUS_FMT_SBGGR10_1X10:
+	case MEDIA_BUS_FMT_SGBRG10_1X10:
+	case MEDIA_BUS_FMT_SRGGB12_1X12:
+	case MEDIA_BUS_FMT_SGRBG12_1X12:
+	case MEDIA_BUS_FMT_SBGGR12_1X12:
+	case MEDIA_BUS_FMT_SGBRG12_1X12:
+		avt_dbg(get_sd(camera), 
+			"Changed reverse x/y using "
+			"camera->mbus_framefmt.code 0x%04x. "
+			"Notify event AVT_V4L2_EVENT_PIXELFORMAT_CHANGE\n", 
+			fmt->code);
+
+		v4l2_subdev_notify_event(get_sd(camera),
+			&avt_pixelformat_change_event);
+
+		break;
+	}
+}
 
 static void avt_ctrl_changed(struct avt_dev *camera,
 			      const struct v4l2_ctrl * const ctrl)
@@ -3081,45 +3183,11 @@ static void avt_ctrl_changed(struct avt_dev *camera,
 
 	case V4L2_CID_HFLIP:
 	case V4L2_CID_VFLIP:
+		__reverse_xy_changed(camera, ctrl);
+		break;
+
 	{
-		struct v4l2_mbus_framefmt *fmt = avt_get_mode_fmt(camera);
-
-		if (ctrl->id == V4L2_CID_HFLIP) {
-			camera->reverse_x_reg = (u8)ctrl->val;
-			avt_info(get_sd(camera), 
-				"V4L2_CID_HFLIP %d\n", camera->reverse_x_reg);
-		}
-		else if (ctrl->id == V4L2_CID_VFLIP) {
-			camera->reverse_y_reg = (u8)ctrl->val;
-			avt_info(get_sd(camera), 
-				"V4L2_CID_VFLIP %d\n", camera->reverse_y_reg);
-		}
-
-		/* Notify user if we are currently using a bayer format */
-		switch (fmt->code) {
-		case MEDIA_BUS_FMT_SRGGB8_1X8:
-		case MEDIA_BUS_FMT_SGRBG8_1X8:
-		case MEDIA_BUS_FMT_SBGGR8_1X8:
-		case MEDIA_BUS_FMT_SGBRG8_1X8:
-		case MEDIA_BUS_FMT_SRGGB10_1X10:
-		case MEDIA_BUS_FMT_SGRBG10_1X10:
-		case MEDIA_BUS_FMT_SBGGR10_1X10:
-		case MEDIA_BUS_FMT_SGBRG10_1X10:
-		case MEDIA_BUS_FMT_SRGGB12_1X12:
-		case MEDIA_BUS_FMT_SGRBG12_1X12:
-		case MEDIA_BUS_FMT_SBGGR12_1X12:
-		case MEDIA_BUS_FMT_SGBRG12_1X12:
-			avt_dbg(get_sd(camera), 
-				"Changed reverse x/y using "
-				"camera->mbus_framefmt.code 0x%04x. "
-				"Notify event AVT_V4L2_EVENT_PIXELFORMAT_CHANGE\n", 
-				fmt->code);
-
-			v4l2_subdev_notify_event(get_sd(camera),
-				&avt_pixelformat_change_event);
-
-			break;
-		}
+		
 		break;
 
 	}
@@ -4820,41 +4888,49 @@ exit:
 	return ret;
 }
 
-static int avt_set_crop(struct avt_dev *camera,
-			 struct v4l2_subdev_state *sd_state,
-			 struct v4l2_subdev_selection *sel)
+static int __set_crop(struct avt_dev *camera, struct v4l2_rect *rect,
+		      struct v4l2_mbus_framefmt *frmfmt, struct v4l2_rect *crop,
+		      unsigned int which)
 {
-	int ret = 0;
+	
 	const struct v4l2_rect *min = &camera->min_rect;
 	const struct v4l2_rect *max = &camera->max_rect;
-	struct v4l2_rect *crop;
-	struct v4l2_mbus_framefmt *frmfmt;
 	const struct avt_binning_info *info;
 	u32 width = max->width, height = max->height;
 
-	crop = avt_get_pad_crop(camera, sd_state, sel->pad, sel->which);
-	frmfmt = avt_get_pad_fmt(camera, sd_state, sel->pad, sel->which);
+	v4l_bound_align_image(&rect->width, min->width, max->width,3,
+			      &rect->height, min->height, max->height,3,0);
 
-	v4l_bound_align_image(&sel->r.width,min->width, max->width,3,
-			      &sel->r.height,min->height,max->height,3,0);
+	v4l2_rect_map_inside(rect, max);
 
-	v4l2_rect_map_inside(&sel->r, max);
+	avt_calc_compose(camera, rect, &width, &height, &info);
 
-	avt_calc_compose(camera,&sel->r,&width,&height,&info);
-
-	if (sel->which == V4L2_SUBDEV_FORMAT_ACTIVE) {
-		ret = avt_update_format(camera, &sel->r, info);
+	if (which == V4L2_SUBDEV_FORMAT_ACTIVE) {
+		int ret;
+		ret = avt_update_format(camera, rect, info);
 		if (ret < 0)
-			goto exit;
+			return ret;
 	}
 
 	frmfmt->width = width;
 	frmfmt->height = height;
 
-	*crop = sel->r;
+	*crop = *rect;
 
-exit:
-	return ret;
+	return 0;
+}
+
+static int avt_set_crop(struct avt_dev *camera,
+			 struct v4l2_subdev_state *sd_state,
+			 struct v4l2_subdev_selection *sel)
+{
+	struct v4l2_rect *crop;
+	struct v4l2_mbus_framefmt *frmfmt;
+	
+	crop = avt_get_pad_crop(camera, sd_state, sel->pad, sel->which);
+	frmfmt = avt_get_pad_fmt(camera, sd_state, sel->pad, sel->which);
+
+	return __set_crop(camera, &sel->r, frmfmt, crop, sel->which);;
 }
 
 static int avt_pad_ops_set_selection(struct v4l2_subdev *sd,
@@ -5914,7 +5990,7 @@ static int avt_probe(struct i2c_client *client)
 	ret = bcrm_read64(camera,BCRM_DEVICE_FIRMWARE_VERSION_64R,
 			  &camera->cam_firmware_version.value);
 
-	dev_info(&client->dev, "Firmware version: %u.%u.%u.%x\n",
+	dev_info(&client->dev, "Firmware version: %02u.%02u.%02u.%08x\n",
 			 camera->cam_firmware_version.device_firmware.special_version,
 			 camera->cam_firmware_version.device_firmware.major_version,
 			 camera->cam_firmware_version.device_firmware.minor_version,
