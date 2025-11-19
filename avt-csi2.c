@@ -155,7 +155,10 @@ struct avt_val64
 
 
 #define avt_get_mode_fmt(camera) (&camera->fmt[camera->mode])
-	
+
+#define test_feature_inq(c, inq) \
+	(!!(camera->feature_inquiry_reg.value & BCRM_FEATURE_INQ_ ## inq))
+
 
 enum avt_binning_type {
 	NONE = -1,
@@ -4043,6 +4046,53 @@ static void avt_ctrl_added(struct avt_dev *camera,struct v4l2_ctrl *ctrl)
 
 		break;
 	}	
+	case AVT_CID_SENSOR_ID: {
+		int ret; 
+		u32 val;
+
+		ret = bcrm_read32(camera, BCRM_SENSOR_IDENTIFICATION_32R, &val);
+		if (ret < 0) 
+			break;
+
+		val = FIELD_GET(BCRM_SENSOR_IDENTIFICATION_SENSOR_ID, val);
+
+		*ctrl->p_cur.p_s32 = val;
+		*ctrl->p_new.p_s32 = val;
+
+
+		break;
+	}
+	case AVT_CID_SENSOR_PLATFORM_ID: {
+		int ret; 
+		u32 val;
+
+		ret = bcrm_read32(camera, BCRM_SENSOR_IDENTIFICATION_32R, &val);
+		if (ret < 0) 
+			break;
+
+		val = FIELD_GET(BCRM_SENSOR_IDENTIFICATION_SENSOR_PLATFORM_ID,
+				val);
+		
+		*ctrl->p_cur.p_s32 = val;
+		*ctrl->p_new.p_s32 = val;
+
+		break;
+	}
+	case AVT_CID_SENSOR_FLAGS: {
+		int ret; 
+		u32 val;
+
+		ret = bcrm_read32(camera, BCRM_SENSOR_IDENTIFICATION_32R, &val);
+		if (ret < 0) 
+			break;
+
+		val = FIELD_GET(BCRM_SENSOR_IDENTIFICATION_SENSOR_INFO, val);
+		
+		*ctrl->p_cur.p_s32 = val;
+		*ctrl->p_new.p_s32 = val;
+
+		break;
+	}
 	default:
 		break;
 	}
@@ -4652,43 +4702,61 @@ static int avt_core_ops_subscribe_event(struct v4l2_subdev *sd, struct v4l2_fh *
 	}
 }
 
+static inline const char *log_val(u32 val, u32 mask, bool avail)
+{
+	if (!avail)
+		return "n/a";
+
+	return (val & mask) ? "true" : "false";
+}
+
+static inline void print_status(struct device *dev, const char *str,
+				u32 val, u32 mask, bool avail)
+{
+	dev_info(dev, "%s = %s\n", str, log_val(val, mask, avail));
+}
+
 static int avt_log_status(struct v4l2_subdev *sd)
 {
 	struct avt_dev *camera = to_avt_dev(sd);
 	struct device *dev = sd->dev;
 	u8 acq_active;
-	u32 status;
+	u32 val;
 	int ret;
+	bool has_device_status, has_sensor_indent;
 
-	ret = bcrm_read32(camera, BCRM_DEVICE_STATUS_32R, &status);
+	has_device_status = test_feature_inq(camera, DEVICE_STATUS);
+	has_sensor_indent = test_feature_inq(camera, SENSOR_IDENTIFICATION);
+
+	ret = bcrm_read32(camera, BCRM_DEVICE_STATUS_32R, &val);
 	if (ret < 0)
 		return ret;
 
 	dev_info(dev, "**** Device status ****\n");
 	
-	dev_info(dev, "Backend buffer okay = %s\n", 
-		 status & BCRM_DEVICE_STATUS_BACKEND_BUFFER_OKAY
-		 ? "true" : "false" );
-
-	dev_info(dev, "Mainboard temperature okay = %s\n", 
-		 status & BCRM_DEVICE_STATUS_MAINBOARD_TEMPERATURE_OKAY
-		 ? "true" : "false" );
-
-	dev_info(dev, "Stream ready = %s\n", 
-		 status & BCRM_DEVICE_STATUS_STREAM_READY
-		 ? "true" : "false" );	
-
-	dev_info(dev, "MIPI Phy okay = %s\n", 
-		 status & BCRM_DEVICE_STATUS_MIPI_PHY_OKAY
-		 ? "true" : "false" );	
-
-	dev_info(dev, "Sensorboard temperature okay = %s\n",
-		 status & BCRM_DEVICE_STATUS_SENSORBOARD_TEMPERATURE_OKAY
-		 ? "true" : "false" );
+	print_status(dev, "Backend buffer okay", val,
+		     BCRM_DEVICE_STATUS_BACKEND_BUFFER_OKAY,
+		     has_device_status);
 	
-	dev_info(dev, "Sensor communication okay = %s\n",
-		 status & BCRM_DEVICE_STATUS_SENSOR_COMMUNINICATION_OKAY
-		 ? "true" : "false" );		
+	print_status(dev, "Mainboard temperature okay", val,
+		     BCRM_DEVICE_STATUS_MAINBOARD_TEMPERATURE_OKAY, 
+		     has_device_status);
+
+	print_status(dev, "Stream ready", val,
+		     BCRM_DEVICE_STATUS_STREAM_READY,
+		     has_device_status);	
+
+	print_status(dev, "MIPI Phy okay", val,
+		     BCRM_DEVICE_STATUS_MIPI_PHY_OKAY,
+		     has_device_status);	
+
+	print_status(dev, "Sensorboard temperature okay", val,
+		     BCRM_DEVICE_STATUS_SENSORBOARD_TEMPERATURE_OKAY,
+		     has_device_status);
+	
+	print_status(dev, "Sensor communication okay", val,
+		     BCRM_DEVICE_STATUS_SENSOR_COMMUNINICATION_OKAY,
+		     has_device_status);		
 
 	ret = bcrm_read8(camera, BCRM_ACQUISITION_STATUS_8R, &acq_active);
 	if (ret < 0)
@@ -4697,6 +4765,19 @@ static int avt_log_status(struct v4l2_subdev *sd)
 	dev_info(dev, "**** Acqusition status ****\n");
 	dev_info(dev, "Acqusition active = %s\n",
 		 acq_active ? "true" : "false");
+
+	ret = bcrm_read32(camera, BCRM_SENSOR_IDENTIFICATION_32R, &val);
+	if (ret < 0)
+		return ret;
+
+	dev_info(dev, "**** Sensor status ****");
+	print_status(dev, "Sensor detection okay", val,
+		     BCRM_SENSOR_IDENTIFICATION_SENSOR_DETECT_OK,
+		     has_sensor_indent);
+	
+	print_status(dev, "Sensor fits firmware", val,
+		     BCRM_SENSOR_IDENTIFICATION_SENSOR_FITS_FIRMWARE,
+		     has_sensor_indent);
 
 	return 0;
 }
