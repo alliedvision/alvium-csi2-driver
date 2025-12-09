@@ -5759,6 +5759,19 @@ static int avt_flash_init(struct avt_dev *camera)
 	return avt_flash_notifier_setup(camera, node);
 }
 
+static bool has_jetson_nodes(struct device *dev) {
+	struct fwnode_handle *child;
+
+	device_for_each_child_node(dev, child) {
+		if (!strncmp("mode", fwnode_get_name(child), 4)) {
+			fwnode_handle_put(child);
+			return true;
+		}
+	}
+
+	return false;
+}
+
 static int avt_probe(struct i2c_client *client)
 {
 
@@ -5850,6 +5863,14 @@ static int avt_probe(struct i2c_client *client)
 	ret = camera_common_initialize(&camera->s_data, "avt_csi2");
 
 	if (unlikely(ret)) {
+		goto fwnode_cleanup;
+	}
+
+#else
+	if (has_jetson_nodes(dev)) {
+		dev_err(dev, "found NVIDIA device tree nodes, "
+			"but driver is not built with NVIDIA support\n");
+		ret = -EINVAL;
 		goto fwnode_cleanup;
 	}
 #endif 
