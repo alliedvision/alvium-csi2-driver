@@ -2233,6 +2233,7 @@ static int avt_update_format(struct avt_dev *camera,
 	const struct avt_binning_info *info)
 {
 	int ret = 0;
+	struct v4l2_ctrl *ctrl;
 	struct v4l2_rect scaled_roi = *roi;
 	const struct v4l2_rect binning_rect = {
 		.width = info->max_width,
@@ -2272,6 +2273,34 @@ static int avt_update_format(struct avt_dev *camera,
 	ret = bcrm_write32(camera, BCRM_IMG_OFFSET_Y_32RW, scaled_roi.top);
 	if (unlikely(ret)) 
 		return ret;
+
+
+	ctrl = avt_ctrl_find(camera, AVT_CID_AUTO_REGION_TOP);
+	if (ctrl) {
+		__v4l2_ctrl_s_ctrl(ctrl, 0);
+		__v4l2_ctrl_modify_range(ctrl, ctrl->minimum, 0, ctrl->step, 0);
+	}
+	
+	ctrl = avt_ctrl_find(camera, AVT_CID_AUTO_REGION_LEFT);
+	if (ctrl) {
+		__v4l2_ctrl_s_ctrl(ctrl, 0);
+		__v4l2_ctrl_modify_range(ctrl, ctrl->minimum, 0, ctrl->step, 0);
+	}
+
+	ctrl = avt_ctrl_find(camera, AVT_CID_AUTO_REGION_WIDTH);
+	if (ctrl) {
+		__v4l2_ctrl_s_ctrl(ctrl, scaled_roi.width);
+		__v4l2_ctrl_modify_range(ctrl, ctrl->minimum, scaled_roi.width,
+					 ctrl->step, scaled_roi.width);
+	}
+
+
+	ctrl = avt_ctrl_find(camera, AVT_CID_AUTO_REGION_HEIGHT);
+	if (ctrl) {
+		__v4l2_ctrl_s_ctrl(ctrl, scaled_roi.height);
+		__v4l2_ctrl_modify_range(ctrl, ctrl->minimum, scaled_roi.height,
+					 ctrl->step, scaled_roi.height);
+	}
 
 	return ret;
 }
@@ -2897,20 +2926,18 @@ static const struct v4l2_event avt_source_change_event = {
 
 static void __auto_region_update_limits(struct avt_dev *camera,
 					const struct v4l2_ctrl *parent_ctrl, 
-					int id, bool minmax)
+					int id, u32 max)
 {
+	const u32 new_max = max - parent_ctrl->val;
 	struct v4l2_ctrl *ctrl;
 	
 	ctrl = avt_ctrl_find(camera, id);
 	if (!ctrl)
 		return;
 
-	if (minmax)
-		__v4l2_ctrl_modify_range(ctrl, ctrl->minimum, parent_ctrl->val,
-					 ctrl->step, parent_ctrl->val);
-	else 
-		__v4l2_ctrl_modify_range(ctrl, parent_ctrl->val, ctrl->maximum,
-					 ctrl->step, ctrl->maximum);
+		
+	__v4l2_ctrl_modify_range(ctrl, ctrl->minimum, new_max, 
+				 ctrl->step, new_max);
 }					
 
 static struct v4l2_event avt_pixelformat_change_event = {
@@ -3054,25 +3081,29 @@ static void avt_ctrl_changed(struct avt_dev *camera,
 		break;
 	case AVT_CID_AUTO_REGION_LEFT: {
 		__auto_region_update_limits(camera, ctrl, 
-					    AVT_CID_AUTO_REGION_WIDTH, false);
+					    AVT_CID_AUTO_REGION_WIDTH, 
+					    camera->curr_rect.width);
 
 		break;
 	}
 	case AVT_CID_AUTO_REGION_TOP: {
 		__auto_region_update_limits(camera, ctrl,
-					    AVT_CID_AUTO_REGION_HEIGHT, false);
+					    AVT_CID_AUTO_REGION_HEIGHT,
+					    camera->curr_rect.height);
 
 		break;
 	}
 	case AVT_CID_AUTO_REGION_WIDTH: {
 		__auto_region_update_limits(camera, ctrl,
-					    AVT_CID_AUTO_REGION_LEFT, true);
+					    AVT_CID_AUTO_REGION_LEFT,
+					    camera->curr_rect.width);
 
 		break;
 	}
 	case AVT_CID_AUTO_REGION_HEIGHT: {
 		__auto_region_update_limits(camera, ctrl,
-					    AVT_CID_AUTO_REGION_TOP, true);
+					    AVT_CID_AUTO_REGION_TOP, 
+					    camera->curr_rect.height);
 		break;
 	}
 	case AVT_CID_POWER_SAVE_MODE: 
