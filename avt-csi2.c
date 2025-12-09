@@ -5004,7 +5004,9 @@ static int avt_get_camera_capabilities(struct v4l2_subdev *sd)
 
 	avt_dbg(sd, "supported lane config: %x", (uint32_t)avt_supported_lane_mask);
 
-	if (!(test_bit(camera->num_lanes - 1, (const long *)(&avt_supported_lane_mask))))
+	// To avoid any issues when num_lanes is 0, the lane count mask is left
+	// shifted by 1 as bit 0 equals a lane count of 1 in the register
+	if (!((avt_supported_lane_mask << 1) & BIT(camera->num_lanes)))
 	{
 		avt_err(sd, "requested number of lanes (%u) not supported by camera!\n",
 				camera->num_lanes);
@@ -5172,7 +5174,7 @@ static int avt_csi2_check_mipicfg(struct avt_dev *camera)
 {
 	struct i2c_client *client = camera->i2c_client;
 	struct device *dev = &client->dev;
-	struct v4l2_fwnode_endpoint vep;
+	struct v4l2_fwnode_endpoint vep = {0};
 	int ret = -EINVAL;
 
 
