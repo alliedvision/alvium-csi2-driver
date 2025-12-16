@@ -2243,6 +2243,7 @@ static int avt_update_format(struct avt_dev *camera,
 	const struct avt_binning_info *info)
 {
 	int ret = 0;
+	struct v4l2_ctrl *ctrl;
 	struct v4l2_rect scaled_roi = *roi;
 	const struct v4l2_rect binning_rect = {
 		.width = info->max_width,
@@ -2282,6 +2283,34 @@ static int avt_update_format(struct avt_dev *camera,
 	ret = bcrm_write32(camera, BCRM_IMG_OFFSET_Y_32RW, scaled_roi.top);
 	if (unlikely(ret)) 
 		return ret;
+
+
+	ctrl = avt_ctrl_find(camera, AVT_CID_AUTO_REGION_TOP);
+	if (ctrl) {
+		__v4l2_ctrl_s_ctrl(ctrl, 0);
+		__v4l2_ctrl_modify_range(ctrl, ctrl->minimum, 0, ctrl->step, 0);
+	}
+	
+	ctrl = avt_ctrl_find(camera, AVT_CID_AUTO_REGION_LEFT);
+	if (ctrl) {
+		__v4l2_ctrl_s_ctrl(ctrl, 0);
+		__v4l2_ctrl_modify_range(ctrl, ctrl->minimum, 0, ctrl->step, 0);
+	}
+
+	ctrl = avt_ctrl_find(camera, AVT_CID_AUTO_REGION_WIDTH);
+	if (ctrl) {
+		__v4l2_ctrl_s_ctrl(ctrl, scaled_roi.width);
+		__v4l2_ctrl_modify_range(ctrl, ctrl->minimum, scaled_roi.width,
+					 ctrl->step, scaled_roi.width);
+	}
+
+
+	ctrl = avt_ctrl_find(camera, AVT_CID_AUTO_REGION_HEIGHT);
+	if (ctrl) {
+		__v4l2_ctrl_s_ctrl(ctrl, scaled_roi.height);
+		__v4l2_ctrl_modify_range(ctrl, ctrl->minimum, scaled_roi.height,
+					 ctrl->step, scaled_roi.height);
+	}
 
 	return ret;
 }
@@ -2907,21 +2936,19 @@ static const struct v4l2_event avt_source_change_event = {
 
 static void __auto_region_update_limits(struct avt_dev *camera,
 					const struct v4l2_ctrl *parent_ctrl, 
-					int id, bool minmax)
+					int id, u32 max)
 {
+	const u32 new_max = max - parent_ctrl->val;
 	struct v4l2_ctrl *ctrl;
 	
 	ctrl = avt_ctrl_find(camera, id);
 	if (!ctrl)
 		return;
 
-	if (minmax)
-		__v4l2_ctrl_modify_range(ctrl, ctrl->minimum, parent_ctrl->val,
-					 ctrl->step, parent_ctrl->val);
-	else 
-		__v4l2_ctrl_modify_range(ctrl, parent_ctrl->val, ctrl->maximum,
-					 ctrl->step, ctrl->maximum);
-}
+		
+	__v4l2_ctrl_modify_range(ctrl, ctrl->minimum, new_max, 
+				 ctrl->step, new_max);
+}					
 
 static struct v4l2_event avt_pixelformat_change_event = {
 	.type = AVT_V4L2_EVENT_PIXELFORMAT_CHANGE,
@@ -3159,25 +3186,29 @@ static void avt_ctrl_changed(struct avt_dev *camera,
 		break;
 	case AVT_CID_AUTO_REGION_LEFT: {
 		__auto_region_update_limits(camera, ctrl, 
-					    AVT_CID_AUTO_REGION_WIDTH, false);
+					    AVT_CID_AUTO_REGION_WIDTH, 
+					    camera->curr_rect.width);
 
 		break;
 	}
 	case AVT_CID_AUTO_REGION_TOP: {
 		__auto_region_update_limits(camera, ctrl,
-					    AVT_CID_AUTO_REGION_HEIGHT, false);
+					    AVT_CID_AUTO_REGION_HEIGHT,
+					    camera->curr_rect.height);
 
 		break;
 	}
 	case AVT_CID_AUTO_REGION_WIDTH: {
 		__auto_region_update_limits(camera, ctrl,
-					    AVT_CID_AUTO_REGION_LEFT, true);
+					    AVT_CID_AUTO_REGION_LEFT,
+					    camera->curr_rect.width);
 
 		break;
 	}
 	case AVT_CID_AUTO_REGION_HEIGHT: {
 		__auto_region_update_limits(camera, ctrl,
-					    AVT_CID_AUTO_REGION_TOP, true);
+					    AVT_CID_AUTO_REGION_TOP, 
+					    camera->curr_rect.height);
 		break;
 	}
 	case AVT_CID_POWER_SAVE_MODE: 
@@ -5161,7 +5192,9 @@ static int avt_get_camera_capabilities(struct v4l2_subdev *sd)
 
 	avt_dbg(sd, "supported lane config: %x", (uint32_t)avt_supported_lane_mask);
 
-	if (!(test_bit(camera->num_lanes - 1, (const long *)(&avt_supported_lane_mask))))
+	// To avoid any issues when num_lanes is 0, the lane count mask is left
+	// shifted by 1 as bit 0 equals a lane count of 1 in the register
+	if (!((avt_supported_lane_mask << 1) & BIT(camera->num_lanes)))
 	{
 		avt_err(sd, "requested number of lanes (%u) not supported by camera!\n",
 				camera->num_lanes);
@@ -5329,7 +5362,7 @@ static int avt_csi2_check_mipicfg(struct avt_dev *camera)
 {
 	struct i2c_client *client = camera->i2c_client;
 	struct device *dev = &client->dev;
-	struct v4l2_fwnode_endpoint vep;
+	struct v4l2_fwnode_endpoint vep = {0};
 	int ret = -EINVAL;
 
 
@@ -5916,6 +5949,19 @@ static int avt_flash_init(struct avt_dev *camera)
 	return avt_flash_notifier_setup(camera, node);
 }
 
+static bool has_jetson_nodes(struct device *dev) {
+	struct fwnode_handle *child;
+
+	device_for_each_child_node(dev, child) {
+		if (!strncmp("mode", fwnode_get_name(child), 4)) {
+			fwnode_handle_put(child);
+			return true;
+		}
+	}
+
+	return false;
+}
+
 static int avt_probe(struct i2c_client *client)
 {
 
@@ -6009,6 +6055,14 @@ static int avt_probe(struct i2c_client *client)
 	if (unlikely(ret)) {
 		goto fwnode_cleanup;
 	}
+
+#else
+	if (has_jetson_nodes(dev)) {
+		dev_err(dev, "found NVIDIA device tree nodes, "
+			"but driver is not built with NVIDIA support\n");
+		ret = -EINVAL;
+		goto fwnode_cleanup;
+	}
 #endif 
 
 	/* now create the subdevice on i2c*/
@@ -6019,6 +6073,7 @@ static int avt_probe(struct i2c_client *client)
 	camera->pad.flags = MEDIA_PAD_FL_SOURCE;
 	sd->entity.ops = &avt_sd_media_ops;
 	sd->entity.function = MEDIA_ENT_F_CAM_SENSOR;
+	sd->owner = NULL;
 	ret = media_entity_pads_init(&sd->entity, 1, &camera->pad);
 	if (ret < 0)
 		goto fwnode_cleanup;
@@ -6238,10 +6293,15 @@ static void avt_remove(struct i2c_client *client)
 
 	fwnode_handle_put(camera->endpoint);
 
+	device_remove_file(dev, camera->mode_attr);
 	device_remove_bin_file(dev, camera->i2c_xfer_attr);
 
 	device_remove_group(dev, &avt_attr_grp);
 	media_entity_cleanup(&sd->entity);
+
+#ifdef NVIDIA
+	camera_common_cleanup(&camera->s_data);
+#endif // NVIDIA
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 0))
 	v4l2_subdev_cleanup(sd);
