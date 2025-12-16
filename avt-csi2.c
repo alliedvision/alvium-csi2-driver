@@ -5004,7 +5004,9 @@ static int avt_get_camera_capabilities(struct v4l2_subdev *sd)
 
 	avt_dbg(sd, "supported lane config: %x", (uint32_t)avt_supported_lane_mask);
 
-	if (!(test_bit(camera->num_lanes - 1, (const long *)(&avt_supported_lane_mask))))
+	// To avoid any issues when num_lanes is 0, the lane count mask is left
+	// shifted by 1 as bit 0 equals a lane count of 1 in the register
+	if (!((avt_supported_lane_mask << 1) & BIT(camera->num_lanes)))
 	{
 		avt_err(sd, "requested number of lanes (%u) not supported by camera!\n",
 				camera->num_lanes);
@@ -5172,7 +5174,7 @@ static int avt_csi2_check_mipicfg(struct avt_dev *camera)
 {
 	struct i2c_client *client = camera->i2c_client;
 	struct device *dev = &client->dev;
-	struct v4l2_fwnode_endpoint vep;
+	struct v4l2_fwnode_endpoint vep = {0};
 	int ret = -EINVAL;
 
 
@@ -5759,6 +5761,19 @@ static int avt_flash_init(struct avt_dev *camera)
 	return avt_flash_notifier_setup(camera, node);
 }
 
+static bool has_jetson_nodes(struct device *dev) {
+	struct fwnode_handle *child;
+
+	device_for_each_child_node(dev, child) {
+		if (!strncmp("mode", fwnode_get_name(child), 4)) {
+			fwnode_handle_put(child);
+			return true;
+		}
+	}
+
+	return false;
+}
+
 static int avt_probe(struct i2c_client *client)
 {
 
@@ -5850,6 +5865,14 @@ static int avt_probe(struct i2c_client *client)
 	ret = camera_common_initialize(&camera->s_data, "avt_csi2");
 
 	if (unlikely(ret)) {
+		goto fwnode_cleanup;
+	}
+
+#else
+	if (has_jetson_nodes(dev)) {
+		dev_err(dev, "found NVIDIA device tree nodes, "
+			"but driver is not built with NVIDIA support\n");
+		ret = -EINVAL;
 		goto fwnode_cleanup;
 	}
 #endif 
