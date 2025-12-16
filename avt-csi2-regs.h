@@ -2,7 +2,7 @@
 /* 
  * Allied Vision Alvium register definitons
  * 
- * Copyright (C) 2022 - 2024 Allied Vision Technologies GmbH
+ * Copyright (C) 2022 - 2025 Allied Vision Technologies GmbH
  */
 
 #ifndef __AVT_CSI2_REGS_H__
