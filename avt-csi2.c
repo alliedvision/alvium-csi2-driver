@@ -5079,16 +5079,28 @@ static int avt_pad_ops_set_selection(struct v4l2_subdev *sd,
 }
 
 static int avt_pad_ops_get_frame_desc(struct v4l2_subdev *sd, unsigned int pad,
-								struct v4l2_mbus_frame_desc *fd)
+				      struct v4l2_mbus_frame_desc *fd)
 {
+	struct avt_dev *camera = to_avt_dev(sd);
+	const int code = avt_get_mode_fmt(camera)->code;
+	const struct avt_csi_mipi_mode_mapping *fmt_mapping;
+	int idx = lookup_media_bus_format_index(camera, code);
+	
+	fmt_mapping = &camera->available_fmts[idx];
+
+	fd->type = V4L2_MBUS_FRAME_DESC_TYPE_CSI2;
+	fd->num_entries = 1;
+	
+	fd->entry[0].pixelcode = code;
+	
+#if (LINUX_VERSION_CODE > KERNEL_VERSION(5, 18, 0))
+	fd->entry[0].bus.csi2.vc = 0;
+	fd->entry[0].bus.csi2.dt = fmt_mapping->mipi_fmt;
+#endif
+
 	return 0;
 }
 
-static int avt_pad_ops_set_frame_desc(struct v4l2_subdev *sd, unsigned int pad,
-								struct v4l2_mbus_frame_desc *fd)
-{
-	return 0;
-}
 #ifdef CONFIG_MEDIA_CONTROLLER
 static int avt_pad_ops_link_validate(struct v4l2_subdev *sd, struct media_link *link,
 							   struct v4l2_subdev_format *source_fmt,
@@ -5114,7 +5126,6 @@ static const struct v4l2_subdev_pad_ops avt_pad_ops = {
 	.s_mbus_config = v4l2_subdev_video_ops_s_mbus_config,
 #endif
 	.get_frame_desc = avt_pad_ops_get_frame_desc,
-	.set_frame_desc = avt_pad_ops_set_frame_desc,
 #ifdef CONFIG_MEDIA_CONTROLLER
 	.link_validate = avt_pad_ops_link_validate,
 #endif /* CONFIG_MEDIA_CONTROLLER */
