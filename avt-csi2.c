@@ -5916,6 +5916,7 @@ static int avt_probe(struct i2c_client *client)
 	camera->pad.flags = MEDIA_PAD_FL_SOURCE;
 	sd->entity.ops = &avt_sd_media_ops;
 	sd->entity.function = MEDIA_ENT_F_CAM_SENSOR;
+	sd->owner = NULL;
 	ret = media_entity_pads_init(&sd->entity, 1, &camera->pad);
 	if (ret < 0)
 		goto fwnode_cleanup;
@@ -6135,10 +6136,15 @@ static void avt_remove(struct i2c_client *client)
 
 	fwnode_handle_put(camera->endpoint);
 
+	device_remove_file(dev, camera->mode_attr);
 	device_remove_bin_file(dev, camera->i2c_xfer_attr);
 
 	device_remove_group(dev, &avt_attr_grp);
 	media_entity_cleanup(&sd->entity);
+
+#ifdef NVIDIA
+	camera_common_cleanup(&camera->s_data);
+#endif // NVIDIA
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 0))
 	v4l2_subdev_cleanup(sd);
