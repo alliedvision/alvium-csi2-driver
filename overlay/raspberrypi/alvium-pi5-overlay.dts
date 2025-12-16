@@ -1,0 +1,101 @@
+
+/dts-v1/;
+/plugin/;
+
+/{
+    compatible = "bcrm,bcm2712";
+    fragment@0 {
+        target = <&i2c_csi_dsi0>;
+
+        __overlay__ {
+            #address-cells = <1>;
+            #size-cells = <0>;
+
+            status = "okay";
+
+            avt_csi0@3c {
+                reg = <0x3c>;
+                compatible = "alliedvision,avt_csi2";
+
+                streamon_delay = <1>;
+
+                port {
+                    avt_csi2_out0: endpoint {
+                        data-lanes = <1 2 3 4>;
+                        clock-lanes = <0>;
+                        link-frequencies = /bits/ 64 <750000000>;
+                        remote-endpoint = <&csi_in0>;
+                    };
+                };
+            };
+        };
+    };
+    
+    fragment@1 {
+        target = <&i2c_csi_dsi1>;
+
+        __overlay__ {
+            #address-cells = <1>;
+            #size-cells = <0>;
+
+            status = "okay";
+
+            avt_csi1@3c {
+                reg = <0x3c>;
+                compatible = "alliedvision,avt_csi2";
+
+                streamon_delay = <1>;
+
+                port {
+                    avt_csi2_out1: endpoint {
+                        data-lanes = <1 2 3 4>;
+                        clock-lanes = <0>;
+                        link-frequencies = /bits/ 64 <750000000>;
+                        remote-endpoint = <&csi_in1>;
+                    };
+                };
+            };
+        };
+    };
+
+
+    fragment@2 {
+        target = <&csi0>;
+        __overlay__ {
+            status = "okay";
+
+            ports {
+                #address-cells = <1>;
+                #size-cells = <0>;
+
+                port@0 {
+                    reg = <0>;
+
+                    csi_in0: endpoint {
+                        remote-endpoint = <&avt_csi2_out0>;
+                    };
+                };
+            };
+        };
+    };
+
+    fragment@3 {
+        target = <&csi1>;
+        __overlay__ {
+            status = "okay";
+
+            ports {
+                #address-cells = <1>;
+                #size-cells = <0>;
+
+                port@0 {
+                    reg = <0>;
+
+                    csi_in1: endpoint {
+                        remote-endpoint = <&avt_csi2_out1>;
+                    };
+                };
+            };
+        };
+    };
+};
