@@ -805,7 +805,34 @@ const struct avt_ctrl_mapping avt_ctrl_mappings[] = {
 		.reg_offset	=
 			BCRM_SENSORBOARD_TEMPERATURE_WARNING_LEVEL_32RW,
 		.reg_length	= AV_CAM_DATA_SIZE_32,
-	}
+	},
+	{
+		.id 		= AVT_CID_SENSOR_ID,
+		.name		= "Sensor Id",
+		.inq_mask	= BCRM_FEATURE_INQ_SENSOR_IDENTIFICATION,
+		.type		= V4L2_CTRL_TYPE_INTEGER,
+		.min_value	= 0,
+		.max_value	= U8_MAX,
+		.step_value 	= 1,
+	},
+	{
+		.id 		= AVT_CID_SENSOR_PLATFORM_ID,
+		.name		= "Sensor Platform Id",
+		.inq_mask	= BCRM_FEATURE_INQ_SENSOR_IDENTIFICATION,
+		.type		= V4L2_CTRL_TYPE_INTEGER,
+		.min_value	= 0,
+		.max_value	= U8_MAX,
+		.step_value 	= 1,
+	},
+	{
+		.id 		= AVT_CID_SENSOR_FLAGS,
+		.name		= "Sensor Flags",
+		.inq_mask	= BCRM_FEATURE_INQ_SENSOR_IDENTIFICATION,
+		.type		= V4L2_CTRL_TYPE_BITMASK,
+		.min_value	= 0,
+		.max_value	= 0x3,
+		.step_value 	= 0,
+	},
 };
 
 
@@ -937,6 +964,8 @@ struct avt_dev
 
 	u64 link_freq;
 	u8 num_lanes;
+
+	u32 bcrm_version;
 };
 
 enum avt_ctrl {
