@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright (C) 2022 Avnet EMG GmbH 
- * Copyright (C) 2022 - 2024 Allied Vision Technologies GmbH
+ * Copyright (C) 2022 - 2025 Allied Vision Technologies GmbH
  */
 
 /*
