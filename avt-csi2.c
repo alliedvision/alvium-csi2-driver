@@ -5088,12 +5088,12 @@ static int avt_pad_ops_get_frame_desc(struct v4l2_subdev *sd, unsigned int pad,
 	
 	fmt_mapping = &camera->available_fmts[idx];
 
-	fd->type = V4L2_MBUS_FRAME_DESC_TYPE_CSI2;
 	fd->num_entries = 1;
 	
 	fd->entry[0].pixelcode = code;
 	
 #if (LINUX_VERSION_CODE > KERNEL_VERSION(5, 18, 0))
+	fd->type = V4L2_MBUS_FRAME_DESC_TYPE_CSI2;
 	fd->entry[0].bus.csi2.vc = 0;
 	fd->entry[0].bus.csi2.dt = fmt_mapping->mipi_fmt;
 #endif
