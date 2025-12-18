@@ -6046,6 +6046,10 @@ static int avt_probe(struct i2c_client *client)
 	}
 
 #ifdef NVIDIA
+	if (!has_jetson_nodes(dev)) 
+		dev_warn(dev, "NVIDIA support enabled, "
+			 "but modeX node not found\n");
+
 	camera->s_data.priv = camera;
 	camera->s_data.dev = &camera->i2c_client->dev;
 	camera->s_data.ctrl_handler = &camera->v4l2_ctrl_hdl;
