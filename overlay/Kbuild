@@ -1,0 +1,3 @@
+
+subdir-$(CONFIG_TEGRA_OOT_MODULE) += nvidia/
+subdir-$(CONFIG_VIDEO_RP1_CFE) += raspberrypi
