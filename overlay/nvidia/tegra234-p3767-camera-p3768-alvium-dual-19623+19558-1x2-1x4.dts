@@ -181,9 +181,9 @@
 								avt_csi2_out0: endpoint {
 									port-index = <1>;
 									bus-width = <2>;
-									data-lanes = <1 2>;
+									data-lanes = <1 2 3 4>;
 									clock-lanes = <0>;
-									link-frequencies = /bits/ 64 <625000000>;
+									link-frequencies = /bits/ 64 <350000000>;
 									remote-endpoint = <&avt_csi2_csi_in0>;
 								};
 							};
