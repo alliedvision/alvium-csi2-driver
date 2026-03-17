@@ -6011,10 +6011,14 @@ static int avt_probe(struct i2c_client *client)
 					     "failed to enable regulator\n");
 
 		camera->reg_vcc_ext = reg_vcc_ext;
+
+		ret = read_poll_timeout(avt_detect, ret, !ret,
+					BOOT_POLL_INTERVAL_US, 
+			  	BOOT_TIMEOUT_US, false, camera);
+	} else {
+		ret = avt_detect(camera);
 	}
 
-	ret = read_poll_timeout(avt_detect, ret, !ret, BOOT_POLL_INTERVAL_US, 
-			  	BOOT_TIMEOUT_US, false, camera);
 	if (ret) {
 		dev_warn(&client->dev,"No camera detected!");
 		ret = -ENODEV;
