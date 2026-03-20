@@ -2639,8 +2639,18 @@ static int avt_set_fmt_internal_gencp(struct avt_dev *camera,
 {
 	struct v4l2_mbus_framefmt *mbus_fmt = &format->format;
 
-	if (mbus_fmt->code != MEDIA_BUS_FMT_CUSTOM) 
-		mbus_fmt->code = MEDIA_BUS_FMT_CUSTOM;
+	switch (mbus_fmt->code) {
+		case MEDIA_BUS_FMT_Y8_1X8:
+		case MEDIA_BUS_FMT_SRGGB8_1X8:
+		case MEDIA_BUS_FMT_SBGGR8_1X8:
+		case MEDIA_BUS_FMT_SGRBG8_1X8: 
+		case MEDIA_BUS_FMT_SGBRG8_1X8:
+		case MEDIA_BUS_FMT_CUSTOM:
+			break;
+		default:
+			mbus_fmt->code = MEDIA_BUS_FMT_CUSTOM;
+			break;
+	}	
 
 	return 0;
 }
