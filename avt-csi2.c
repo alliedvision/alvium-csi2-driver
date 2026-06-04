@@ -2119,7 +2119,9 @@ avt_get_pad_fmt(struct avt_dev *camera,
 	if (which == V4L2_SUBDEV_FORMAT_TRY) {
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 		return v4l2_subdev_get_try_format(get_sd(camera), state, pad);
-#else	
+#else		
+		if (!state->sd)
+			state->sd = get_sd(camera);
 		return v4l2_subdev_state_get_format(state, pad);
 #endif
 	}
@@ -2136,6 +2138,8 @@ avt_get_pad_crop(struct avt_dev *camera,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 		return v4l2_subdev_get_try_crop(get_sd(camera), state, pad);
 #else	
+		if (!state->sd)
+			state->sd = get_sd(camera);
 		return v4l2_subdev_state_get_crop(state, pad);
 #endif
 	}
@@ -2159,6 +2163,7 @@ static int avt_pad_ops_get_fmt(struct v4l2_subdev *sd,
 
 	mutex_lock(&camera->lock);
 
+	
 	fmt = avt_get_pad_fmt(camera, sd_state, format->pad, format->which);
 	
 	format->format = *fmt;
@@ -4382,14 +4387,16 @@ exit:
 }
 
 
-#if LINUX_VERSION_CODE > KERNEL_VERSION(6, 8, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8, 0)
 static int avt_get_frame_interval(struct v4l2_subdev *sd, 
 				  struct v4l2_subdev_state *state,
 				  struct v4l2_subdev_frame_interval *fi)
 {
 	if (fi->which == V4L2_SUBDEV_FORMAT_TRY) {
 		struct v4l2_fract *interval;
-
+		
+		if (!state->sd)
+			state->sd = sd;
 		interval = v4l2_subdev_state_get_interval(state, fi->pad);
 
 		fi->interval = *interval;
@@ -4408,6 +4415,8 @@ avt_get_pad_interval(struct avt_dev *camera,
 {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8, 0)
 	if (which == V4L2_SUBDEV_FORMAT_TRY) {
+		if (!state->sd)
+			state->sd = get_sd(camera);
 		return v4l2_subdev_state_get_interval(state, pad);
 	}
 #endif
