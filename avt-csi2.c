@@ -5900,11 +5900,13 @@ static int avt_mode_attr_init(struct avt_dev *camera)
 	return ret;
 }
 
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0))
-
 static int avt_flash_notify_bound(struct v4l2_async_notifier *notifier,
-				  struct v4l2_subdev *sd,
-				  struct v4l2_async_subdev *asd)
+	struct v4l2_subdev *sd,
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0))	
+	struct v4l2_async_subdev *asd)
+#else
+	struct v4l2_async_connection *asc)
+#endif
 {
 	struct avt_dev *camera =
 		container_of(notifier, struct avt_dev, flash_notifier);
@@ -5917,6 +5919,8 @@ static int avt_flash_notify_bound(struct v4l2_async_notifier *notifier,
 static const struct v4l2_async_notifier_operations avt_flash_notify_ops = {
 	.bound = avt_flash_notify_bound
 };
+
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0))
 
 static int avt_flash_notifier_setup(struct avt_dev *camera,
 				    struct device_node *node)
@@ -5954,10 +5958,41 @@ static int avt_flash_notifier_setup(struct avt_dev *camera,
 }
 
 #else
+
 static int avt_flash_notifier_setup(struct avt_dev *camera,
 				    struct device_node *node) 
 {
-	return -ENOTSUPP;
+
+	struct v4l2_subdev *sd = get_sd(camera);
+	struct v4l2_async_notifier *notifier = &camera->flash_notifier;
+	struct device *dev = &camera->i2c_client->dev;
+	struct v4l2_async_connection *asc;
+	int ret = 0;
+
+
+	v4l2_async_subdev_nf_init(notifier, sd);
+
+	asc = v4l2_async_nf_add_fwnode(notifier, of_fwnode_handle(node),
+				       struct v4l2_async_connection);
+	of_node_put(node);
+
+	if (IS_ERR(asc)) {
+		dev_err(dev, "failed to add notifier with %ld\n",
+			PTR_ERR(asc));
+		v4l2_async_nf_cleanup(notifier);
+		return PTR_ERR(asc);
+	}
+
+	notifier->ops = &avt_flash_notify_ops;
+
+	ret = v4l2_async_nf_register(notifier);
+	if (ret) {
+		dev_err(dev, "subdev notifier register failed with %d", ret);
+		v4l2_async_nf_cleanup(notifier);
+		return ret;
+	}
+
+	return 0;
 }
 #endif
 
