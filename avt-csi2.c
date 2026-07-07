@@ -1991,7 +1991,7 @@ static int avt_do_softreset(struct avt_dev *camera)
 	ret = avt_read8(camera, CCI_HEARTBEAT_8RW, &val);
 	if (ret < 0)
 		return ret;
-	
+
 	if (!(val >= 0x80))
 		return -ENOTSUPP;	
 
@@ -6027,6 +6027,18 @@ static bool has_jetson_nodes(struct device *dev) {
 	return false;
 }
 
+static bool wait_for_camera_ready(struct avt_dev *camera)
+{
+	u8 val;
+	int ret;
+
+	ret = read_poll_timeout(avt_read8, ret, val, 
+				BOOT_POLL_INTERVAL_US, BOOT_TIMEOUT_US,
+		  		true, camera, CCI_HEARTBEAT_8RW, &val);
+
+	return !ret;
+}
+
 static int avt_probe(struct i2c_client *client)
 {
 
@@ -6079,6 +6091,11 @@ static int avt_probe(struct i2c_client *client)
 		goto regulator_cleanup;
 	}
 
+	if (!wait_for_camera_ready(camera)) {
+		dev_err(dev, "camera didn't get ready\n");
+		ret = -ENODEV;
+		goto regulator_cleanup;
+	}
 
 	sd = get_sd(camera);
 
