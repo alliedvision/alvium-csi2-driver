@@ -17,7 +17,7 @@
 
 / {
 	overlay-name = "DevKit Alvium FP3 Dual 19623 19623+19502 (1x2,1x4)";
-	jetson-header-name = "Jetson 24pin CSI Connector";
+	jetson-header-name = "Jetson 22pin CSI Connector";
 	compatible = "nvidia,p3768-0000+p3767-0000", \
 		"nvidia,p3768-0000+p3767-0001", \
 		"nvidia,p3768-0000+p3767-0003", \
