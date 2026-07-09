@@ -1991,7 +1991,7 @@ static int avt_do_softreset(struct avt_dev *camera)
 	ret = avt_read8(camera, CCI_HEARTBEAT_8RW, &val);
 	if (ret < 0)
 		return ret;
-	
+
 	if (!(val >= 0x80))
 		return -ENOTSUPP;	
 
@@ -2119,7 +2119,9 @@ avt_get_pad_fmt(struct avt_dev *camera,
 	if (which == V4L2_SUBDEV_FORMAT_TRY) {
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 		return v4l2_subdev_get_try_format(get_sd(camera), state, pad);
-#else	
+#else		
+		if (!state->sd)
+			state->sd = get_sd(camera);
 		return v4l2_subdev_state_get_format(state, pad);
 #endif
 	}
@@ -2136,6 +2138,8 @@ avt_get_pad_crop(struct avt_dev *camera,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 		return v4l2_subdev_get_try_crop(get_sd(camera), state, pad);
 #else	
+		if (!state->sd)
+			state->sd = get_sd(camera);
 		return v4l2_subdev_state_get_crop(state, pad);
 #endif
 	}
@@ -2159,6 +2163,7 @@ static int avt_pad_ops_get_fmt(struct v4l2_subdev *sd,
 
 	mutex_lock(&camera->lock);
 
+	
 	fmt = avt_get_pad_fmt(camera, sd_state, format->pad, format->which);
 	
 	format->format = *fmt;
@@ -4382,14 +4387,16 @@ exit:
 }
 
 
-#if LINUX_VERSION_CODE > KERNEL_VERSION(6, 8, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8, 0)
 static int avt_get_frame_interval(struct v4l2_subdev *sd, 
 				  struct v4l2_subdev_state *state,
 				  struct v4l2_subdev_frame_interval *fi)
 {
 	if (fi->which == V4L2_SUBDEV_FORMAT_TRY) {
 		struct v4l2_fract *interval;
-
+		
+		if (!state->sd)
+			state->sd = sd;
 		interval = v4l2_subdev_state_get_interval(state, fi->pad);
 
 		fi->interval = *interval;
@@ -4408,6 +4415,8 @@ avt_get_pad_interval(struct avt_dev *camera,
 {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8, 0)
 	if (which == V4L2_SUBDEV_FORMAT_TRY) {
+		if (!state->sd)
+			state->sd = get_sd(camera);
 		return v4l2_subdev_state_get_interval(state, pad);
 	}
 #endif
@@ -5891,11 +5900,13 @@ static int avt_mode_attr_init(struct avt_dev *camera)
 	return ret;
 }
 
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0))
-
 static int avt_flash_notify_bound(struct v4l2_async_notifier *notifier,
-				  struct v4l2_subdev *sd,
-				  struct v4l2_async_subdev *asd)
+	struct v4l2_subdev *sd,
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0))	
+	struct v4l2_async_subdev *asd)
+#else
+	struct v4l2_async_connection *asc)
+#endif
 {
 	struct avt_dev *camera =
 		container_of(notifier, struct avt_dev, flash_notifier);
@@ -5908,6 +5919,8 @@ static int avt_flash_notify_bound(struct v4l2_async_notifier *notifier,
 static const struct v4l2_async_notifier_operations avt_flash_notify_ops = {
 	.bound = avt_flash_notify_bound
 };
+
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0))
 
 static int avt_flash_notifier_setup(struct avt_dev *camera,
 				    struct device_node *node)
@@ -5945,10 +5958,41 @@ static int avt_flash_notifier_setup(struct avt_dev *camera,
 }
 
 #else
+
 static int avt_flash_notifier_setup(struct avt_dev *camera,
 				    struct device_node *node) 
 {
-	return -ENOTSUPP;
+
+	struct v4l2_subdev *sd = get_sd(camera);
+	struct v4l2_async_notifier *notifier = &camera->flash_notifier;
+	struct device *dev = &camera->i2c_client->dev;
+	struct v4l2_async_connection *asc;
+	int ret = 0;
+
+
+	v4l2_async_subdev_nf_init(notifier, sd);
+
+	asc = v4l2_async_nf_add_fwnode(notifier, of_fwnode_handle(node),
+				       struct v4l2_async_connection);
+	of_node_put(node);
+
+	if (IS_ERR(asc)) {
+		dev_err(dev, "failed to add notifier with %ld\n",
+			PTR_ERR(asc));
+		v4l2_async_nf_cleanup(notifier);
+		return PTR_ERR(asc);
+	}
+
+	notifier->ops = &avt_flash_notify_ops;
+
+	ret = v4l2_async_nf_register(notifier);
+	if (ret) {
+		dev_err(dev, "subdev notifier register failed with %d", ret);
+		v4l2_async_nf_cleanup(notifier);
+		return ret;
+	}
+
+	return 0;
 }
 #endif
 
@@ -5981,6 +6025,18 @@ static bool has_jetson_nodes(struct device *dev) {
 	}
 
 	return false;
+}
+
+static bool wait_for_camera_ready(struct avt_dev *camera)
+{
+	u8 val;
+	int ret;
+
+	ret = read_poll_timeout(avt_read8, ret, val, 
+				BOOT_POLL_INTERVAL_US, BOOT_TIMEOUT_US,
+		  		true, camera, CCI_HEARTBEAT_8RW, &val);
+
+	return !ret;
 }
 
 static int avt_probe(struct i2c_client *client)
@@ -6035,6 +6091,11 @@ static int avt_probe(struct i2c_client *client)
 		goto regulator_cleanup;
 	}
 
+	if (!wait_for_camera_ready(camera)) {
+		dev_err(dev, "camera didn't get ready\n");
+		ret = -ENODEV;
+		goto regulator_cleanup;
+	}
 
 	sd = get_sd(camera);
 
