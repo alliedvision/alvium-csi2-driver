@@ -1,1 +1,1 @@
-#define DRIVER_VERSION "1.5.0"
+#define DRIVER_VERSION "1.5.1"
