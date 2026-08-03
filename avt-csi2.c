@@ -153,6 +153,11 @@ struct avt_val64
 #define LINE_MASK(x) \
 	(LINE_DIR_OUTPUT(x) | LINE_INVERT(x))
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,15,0)
+typedef const struct bin_attribute bin_attr_compat_t;
+#else
+typedef struct bin_attribute bin_attr_compat_t;
+#endif
 
 #define avt_get_mode_fmt(camera) (&camera->fmt[camera->mode])
 
@@ -5730,7 +5735,7 @@ static int avt_detect(struct avt_dev *camera)
 }
 
 static ssize_t avt_i2c_xfer_read(struct file *filp, struct kobject *kobj,
-	struct bin_attribute *battr, char *buf, loff_t off, size_t len)
+	bin_attr_compat_t *battr, char *buf, loff_t off, size_t len)
 {
 	struct avt_dev *camera = battr->private;
 	struct avt_i2c_xfer *xfer = &camera->next_fw_rd_transfer;
@@ -5753,7 +5758,7 @@ static ssize_t avt_i2c_xfer_read(struct file *filp, struct kobject *kobj,
 }
 
 static ssize_t avt_i2c_xfer_write(struct file *filp, struct kobject *kobj,
-	struct bin_attribute *battr, char *buf, loff_t off, size_t len)
+	bin_attr_compat_t *battr, char *buf, loff_t off, size_t len)
 {
 	const struct {
 		struct avt_i2c_xfer xfer;
